@@ -1,0 +1,12 @@
+services:
+  matrix-steam-bridge:
+    image: ghcr.io/jasonlaguidice/matrix-steam-bridge:latest
+    restart: unless-stopped
+    volumes:
+      # Mount config and data directory
+      - ./data:/app/data
+      # Mount logs directory
+      - ./logs:/app/logs
+    # ports:
+    #   # Optional: Expose gRPC port for host access to SteamKit service
+    #   - "50051:50051"
