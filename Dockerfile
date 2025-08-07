@@ -15,8 +15,8 @@ RUN dotnet publish -c Release -o /app/steambridge --no-restore
 # Stage 2: Build Go bridge
 FROM golang:1.24.5-alpine AS go-builder
 
-# Install build dependencies
-RUN apk add --no-cache git ca-certificates
+# Install build dependencies including gcc/g++ for CGO and olm for encryption
+RUN apk add --no-cache git ca-certificates gcc g++ musl-dev sqlite-dev olm-dev
 
 WORKDIR /src
 
@@ -28,11 +28,11 @@ RUN go mod download
 COPY cmd/ ./cmd/
 COPY pkg/ ./pkg/
 
-# Build the Go bridge
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-s -w" -o steam ./cmd/steam
+# Build the Go bridge with CGO enabled for sqlite3
+RUN CGO_ENABLED=1 GOOS=linux go build -a -ldflags="-s -w" -o steam ./cmd/steam
 
 # Stage 3: Runtime image
-FROM alpine:3.19
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine
 
 # Install runtime dependencies
 RUN apk add --no-cache \
@@ -44,11 +44,6 @@ RUN apk add --no-cache \
 # Create bridge user
 RUN adduser -D -s /bin/sh -u 1000 bridge
 
-# Install .NET runtime for the SteamBridge service
-RUN apk add --no-cache \
-    aspnetcore8-runtime \
-    dotnet8-runtime
-
 # Create application directories
 WORKDIR /app
 RUN mkdir -p /app/steambridge /app/logs /app/data && \
@@ -57,9 +52,6 @@ RUN mkdir -p /app/steambridge /app/logs /app/data && \
 # Copy built applications
 COPY --from=go-builder /src/steam /app/steam
 COPY --from=dotnet-builder /app/steambridge/ /app/steambridge/
-
-# Copy example configuration
-COPY example-config.yaml /app/
 
 # Set proper permissions
 RUN chmod +x /app/steam && \
