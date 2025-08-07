@@ -413,7 +413,7 @@ func (sc *SteamConnector) GetName() bridgev2.BridgeName {
 	return bridgev2.BridgeName{
 		DisplayName:      "Steam",
 		NetworkURL:       "https://store.steampowered.com",
-		NetworkIcon:      "", // TODO: Upload network icon and generate URL
+		NetworkIcon:      "mxc://shadowdrake.org/EeNKAcrmByNubPwoyceQsBaN",
 		NetworkID:        "steam",
 		BeeperBridgeType: "go.shadowdrake.org/steam",
 		DefaultPort:      50051,
