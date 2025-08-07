@@ -1,0 +1,244 @@
+syntax = "proto3";
+
+option csharp_namespace = "SteamBridge.Proto";
+option go_package = "go.shadowdrake.org/steam/pkg/steamapi";
+
+package steambridge;
+
+// Authentication Service
+service SteamAuthService {
+  rpc LoginWithCredentials(CredentialsLoginRequest) returns (LoginResponse);
+  rpc LoginWithQR(QRLoginRequest) returns (QRLoginResponse);
+  rpc GetAuthStatus(AuthStatusRequest) returns (AuthStatusResponse);
+  rpc ReAuthenticateWithTokens(TokenReAuthRequest) returns (TokenReAuthResponse);
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+}
+
+// User Service  
+service SteamUserService {
+  rpc GetUserInfo(UserInfoRequest) returns (UserInfoResponse);
+  rpc GetFriendsList(FriendsListRequest) returns (FriendsListResponse);
+  rpc GetUserStatus(UserStatusRequest) returns (UserStatusResponse);
+  rpc ResolveVanityURL(ResolveVanityURLRequest) returns (ResolveVanityURLResponse);
+}
+
+// Messaging Service
+service SteamMessagingService {
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  rpc SubscribeToMessages(MessageSubscriptionRequest) returns (stream MessageEvent);
+  rpc SendTypingNotification(TypingNotificationRequest) returns (TypingNotificationResponse);
+}
+
+// Session Management Service
+service SteamSessionService {
+  rpc SubscribeToSessionEvents(SessionSubscriptionRequest) returns (stream SessionEvent);
+}
+
+// Authentication Messages
+message CredentialsLoginRequest {
+  string username = 1;
+  string password = 2;
+  string guard_code = 3; // Optional SteamGuard code
+  bool remember_password = 4;
+}
+
+message QRLoginRequest {
+  // Empty for initial request, will generate QR challenge
+}
+
+message QRLoginResponse {
+  string challenge_url = 1; // Raw Steam challenge URL for QR code generation
+  string qr_code_fallback = 3; // Fallback text when URL cannot be used
+  string session_id = 4; // For polling status
+}
+
+message LoginResponse {
+  bool success = 1;
+  string error_message = 2;
+  string access_token = 3;
+  string refresh_token = 4;
+  UserInfo user_info = 5;
+  bool requires_guard = 6;
+  bool requires_email_verification = 7;
+}
+
+message AuthStatusRequest {
+  string session_id = 1; // For QR login polling
+}
+
+message AuthStatusResponse {
+  enum AuthState {
+    PENDING = 0;
+    AUTHENTICATED = 1;
+    FAILED = 2;
+    EXPIRED = 3;
+  }
+  AuthState state = 1;
+  string error_message = 2;
+  string access_token = 3;
+  string refresh_token = 4;
+  UserInfo user_info = 5;
+}
+
+message LogoutRequest {
+  // Empty for now
+}
+
+message TokenReAuthRequest {
+  string access_token = 1;
+  string refresh_token = 2;
+  string username = 3; // Required for SteamKit2 compatibility
+}
+
+message TokenReAuthResponse {
+  bool success = 1;
+  string error_message = 2;
+  AuthStatusResponse.AuthState state = 3;
+  string new_access_token = 4; // If token was refreshed
+  string new_refresh_token = 5; // If token was refreshed
+  UserInfo user_info = 6;
+}
+
+message LogoutResponse {
+  bool success = 1;
+}
+
+// User Messages
+message UserInfoRequest {
+  uint64 steam_id = 1; // Optional, defaults to current user
+}
+
+message UserInfoResponse {
+  UserInfo user_info = 1;
+}
+
+message UserInfo {
+  uint64 steam_id = 1;
+  string account_name = 2;
+  string persona_name = 3; // Display name
+  string profile_url = 4;
+  string avatar_url = 5;
+  PersonaState status = 6;
+  string current_game = 7;
+}
+
+message FriendsListRequest {
+  // Empty for now
+}
+
+message FriendsListResponse {
+  repeated Friend friends = 1;
+}
+
+message Friend {
+  uint64 steam_id = 1;
+  string persona_name = 2;
+  string avatar_url = 3;
+  PersonaState status = 4;
+  string current_game = 5;
+  FriendRelationship relationship = 6;
+}
+
+message UserStatusRequest {
+  uint64 steam_id = 1;
+}
+
+message UserStatusResponse {
+  PersonaState status = 1;
+  string current_game = 2;
+  int64 last_online = 3; // Unix timestamp
+}
+
+message ResolveVanityURLRequest {
+  string vanity_url = 1; // Username from vanity URL (e.g., "username" from steamcommunity.com/id/username)
+}
+
+message ResolveVanityURLResponse {
+  bool success = 1;
+  string steam_id = 2; // SteamID64 as string 
+  string error_message = 3;
+}
+
+// Messaging Messages
+message SendMessageRequest {
+  uint64 target_steam_id = 1;
+  string message = 2;
+  MessageType message_type = 3;
+}
+
+message SendMessageResponse {
+  bool success = 1;
+  string error_message = 2;
+  int64 timestamp = 3;
+}
+
+message MessageSubscriptionRequest {
+  // Empty for now - subscribes to all messages for authenticated user
+}
+
+message MessageEvent {
+  uint64 sender_steam_id = 1;
+  uint64 target_steam_id = 2;
+  string message = 3;
+  MessageType message_type = 4;
+  int64 timestamp = 5;
+  bool is_echo = 6; // True if this is an echo of our own message from another client
+}
+
+message TypingNotificationRequest {
+  uint64 target_steam_id = 1;
+  bool is_typing = 2;
+}
+
+message TypingNotificationResponse {
+  bool success = 1;
+}
+
+// Enums
+enum PersonaState {
+  OFFLINE = 0;
+  ONLINE = 1;
+  BUSY = 2;
+  AWAY = 3;
+  SNOOZE = 4;
+  LOOKING_TO_TRADE = 5;
+  LOOKING_TO_PLAY = 6;
+  INVISIBLE = 7;
+}
+
+enum FriendRelationship {
+  NONE = 0;
+  BLOCKED = 1;
+  REQUEST_RECIPIENT = 2;
+  FRIEND = 3;
+  REQUEST_INITIATOR = 4;
+  IGNORED = 5;
+  IGNORED_FRIEND = 6;
+}
+
+enum MessageType {
+  CHAT_MESSAGE = 0;
+  TYPING = 1;
+  EMOTE = 2;
+  INVITE_GAME = 3;
+}
+
+// Session Management Messages
+message SessionSubscriptionRequest {
+  // Empty for now - subscribes to all session events for authenticated user
+}
+
+message SessionEvent {
+  SessionEventType event_type = 1;
+  string reason = 2; // Logout reason or error message
+  int64 timestamp = 3;
+}
+
+enum SessionEventType {
+  LOGGED_OFF = 0;
+  CONNECTION_LOST = 1;
+  SESSION_REPLACED = 2;
+  TOKEN_EXPIRED = 3;
+  ACCOUNT_DISABLED = 4;
+  KICKED = 5;
+}
