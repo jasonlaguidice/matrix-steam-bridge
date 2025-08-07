@@ -2,22 +2,15 @@
 # Supports both linux/amd64 and linux/arm64
 
 # Stage 1: Build C# SteamBridge service
-# Use amd64 SDK for ARM64 builds to avoid gRPC.Tools ARM64 protoc issues
-FROM --platform=linux/amd64 mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet-builder
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet-builder
 
 WORKDIR /src
 COPY SteamBridge/ ./SteamBridge/
 
 # Build the C# gRPC service
 WORKDIR /src/SteamBridge
-ARG TARGETARCH
-RUN if [ "$TARGETARCH" = "arm64" ]; then \
-        dotnet restore -r linux-arm64; \
-        dotnet publish -c Release -r linux-arm64 -o /app/steambridge --no-restore; \
-    else \
-        dotnet restore; \
-        dotnet publish -c Release -o /app/steambridge --no-restore; \
-    fi
+RUN dotnet restore
+RUN dotnet publish -c Release -o /app/steambridge --no-restore
 
 # Stage 2: Build Go bridge
 FROM golang:1.24.5-alpine AS go-builder
