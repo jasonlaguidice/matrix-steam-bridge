@@ -2,8 +2,7 @@
 # Supports both linux/amd64 and linux/arm64
 
 # Stage 1: Build C# SteamBridge service
-# Use amd64 builder to avoid ARM64 protoc issues, cross-compile for target architecture
-FROM --platform=linux/amd64 mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet-builder
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet-builder
 
 ARG TARGETARCH
 WORKDIR /src
