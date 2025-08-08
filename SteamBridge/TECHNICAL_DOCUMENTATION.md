@@ -198,9 +198,9 @@ if resp.Success {
 **Response Message**: `QRLoginResponse`
 ```protobuf
 message QRLoginResponse {
-  string challenge_url = 1;
-  string qr_code_ascii = 2; // ASCII art representation
-  string session_id = 3; // For polling status
+  string challenge_url = 1; // Raw Steam challenge URL for QR code generation
+  string qr_code_fallback = 3; // Fallback text when URL cannot be used
+  string session_id = 4; // For polling status
 }
 ```
 
@@ -208,7 +208,7 @@ message QRLoginResponse {
 ```csharp
 var qrResponse = await authClient.LoginWithQRAsync(new QRLoginRequest());
 Console.WriteLine("Scan this QR code with Steam Mobile App:");
-Console.WriteLine(qrResponse.QrCodeAscii);
+Console.WriteLine(qrResponse.QrCodeFallback);
 
 // Poll for authentication status
 while (true) {
@@ -269,6 +269,53 @@ message AuthStatusResponse {
 ```protobuf
 message LogoutResponse {
   bool success = 1;
+}
+```
+
+#### ReAuthenticateWithTokens
+
+**Endpoint**: `steambridge.SteamAuthService/ReAuthenticateWithTokens`
+**Type**: Unary RPC
+**Purpose**: Re-authenticate using existing access and refresh tokens
+
+**Request Message**: `TokenReAuthRequest`
+```protobuf
+message TokenReAuthRequest {
+  string access_token = 1;
+  string refresh_token = 2;
+  string username = 3; // Required for SteamKit2 compatibility
+}
+```
+
+**Response Message**: `TokenReAuthResponse`
+```protobuf
+message TokenReAuthResponse {
+  bool success = 1;
+  string error_message = 2;
+  AuthStatusResponse.AuthState state = 3;
+  string new_access_token = 4; // If token was refreshed
+  string new_refresh_token = 5; // If token was refreshed
+  UserInfo user_info = 6;
+}
+```
+
+**Example Usage**:
+```csharp
+var reAuthResp = await authClient.ReAuthenticateWithTokensAsync(new TokenReAuthRequest {
+    AccessToken = storedAccessToken,
+    RefreshToken = storedRefreshToken,
+    Username = storedUsername
+});
+
+if (reAuthResp.Success) {
+    Console.WriteLine($"Re-authentication successful! Welcome back {reAuthResp.UserInfo.PersonaName}");
+    // Update stored tokens if they were refreshed
+    if (!string.IsNullOrEmpty(reAuthResp.NewAccessToken)) {
+        storedAccessToken = reAuthResp.NewAccessToken;
+        storedRefreshToken = reAuthResp.NewRefreshToken;
+    }
+} else {
+    Console.WriteLine($"Re-authentication failed: {reAuthResp.ErrorMessage}");
 }
 ```
 
@@ -359,6 +406,41 @@ message UserStatusResponse {
   PersonaState status = 1;
   string current_game = 2;
   int64 last_online = 3; // Unix timestamp
+}
+```
+
+#### ResolveVanityURL
+
+**Endpoint**: `steambridge.SteamUserService/ResolveVanityURL`
+**Type**: Unary RPC
+**Purpose**: Resolve a Steam vanity URL (username) to a SteamID64
+
+**Request Message**: `ResolveVanityURLRequest`
+```protobuf
+message ResolveVanityURLRequest {
+  string vanity_url = 1; // Username from vanity URL (e.g., "username" from steamcommunity.com/id/username)
+}
+```
+
+**Response Message**: `ResolveVanityURLResponse`
+```protobuf
+message ResolveVanityURLResponse {
+  bool success = 1;
+  string steam_id = 2; // SteamID64 as string
+  string error_message = 3;
+}
+```
+
+**Example Usage**:
+```csharp
+var vanityResp = await userClient.ResolveVanityURLAsync(new ResolveVanityURLRequest {
+    VanityUrl = "gaben"
+});
+
+if (vanityResp.Success) {
+    Console.WriteLine($"Resolved vanity URL to SteamID: {vanityResp.SteamId}");
+} else {
+    Console.WriteLine($"Failed to resolve: {vanityResp.ErrorMessage}");
 }
 ```
 
@@ -524,6 +606,51 @@ await messagingClient.SendMessageAsync(new SendMessageRequest {
 
 ---
 
+### SteamSessionService
+
+Session management service for monitoring connection events.
+
+#### SubscribeToSessionEvents
+
+**Endpoint**: `steambridge.SteamSessionService/SubscribeToSessionEvents`
+**Type**: Server Streaming RPC
+**Purpose**: Subscribe to session-related events like disconnections, logouts, etc.
+
+**Request Message**: `SessionSubscriptionRequest` (empty)
+**Stream Response**: `SessionEvent`
+```protobuf
+message SessionEvent {
+  SessionEventType event_type = 1;
+  string reason = 2; // Logout reason or error message
+  int64 timestamp = 3;
+}
+```
+
+**Example Usage**:
+```csharp
+using var call = sessionClient.SubscribeToSessionEvents(new SessionSubscriptionRequest());
+
+await foreach (var sessionEvent in call.ResponseStream.ReadAllAsync()) {
+    switch (sessionEvent.EventType) {
+        case SessionEventType.LoggedOff:
+            Console.WriteLine($"Logged off: {sessionEvent.Reason}");
+            break;
+        case SessionEventType.ConnectionLost:
+            Console.WriteLine($"Connection lost: {sessionEvent.Reason}");
+            break;
+        case SessionEventType.SessionReplaced:
+            Console.WriteLine($"Session replaced: {sessionEvent.Reason}");
+            break;
+        case SessionEventType.TokenExpired:
+            Console.WriteLine($"Token expired: {sessionEvent.Reason}");
+            break;
+        // Handle other event types...
+    }
+}
+```
+
+---
+
 ## Data Models
 
 ### UserInfo
@@ -591,6 +718,18 @@ enum MessageType {
   TYPING = 1;         // Typing indicator
   EMOTE = 2;          // Emote/action message
   INVITE_GAME = 3;    // Game invitation
+}
+```
+
+#### SessionEventType
+```protobuf
+enum SessionEventType {
+  LOGGED_OFF = 0;       // User logged off normally
+  CONNECTION_LOST = 1;  // Network connection lost
+  SESSION_REPLACED = 2; // Session replaced by another login
+  TOKEN_EXPIRED = 3;    // Authentication token expired
+  ACCOUNT_DISABLED = 4; // Steam account disabled
+  KICKED = 5;           // Kicked by Steam servers
 }
 ```
 
@@ -727,7 +866,7 @@ public class SteamAuthenticationExample {
             var qrResponse = await _authClient.LoginWithQRAsync(new QRLoginRequest());
             
             Console.WriteLine("Please scan this QR code with Steam Mobile App:");
-            Console.WriteLine(qrResponse.QrCodeAscii);
+            Console.WriteLine(qrResponse.QrCodeFallback);
             Console.WriteLine($"Session ID: {qrResponse.SessionId}");
             
             // Step 2: Poll for authentication status
@@ -1131,9 +1270,9 @@ public class SteamBridgeMetrics {
 
 ```dockerfile
 # Dockerfile
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine AS base
 WORKDIR /app
-EXPOSE 5000
+EXPOSE 50051
 
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
@@ -1154,23 +1293,21 @@ ENTRYPOINT ["dotnet", "SteamBridge.dll"]
 
 ```yaml
 # docker-compose.yml
-version: '3.8'
 services:
-  steam-bridge:
-    build: .
-    ports:
-      - "50051:50051"
-    environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - ASPNETCORE_URLS=http://+:50051
-    volumes:
-      - ./logs:/app/logs
+  matrix-steam-bridge:
+    image: ghcr.io/jasonlaguidice/matrix-steam-bridge:latest
     restart: unless-stopped
+    volumes:
+      # Mount config and data directory
+      - ./data:/app/data
+      # Mount logs directory
+      - ./logs:/app/logs
+    # ports:
+    #   # Optional: Expose gRPC port for host access to SteamKit service
+    #   - "50051:50051"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:50051/health"]
+      test: ["CMD", "/app/steam", "--health-check"]
       interval: 30s
       timeout: 10s
       retries: 3
 ```
-
-This technical documentation provides comprehensive coverage of the Steam Bridge gRPC API service, including detailed function references, usage examples, and integration patterns for building Matrix bridges and other Steam-integrated applications.

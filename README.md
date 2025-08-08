@@ -10,31 +10,9 @@ The bridge consists of two main components:
 
 The Go service communicates with the C# SteamBridge service via gRPC to handle Steam authentication, messaging, and presence updates.
 
-## Features
+## Features & Roadmap
 
-### ✅ Working Features
-
-| Feature | Status | Description |
-|---------|--------|-------------|
-| **Steam Authentication** | ✅ Complete | Username/password with SteamGuard support |
-| **QR Code Login** | ✅ Complete | Modern Steam mobile authentication flow |
-| **Text-based Messaging** | ✅ Complete | Bidirectional message synchronization |
-| **Contact Synchronization** | ✅ Complete | Automatic Steam friends list sync |
-| **Steam -> Matrix Typing Indicators** | ✅ Complete | Shows when users are typing |
-| **Session Management** | ✅ Complete | Persistent Steam session handling |
-| **Presence Updates** | ✅ Complete | Steam online/offline status sync |
-
-### ⏳ Pending Features
-
-| Feature | Status | Priority | Description |
-|---------|--------|----------|-------------|
-| **File Attachments** | 🔄 Planned | High | Send/receive images and files |
-| **Matrix -> Steam Typing Indicators** | 🔄 Planned | Medium | Outgoing typing indicators |
-| **Message Echo Handling** | 🔄 Planned | Medium | Collect & bridge messages from other Steam clients |
-| **Message Reactions** | 🔄 Planned | Medium | Steam emoticon support |
-| **Steam Group Chats** | 🔄 Planned | Low | Multi-user Steam chat rooms |
-| **Read Receipts** | 🔄 Planned | Low | Message read status |
-| **Game Invites** | 🔄 Planned | Low | Handle Steam game invitations |
+Please see [ROADMAP.md](ROADMAP.md)
 
 ## Installation
 
