@@ -111,7 +111,7 @@ jobs:
         # Create multi-arch manifests for each tag
         for tag in $(echo '${{ steps.meta.outputs.tags }}' | tr ',' '\n'); do
           echo "Creating manifest for: $tag"
-          docker manifest create $tag \
+          docker manifest create --amend $tag \
             $tag-amd64 \
             $tag-arm64
           docker manifest push $tag
