@@ -1,6 +1,6 @@
 # Matrix Steam Bridge
 
-A Matrix bridge for Steam Chat. Built using the [mautrix-go bridgev2](https://github.com/mautrix/go) framework.
+A Matrix bridge for Steam Chat. Built using the [mautrix-go bridgev2](https://github.com/mautrix/go) framework and [SteamKit API](https://github.com/SteamRE/SteamKit).
 
 ## Architecture
 
@@ -20,9 +20,8 @@ The Go service communicates with the C# SteamBridge service via gRPC to handle S
 | **QR Code Login** | ✅ Complete | Modern Steam mobile authentication flow |
 | **Text-based Messaging** | ✅ Complete | Bidirectional message synchronization |
 | **Contact Synchronization** | ✅ Complete | Automatic Steam friends list sync |
-| **Typing Indicators** | ✅ Complete | Shows when users are typing |
+| **Steam -> Matrix Typing Indicators** | ✅ Complete | Shows when users are typing |
 | **Session Management** | ✅ Complete | Persistent Steam session handling |
-| **Message Echo Handling** | ✅ Complete | Multi-client support (prevents duplicates) |
 | **Presence Updates** | ✅ Complete | Steam online/offline status sync |
 
 ### ⏳ Pending Features
@@ -30,6 +29,8 @@ The Go service communicates with the C# SteamBridge service via gRPC to handle S
 | Feature | Status | Priority | Description |
 |---------|--------|----------|-------------|
 | **File Attachments** | 🔄 Planned | High | Send/receive images and files |
+| **Matrix -> Steam Typing Indicators** | 🔄 Planned | Medium | Outgoing typing indicators |
+| **Message Echo Handling** | 🔄 Planned | Medium | Collect & bridge messages from other Steam clients |
 | **Message Reactions** | 🔄 Planned | Medium | Steam emoticon support |
 | **Steam Group Chats** | 🔄 Planned | Low | Multi-user Steam chat rooms |
 | **Read Receipts** | 🔄 Planned | Low | Message read status |
@@ -52,7 +53,6 @@ The Go service communicates with the C# SteamBridge service via gRPC to handle S
 
 2. **Build the bridge**
    ```bash
-   cd SteamBridge
    ./build.sh
    ```
 
@@ -93,6 +93,10 @@ Supported architectures: `linux/amd64`, `linux/arm64`
    ```bash
    ./steam -c config.yaml
    ```
+
+## Configuration w/ Beeper **
+
+**PENDING**: Please stand by! This bridge is built on the bridgev2 architecture so using the [Beeper Bridge Manager](https://github.com/beeper/bridge-manager) to generate a configuration (example `bbctl config --type bridgev2 sh-steam`) should™️ work just fine.
 
 ## Usage
 
