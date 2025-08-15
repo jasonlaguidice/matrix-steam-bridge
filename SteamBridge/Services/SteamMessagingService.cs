@@ -9,15 +9,18 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
     private readonly ILogger<SteamMessagingService> _logger;
     private readonly SteamMessagingManager _messagingManager;
     private readonly SteamImageService _imageService;
+    private readonly SteamUserInformationService _userInfoService;
 
     public SteamMessagingService(
         ILogger<SteamMessagingService> logger,
         SteamMessagingManager messagingManager,
-        SteamImageService imageService)
+        SteamImageService imageService,
+        SteamUserInformationService userInfoService)
     {
         _logger = logger;
         _messagingManager = messagingManager;
         _imageService = imageService;
+        _userInfoService = userInfoService;
     }
 
     public override async Task<SendMessageResponse> SendMessage(
@@ -212,6 +215,81 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
             {
                 Success = false,
                 ErrorMessage = $"Download failed: {ex.Message}"
+            };
+        }
+    }
+
+    public override async Task<GetUserAvatarDataResponse> GetUserAvatarData(
+        GetUserAvatarDataRequest request, 
+        ServerCallContext context)
+    {
+        _logger.LogInformation("Received avatar data request for Steam ID: {SteamId}", request.SteamId);
+
+        try
+        {
+            // Get user info which includes avatar URL and hash
+            var userInfo = await _userInfoService.GetUserInfoAsync(request.SteamId);
+            if (userInfo == null)
+            {
+                return new GetUserAvatarDataResponse
+                {
+                    Success = false,
+                    ErrorMessage = "User not found or unable to retrieve user information"
+                };
+            }
+
+            // If no avatar URL is available, return empty response
+            if (string.IsNullOrEmpty(userInfo.AvatarUrl))
+            {
+                _logger.LogDebug("No avatar URL available for Steam ID: {SteamId}", request.SteamId);
+                return new GetUserAvatarDataResponse
+                {
+                    Success = true,
+                    AvatarHash = userInfo.AvatarHash,
+                    ImageData = Google.Protobuf.ByteString.Empty,
+                    MimeType = string.Empty
+                };
+            }
+
+            try
+            {
+                // Download the avatar image data
+                var (imageData, mimeType) = await _imageService.DownloadImageAsync(userInfo.AvatarUrl);
+                
+                return new GetUserAvatarDataResponse
+                {
+                    Success = true,
+                    AvatarHash = userInfo.AvatarHash,
+                    AvatarUrl = userInfo.AvatarUrl,
+                    ImageData = Google.Protobuf.ByteString.CopyFrom(imageData),
+                    MimeType = mimeType
+                };
+            }
+            catch (Exception downloadEx)
+            {
+                _logger.LogWarning(downloadEx, "Failed to download avatar image for Steam ID {SteamId} from URL: {AvatarUrl}", 
+                    request.SteamId, userInfo.AvatarUrl);
+                
+                // Return success but with empty image data if download fails
+                // This allows the system to still work with avatar URL for fallback
+                return new GetUserAvatarDataResponse
+                {
+                    Success = true,
+                    AvatarHash = userInfo.AvatarHash,
+                    AvatarUrl = userInfo.AvatarUrl,
+                    ImageData = Google.Protobuf.ByteString.Empty,
+                    MimeType = string.Empty,
+                    ErrorMessage = $"Avatar download failed: {downloadEx.Message}"
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing avatar data request for Steam ID: {SteamId}", request.SteamId);
+            return new GetUserAvatarDataResponse
+            {
+                Success = false,
+                ErrorMessage = $"Internal error: {ex.Message}"
             };
         }
     }
