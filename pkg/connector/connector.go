@@ -1807,6 +1807,22 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 	// Determine sender ID
 	senderID := makeUserID(msgEvent.SenderSteamId)
 
+	// Create appropriate EventSender based on whether this is an echo message
+	var eventSender bridgev2.EventSender
+	if msgEvent.IsEcho {
+		// Echo message from our other Steam clients - show as "from me"
+		eventSender = bridgev2.EventSender{
+			IsFromMe:    true,
+			SenderLogin: sc.UserLogin.ID,
+			Sender:      senderID,
+		}
+	} else {
+		// Regular incoming message from another user
+		eventSender = bridgev2.EventSender{
+			Sender: senderID,
+		}
+	}
+
 	// Message metadata will be created in the conversion function
 
 	// Create appropriate remote event based on message type
@@ -1821,10 +1837,8 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 				},
 				PortalKey:    portalKey,
 				CreatePortal: true,
-				Sender: bridgev2.EventSender{
-					Sender: senderID,
-				},
-				Timestamp: time.Unix(msgEvent.Timestamp, 0),
+				Sender:       eventSender,
+				Timestamp:    time.Unix(msgEvent.Timestamp, 0),
 			},
 			Data:               msgEvent,
 			ID:                 networkid.MessageID(msgID),
@@ -1842,10 +1856,8 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 				},
 				PortalKey:    portalKey,
 				CreatePortal: true,
-				Sender: bridgev2.EventSender{
-					Sender: senderID,
-				},
-				Timestamp: time.Unix(msgEvent.Timestamp, 0),
+				Sender:       eventSender,
+				Timestamp:    time.Unix(msgEvent.Timestamp, 0),
 			},
 			Data:               msgEvent,
 			ID:                 networkid.MessageID(msgID),
@@ -1859,9 +1871,7 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 			EventMeta: simplevent.EventMeta{
 				Type:      bridgev2.RemoteEventTyping,
 				PortalKey: portalKey,
-				Sender: bridgev2.EventSender{
-					Sender: senderID,
-				},
+				Sender:    eventSender,
 				Timestamp: time.Unix(msgEvent.Timestamp, 0),
 			},
 			Timeout: 5 * time.Second,
@@ -1880,10 +1890,8 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 				},
 				PortalKey:    portalKey,
 				CreatePortal: true,
-				Sender: bridgev2.EventSender{
-					Sender: senderID,
-				},
-				Timestamp: time.Unix(msgEvent.Timestamp, 0),
+				Sender:       eventSender,
+				Timestamp:    time.Unix(msgEvent.Timestamp, 0),
 			},
 			Data:               msgEvent,
 			ID:                 networkid.MessageID(msgID),
