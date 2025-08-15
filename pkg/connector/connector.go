@@ -1571,6 +1571,10 @@ func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 
 	switch msg.Event.Type {
 	case event.EventMessage:
+		content := msg.Event.Content.AsMessage()
+		if content != nil && content.MsgType == event.MsgImage {
+			return sc.handleImageMessage(ctx, msg, targetSteamID)
+		}
 		return sc.handleTextMessage(ctx, msg, targetSteamID)
 	case event.EventSticker:
 		return sc.handleStickerMessage(ctx, msg, targetSteamID)
@@ -1682,6 +1686,76 @@ func (sc *SteamClient) handleStickerMessage(ctx context.Context, msg *bridgev2.M
 	}, nil
 }
 
+// handleImageMessage processes image messages from Matrix and sends them to Steam
+func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.MatrixMessage, targetSteamID uint64) (*bridgev2.MatrixMessageResponse, error) {
+	content := msg.Event.Content.AsMessage()
+	if content == nil {
+		return nil, fmt.Errorf("failed to parse image content")
+	}
+
+	sc.br.Log.Info().
+		Str("image_url", string(content.URL)).
+		Str("mime_type", content.Info.MimeType).
+		Int("size", content.Info.Size).
+		Str("caption", content.Body).
+		Msg("Processing image message from Matrix")
+
+	// Download image from Matrix
+	imageData, err := sc.br.Bot.DownloadMedia(ctx, content.URL, content.File)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download image from Matrix: %w", err)
+	}
+
+	// Upload image to Steam via gRPC
+	uploadResp, err := sc.msgClient.UploadImageToSteam(ctx, &steamapi.UploadImageRequest{
+		ImageData: imageData,
+		MimeType:  content.Info.MimeType,
+		Filename:  content.Body, // Use caption as filename, fallback to default if empty
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload image to Steam: %w", err)
+	}
+
+	if !uploadResp.Success {
+		return nil, fmt.Errorf("steam image upload failed: %s", uploadResp.ErrorMessage)
+	}
+
+	// Send message with image URL
+	resp, err := sc.msgClient.SendMessage(ctx, &steamapi.SendMessageRequest{
+		TargetSteamId: targetSteamID,
+		Message:       content.Body, // Caption
+		MessageType:   steamapi.MessageType_CHAT_MESSAGE,
+		ImageUrl:      &uploadResp.ImageUrl,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to send image message to Steam: %w", err)
+	}
+
+	if !resp.Success {
+		return nil, fmt.Errorf("steam image message send failed: %s", resp.ErrorMessage)
+	}
+
+	msgMeta := &MessageMetadata{
+		SteamMessageType: "IMAGE",
+		IsEcho:           false,
+		ImageURL:         uploadResp.ImageUrl,
+	}
+
+	sc.br.Log.Info().
+		Str("steam_image_url", uploadResp.ImageUrl).
+		Int64("timestamp", resp.Timestamp).
+		Msg("Image message sent to Steam successfully")
+
+	return &bridgev2.MatrixMessageResponse{
+		DB: &database.Message{
+			ID:        networkid.MessageID(fmt.Sprintf("steam:%d:%d", targetSteamID, resp.Timestamp)),
+			MXID:      msg.Event.ID,
+			Timestamp: time.Unix(resp.Timestamp, 0),
+			Metadata:  msgMeta,
+		},
+	}, nil
+}
+
 // handleIncomingMessage processes incoming messages from Steam and sends them to Matrix
 func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steamapi.MessageEvent) {
 	sc.br.Log.Info().
@@ -1690,10 +1764,12 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 		Int64("timestamp", msgEvent.Timestamp).
 		Msg("Received message from Steam")
 
-	// Skip echo messages from our own other clients
+	// Detect echo messages from other Steam clients
 	if msgEvent.IsEcho {
-		sc.br.Log.Debug().Msg("Skipping echo message")
-		return
+		sc.br.Log.Debug().
+			Uint64("sender_steam_id", msgEvent.SenderSteamId).
+			Msg("Processing echo message from other Steam client")
+		// Continue processing instead of skipping
 	}
 
 	// Generate message ID
@@ -1821,11 +1897,16 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 }
 
 // convertSteamMessage converts a Steam message event to a Matrix message
-func (sc *SteamClient) convertSteamMessage(_ context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, data *steamapi.MessageEvent) (*bridgev2.ConvertedMessage, error) {
+func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, data *steamapi.MessageEvent) (*bridgev2.ConvertedMessage, error) {
 	var content *event.MessageEventContent
 
 	switch data.MessageType {
 	case steamapi.MessageType_CHAT_MESSAGE:
+		// Check if this message contains an image URL
+		if data.ImageUrl != nil && *data.ImageUrl != "" {
+			return sc.convertImageMessage(ctx, portal, intent, data)
+		}
+		
 		content = &event.MessageEventContent{
 			MsgType: event.MsgText,
 			Body:    data.Message,
@@ -1850,6 +1931,103 @@ func (sc *SteamClient) convertSteamMessage(_ context.Context, portal *bridgev2.P
 			Content: content,
 		}},
 	}, nil
+}
+
+// convertImageMessage converts a Steam image message to a Matrix image message
+func (sc *SteamClient) convertImageMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, data *steamapi.MessageEvent) (*bridgev2.ConvertedMessage, error) {
+	if data.ImageUrl == nil || *data.ImageUrl == "" {
+		return nil, fmt.Errorf("no image URL provided in message")
+	}
+
+	imageURL := *data.ImageUrl
+	sc.br.Log.Info().
+		Str("image_url", imageURL).
+		Str("caption", data.Message).
+		Msg("Converting Steam image message to Matrix")
+
+	// Download image from Steam
+	downloadResp, err := sc.msgClient.DownloadImageFromSteam(ctx, &steamapi.DownloadImageRequest{
+		ImageUrl: imageURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to download image from Steam: %w", err)
+	}
+
+	if !downloadResp.Success {
+		return nil, fmt.Errorf("steam image download failed: %s", downloadResp.ErrorMessage)
+	}
+
+	// Extract filename from URL or use default
+	filename := extractFilenameFromURL(imageURL)
+	if filename == "" {
+		filename = "image"
+	}
+
+	// Add file extension based on MIME type
+	if ext := getFileExtensionFromMimeType(downloadResp.MimeType); ext != "" {
+		filename += "." + ext
+	}
+
+	// Upload image to Matrix
+	mxcURL, encryptedFile, err := intent.UploadMedia(ctx, portal.MXID, downloadResp.ImageData, filename, downloadResp.MimeType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload image to Matrix: %w", err)
+	}
+
+	// Create Matrix image message content
+	content := &event.MessageEventContent{
+		MsgType: event.MsgImage,
+		Body:    data.Message, // Use Steam message as caption
+		URL:     mxcURL,
+		File:    encryptedFile,
+		Info: &event.FileInfo{
+			MimeType: downloadResp.MimeType,
+			Size:     len(downloadResp.ImageData),
+		},
+	}
+
+	// If caption is empty, use filename as body
+	if content.Body == "" {
+		content.Body = filename
+	}
+
+	sc.br.Log.Info().
+		Str("matrix_mxc_url", string(mxcURL)).
+		Str("filename", filename).
+		Int("size", len(downloadResp.ImageData)).
+		Msg("Image converted and uploaded to Matrix successfully")
+
+	return &bridgev2.ConvertedMessage{
+		Parts: []*bridgev2.ConvertedMessagePart{{
+			Type:    event.EventMessage,
+			Content: content,
+		}},
+	}, nil
+}
+
+// extractFilenameFromURL extracts a filename from a URL path
+func extractFilenameFromURL(imageURL string) string {
+	// Simple extraction - get the last path component
+	if idx := strings.LastIndex(imageURL, "/"); idx != -1 && idx < len(imageURL)-1 {
+		return imageURL[idx+1:]
+	}
+	return ""
+}
+
+// getFileExtensionFromMimeType returns the appropriate file extension for a MIME type
+func getFileExtensionFromMimeType(mimeType string) string {
+	switch mimeType {
+	case "image/jpeg":
+		return "jpg"
+	case "image/png":
+		return "png"
+	case "image/gif":
+		return "gif"
+	case "image/webp":
+		return "webp"
+	default:
+		return ""
+	}
 }
 
 // ResolveIdentifier implements bridgev2.IdentifierResolvingNetworkAPI.

@@ -5,6 +5,14 @@
 *.so
 *.dylib
 
+# Reference projects
+ref/
+
+# Other stuff
+ARCHITECTURE.md
+STEAMKIT_MAPPING.md
+phase*
+
 # Test binary, built with `go test -c`
 *.test
 
@@ -24,7 +32,6 @@ go.work
 
 # Claude files
 .claude/
-claude.md
 CLAUDE.md
 
 # IDE files

@@ -8,13 +8,16 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
 {
     private readonly ILogger<SteamMessagingService> _logger;
     private readonly SteamMessagingManager _messagingManager;
+    private readonly SteamImageService _imageService;
 
     public SteamMessagingService(
         ILogger<SteamMessagingService> logger,
-        SteamMessagingManager messagingManager)
+        SteamMessagingManager messagingManager,
+        SteamImageService imageService)
     {
         _logger = logger;
         _messagingManager = messagingManager;
+        _imageService = imageService;
     }
 
     public override async Task<SendMessageResponse> SendMessage(
@@ -27,9 +30,20 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
         try
         {
             var messageType = MapFromProtoMessageType(request.MessageType);
+            
+            // If there's an image URL, format the message to include it
+            string messageToSend = request.Message;
+            if (!string.IsNullOrEmpty(request.ImageUrl))
+            {
+                // Format: [Image: URL] caption
+                messageToSend = string.IsNullOrEmpty(request.Message) 
+                    ? $"[Image: {request.ImageUrl}]"
+                    : $"[Image: {request.ImageUrl}] {request.Message}";
+            }
+            
             var result = await _messagingManager.SendMessageAsync(
                 request.TargetSteamId, 
-                request.Message, 
+                messageToSend, 
                 messageType);
 
             return new SendMessageResponse
@@ -64,15 +78,24 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
             
             await foreach (var message in messageStream.WithCancellation(context.CancellationToken))
             {
+                // Parse image URL and caption from message
+                var (imageUrl, caption) = ParseImageMessage(message.Message);
+                
                 var protoMessage = new Proto.MessageEvent
                 {
                     SenderSteamId = message.SenderSteamId,
                     TargetSteamId = message.TargetSteamId,
-                    Message = message.Message,
+                    Message = caption, // Use parsed caption instead of full message
                     MessageType = MapToProtoMessageType(message.MessageType),
                     Timestamp = message.Timestamp,
                     IsEcho = message.IsEcho
                 };
+
+                // Set image URL if present
+                if (!string.IsNullOrEmpty(imageUrl))
+                {
+                    protoMessage.ImageUrl = imageUrl;
+                }
 
                 await responseStream.WriteAsync(protoMessage);
                 
@@ -121,6 +144,116 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                 Success = false
             };
         }
+    }
+
+    public override async Task<UploadImageResponse> UploadImageToSteam(
+        UploadImageRequest request, 
+        ServerCallContext context)
+    {
+        _logger.LogInformation("Received image upload request: {Filename}, {MimeType}, {Size} bytes", 
+            request.Filename, request.MimeType, request.ImageData.Length);
+
+        try
+        {
+            // Validate the image
+            if (!_imageService.ValidateImage(request.ImageData.ToByteArray(), request.MimeType))
+            {
+                return new UploadImageResponse
+                {
+                    Success = false,
+                    ErrorMessage = "Invalid image format or size"
+                };
+            }
+
+            // Upload the image to Steam
+            var imageUrl = await _imageService.UploadImageAsync(
+                request.ImageData.ToByteArray(), 
+                request.MimeType, 
+                request.Filename);
+
+            return new UploadImageResponse
+            {
+                Success = true,
+                ImageUrl = imageUrl
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error uploading image: {Filename}", request.Filename);
+            return new UploadImageResponse
+            {
+                Success = false,
+                ErrorMessage = $"Upload failed: {ex.Message}"
+            };
+        }
+    }
+
+    public override async Task<DownloadImageResponse> DownloadImageFromSteam(
+        DownloadImageRequest request, 
+        ServerCallContext context)
+    {
+        _logger.LogInformation("Received image download request: {Url}", request.ImageUrl);
+
+        try
+        {
+            var (imageData, mimeType) = await _imageService.DownloadImageAsync(request.ImageUrl);
+
+            return new DownloadImageResponse
+            {
+                Success = true,
+                ImageData = Google.Protobuf.ByteString.CopyFrom(imageData),
+                MimeType = mimeType
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error downloading image: {Url}", request.ImageUrl);
+            return new DownloadImageResponse
+            {
+                Success = false,
+                ErrorMessage = $"Download failed: {ex.Message}"
+            };
+        }
+    }
+
+    /// <summary>
+    /// Parses a message to extract image URL and caption.
+    /// Expected format: "[Image: URL] caption" or "[Image: URL]"
+    /// </summary>
+    /// <param name="message">The message to parse</param>
+    /// <returns>A tuple containing the image URL (if found) and the caption text</returns>
+    private static (string? imageUrl, string caption) ParseImageMessage(string message)
+    {
+        if (string.IsNullOrEmpty(message))
+        {
+            return (null, message);
+        }
+
+        // Look for pattern: [Image: URL]
+        const string imagePrefix = "[Image: ";
+        const string imageSuffix = "]";
+
+        if (!message.StartsWith(imagePrefix))
+        {
+            return (null, message); // No image URL found
+        }
+
+        var endIndex = message.IndexOf(imageSuffix, imagePrefix.Length);
+        if (endIndex == -1)
+        {
+            return (null, message); // Malformed image marker
+        }
+
+        // Extract the URL
+        var imageUrl = message.Substring(imagePrefix.Length, endIndex - imagePrefix.Length);
+        
+        // Extract the caption (everything after the closing bracket and optional space)
+        var captionStart = endIndex + imageSuffix.Length;
+        var caption = captionStart < message.Length 
+            ? message.Substring(captionStart).TrimStart() 
+            : string.Empty;
+
+        return (imageUrl, caption);
     }
 
     private static Services.MessageType MapFromProtoMessageType(Proto.MessageType messageType)

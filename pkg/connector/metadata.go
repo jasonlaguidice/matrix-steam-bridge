@@ -54,6 +54,9 @@ type MessageMetadata struct {
 	// Content type flags for processing
 	ContainsRichContent bool `json:"contains_rich_content,omitempty"` // Images, stickers, special formatting
 	
+	// Image data for Matrix→Steam messages
+	ImageURL string `json:"image_url,omitempty"` // Steam UGC or data URL for images
+	
 	// Future extension points
 	// EditTimestamp int64 `json:"edit_timestamp,omitempty"` // For when Steam adds message editing
 }

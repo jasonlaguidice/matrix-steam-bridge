@@ -500,6 +500,8 @@ const (
 	SteamMessagingService_SendMessage_FullMethodName            = "/steambridge.SteamMessagingService/SendMessage"
 	SteamMessagingService_SubscribeToMessages_FullMethodName    = "/steambridge.SteamMessagingService/SubscribeToMessages"
 	SteamMessagingService_SendTypingNotification_FullMethodName = "/steambridge.SteamMessagingService/SendTypingNotification"
+	SteamMessagingService_UploadImageToSteam_FullMethodName     = "/steambridge.SteamMessagingService/UploadImageToSteam"
+	SteamMessagingService_DownloadImageFromSteam_FullMethodName = "/steambridge.SteamMessagingService/DownloadImageFromSteam"
 )
 
 // SteamMessagingServiceClient is the client API for SteamMessagingService service.
@@ -511,6 +513,8 @@ type SteamMessagingServiceClient interface {
 	SendMessage(ctx context.Context, in *SendMessageRequest, opts ...grpc.CallOption) (*SendMessageResponse, error)
 	SubscribeToMessages(ctx context.Context, in *MessageSubscriptionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MessageEvent], error)
 	SendTypingNotification(ctx context.Context, in *TypingNotificationRequest, opts ...grpc.CallOption) (*TypingNotificationResponse, error)
+	UploadImageToSteam(ctx context.Context, in *UploadImageRequest, opts ...grpc.CallOption) (*UploadImageResponse, error)
+	DownloadImageFromSteam(ctx context.Context, in *DownloadImageRequest, opts ...grpc.CallOption) (*DownloadImageResponse, error)
 }
 
 type steamMessagingServiceClient struct {
@@ -560,6 +564,26 @@ func (c *steamMessagingServiceClient) SendTypingNotification(ctx context.Context
 	return out, nil
 }
 
+func (c *steamMessagingServiceClient) UploadImageToSteam(ctx context.Context, in *UploadImageRequest, opts ...grpc.CallOption) (*UploadImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UploadImageResponse)
+	err := c.cc.Invoke(ctx, SteamMessagingService_UploadImageToSteam_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *steamMessagingServiceClient) DownloadImageFromSteam(ctx context.Context, in *DownloadImageRequest, opts ...grpc.CallOption) (*DownloadImageResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DownloadImageResponse)
+	err := c.cc.Invoke(ctx, SteamMessagingService_DownloadImageFromSteam_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SteamMessagingServiceServer is the server API for SteamMessagingService service.
 // All implementations must embed UnimplementedSteamMessagingServiceServer
 // for forward compatibility.
@@ -569,6 +593,8 @@ type SteamMessagingServiceServer interface {
 	SendMessage(context.Context, *SendMessageRequest) (*SendMessageResponse, error)
 	SubscribeToMessages(*MessageSubscriptionRequest, grpc.ServerStreamingServer[MessageEvent]) error
 	SendTypingNotification(context.Context, *TypingNotificationRequest) (*TypingNotificationResponse, error)
+	UploadImageToSteam(context.Context, *UploadImageRequest) (*UploadImageResponse, error)
+	DownloadImageFromSteam(context.Context, *DownloadImageRequest) (*DownloadImageResponse, error)
 	mustEmbedUnimplementedSteamMessagingServiceServer()
 }
 
@@ -587,6 +613,12 @@ func (UnimplementedSteamMessagingServiceServer) SubscribeToMessages(*MessageSubs
 }
 func (UnimplementedSteamMessagingServiceServer) SendTypingNotification(context.Context, *TypingNotificationRequest) (*TypingNotificationResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SendTypingNotification not implemented")
+}
+func (UnimplementedSteamMessagingServiceServer) UploadImageToSteam(context.Context, *UploadImageRequest) (*UploadImageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UploadImageToSteam not implemented")
+}
+func (UnimplementedSteamMessagingServiceServer) DownloadImageFromSteam(context.Context, *DownloadImageRequest) (*DownloadImageResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DownloadImageFromSteam not implemented")
 }
 func (UnimplementedSteamMessagingServiceServer) mustEmbedUnimplementedSteamMessagingServiceServer() {}
 func (UnimplementedSteamMessagingServiceServer) testEmbeddedByValue()                               {}
@@ -656,6 +688,42 @@ func _SteamMessagingService_SendTypingNotification_Handler(srv interface{}, ctx 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SteamMessagingService_UploadImageToSteam_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UploadImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SteamMessagingServiceServer).UploadImageToSteam(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SteamMessagingService_UploadImageToSteam_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SteamMessagingServiceServer).UploadImageToSteam(ctx, req.(*UploadImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SteamMessagingService_DownloadImageFromSteam_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DownloadImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SteamMessagingServiceServer).DownloadImageFromSteam(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SteamMessagingService_DownloadImageFromSteam_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SteamMessagingServiceServer).DownloadImageFromSteam(ctx, req.(*DownloadImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SteamMessagingService_ServiceDesc is the grpc.ServiceDesc for SteamMessagingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -670,6 +738,14 @@ var SteamMessagingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SendTypingNotification",
 			Handler:    _SteamMessagingService_SendTypingNotification_Handler,
+		},
+		{
+			MethodName: "UploadImageToSteam",
+			Handler:    _SteamMessagingService_UploadImageToSteam_Handler,
+		},
+		{
+			MethodName: "DownloadImageFromSteam",
+			Handler:    _SteamMessagingService_DownloadImageFromSteam_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

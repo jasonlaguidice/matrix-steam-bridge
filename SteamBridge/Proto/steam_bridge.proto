@@ -27,6 +27,8 @@ service SteamMessagingService {
   rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
   rpc SubscribeToMessages(MessageSubscriptionRequest) returns (stream MessageEvent);
   rpc SendTypingNotification(TypingNotificationRequest) returns (TypingNotificationResponse);
+  rpc UploadImageToSteam(UploadImageRequest) returns (UploadImageResponse);
+  rpc DownloadImageFromSteam(DownloadImageRequest) returns (DownloadImageResponse);
 }
 
 // Session Management Service
@@ -164,6 +166,7 @@ message SendMessageRequest {
   uint64 target_steam_id = 1;
   string message = 2;
   MessageType message_type = 3;
+  optional string image_url = 4; // Steam CDN/UFS URL for image messages
 }
 
 message SendMessageResponse {
@@ -183,6 +186,7 @@ message MessageEvent {
   MessageType message_type = 4;
   int64 timestamp = 5;
   bool is_echo = 6; // True if this is an echo of our own message from another client
+  optional string image_url = 7; // Steam CDN/UFS URL for image messages
 }
 
 message TypingNotificationRequest {
@@ -192,6 +196,30 @@ message TypingNotificationRequest {
 
 message TypingNotificationResponse {
   bool success = 1;
+}
+
+// Image Messages
+message UploadImageRequest {
+  bytes image_data = 1;
+  string mime_type = 2;
+  string filename = 3;
+}
+
+message UploadImageResponse {
+  bool success = 1;
+  string error_message = 2;
+  string image_url = 3; // Steam UFS/CDN URL
+}
+
+message DownloadImageRequest {
+  string image_url = 1;
+}
+
+message DownloadImageResponse {
+  bool success = 1;
+  string error_message = 2;
+  bytes image_data = 3;
+  string mime_type = 4;
 }
 
 // Enums
