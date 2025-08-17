@@ -1,6 +1,7 @@
 using SteamKit2;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using System.Linq;
 
 namespace SteamBridge.Services;
 
@@ -45,6 +46,25 @@ public class SteamUserInformationService
         try
         {
             var avatarHash = GetAvatarHash(targetSteamId);
+            var avatarHashString = string.Empty;
+            
+            if (avatarHash != null && avatarHash.Length > 0)
+            {
+                // Check if it's a zero-filled array (SHA-1 hash should be 20 bytes, all zeros means no avatar)
+                bool isAllZeros = avatarHash.All(b => b == 0);
+                if (!isAllZeros)
+                {
+                    avatarHashString = Convert.ToHexString(avatarHash).ToLowerInvariant();
+                }
+                else
+                {
+                    _logger.LogWarning("Avatar hash is all zeros for Steam ID {SteamId}, treating as no avatar", targetSteamId);
+                }
+            }
+            
+            _logger.LogDebug("Avatar info for SteamID {SteamId}: avatarHash is null={IsNull}, avatarHashString='{AvatarHashString}'", 
+                targetSteamId, avatarHash == null, avatarHashString);
+            
             var userInfo = new UserInfo
             {
                 SteamId = targetSteamId.ConvertToUInt64(),
@@ -54,7 +74,7 @@ public class SteamUserInformationService
                 CurrentGame = steamFriends.GetFriendGamePlayedName(targetSteamId) ?? string.Empty,
                 ProfileUrl = $"https://steamcommunity.com/profiles/{targetSteamId.ConvertToUInt64()}",
                 AvatarUrl = GetAvatarUrl(targetSteamId),
-                AvatarHash = avatarHash != null ? Convert.ToBase64String(avatarHash) : string.Empty
+                AvatarHash = avatarHashString
             };
 
             _logger.LogDebug("Retrieved user info for SteamID: {SteamID}", targetSteamId);
@@ -91,6 +111,22 @@ public class SteamUserInformationService
                 var relationship = steamFriends.GetFriendRelationship(friendSteamId);
                 
                 var avatarHash = GetAvatarHash(friendSteamId);
+                var avatarHashString = string.Empty;
+                
+                if (avatarHash != null && avatarHash.Length > 0)
+                {
+                    // Check if it's a zero-filled array (SHA-1 hash should be 20 bytes, all zeros means no avatar)
+                    bool isAllZeros = avatarHash.All(b => b == 0);
+                    if (!isAllZeros)
+                    {
+                        avatarHashString = Convert.ToHexString(avatarHash).ToLowerInvariant();
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Avatar hash is all zeros for friend Steam ID {SteamId}, treating as no avatar", friendSteamId);
+                    }
+                }
+                
                 var friend = new Friend
                 {
                     SteamId = friendSteamId.ConvertToUInt64(),
@@ -99,7 +135,7 @@ public class SteamUserInformationService
                     CurrentGame = steamFriends.GetFriendGamePlayedName(friendSteamId) ?? string.Empty,
                     Relationship = MapFriendRelationship(relationship),
                     AvatarUrl = GetAvatarUrl(friendSteamId),
-                    AvatarHash = avatarHash != null ? Convert.ToBase64String(avatarHash) : string.Empty
+                    AvatarHash = avatarHashString
                 };
 
                 friends.Add(friend);
@@ -287,7 +323,23 @@ public class SteamUserInformationService
         try 
         {
             var steamFriends = _steamClientManager.SteamFriends;
-            return steamFriends.GetFriendAvatar(steamId);
+            var avatarBytes = steamFriends.GetFriendAvatar(steamId);
+            
+            if (avatarBytes == null)
+            {
+                _logger.LogWarning("GetFriendAvatar returned null for Steam ID {SteamId}", steamId);
+                return null;
+            }
+            
+            if (avatarBytes.Length == 0)
+            {
+                _logger.LogWarning("GetFriendAvatar returned empty array for Steam ID {SteamId}", steamId);
+                return null;
+            }
+            
+            _logger.LogInformation("GetFriendAvatar returned {Length} bytes for Steam ID {SteamId}: {AvatarHashHex}", 
+                avatarBytes.Length, steamId, Convert.ToHexString(avatarBytes));
+            return avatarBytes;
         }
         catch (Exception ex)
         {

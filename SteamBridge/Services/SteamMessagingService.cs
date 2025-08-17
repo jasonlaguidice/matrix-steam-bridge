@@ -410,10 +410,13 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                 historyRequest.chat_group_id, historyRequest.chat_id, historyRequest.max_count, request.Forward);
 
             // Call Steam API
+            _logger.LogDebug("Starting Steam API call for ChatRoom.GetMessageHistory");
             var job = steamUnified.SendMessage<CChatRoom_GetMessageHistory_Request, CChatRoom_GetMessageHistory_Response>(
                 "ChatRoom.GetMessageHistory#1", historyRequest);
 
+            _logger.LogDebug("Awaiting Steam API response for ChatRoom.GetMessageHistory");
             var result = await job.ToTask();
+            _logger.LogDebug("Received Steam API response for ChatRoom.GetMessageHistory");
             if (result == null || result.Result != EResult.OK)
             {
                 _logger.LogWarning("Failed to get message history: result={Result}", result?.Result);
@@ -471,6 +474,15 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                 historyResponse.Messages.Count, historyResponse.HasMore);
 
             return historyResponse;
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogError(ex, "Task was canceled while retrieving chat message history. CancellationToken.IsCancellationRequested: {IsCancelled}", context.CancellationToken.IsCancellationRequested);
+            return new ChatMessageHistoryResponse
+            {
+                Success = false,
+                ErrorMessage = $"Failed to retrieve message history: A task was canceled."
+            };
         }
         catch (Exception ex)
         {

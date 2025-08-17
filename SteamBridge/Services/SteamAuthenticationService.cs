@@ -12,6 +12,7 @@ public class SteamAuthenticationService
     private readonly SteamClientManager _steamClientManager;
     private readonly ConcurrentDictionary<string, AuthSession> _activeAuthSessions;
     private readonly ConcurrentDictionary<string, QRAuthSessionInfo> _qrAuthSessions;
+    private readonly ConcurrentDictionary<string, string> _sessionUsernames;
     
     public SteamAuthenticationService(
         ILogger<SteamAuthenticationService> logger,
@@ -21,6 +22,7 @@ public class SteamAuthenticationService
         _steamClientManager = steamClientManager;
         _activeAuthSessions = new ConcurrentDictionary<string, AuthSession>();
         _qrAuthSessions = new ConcurrentDictionary<string, QRAuthSessionInfo>();
+        _sessionUsernames = new ConcurrentDictionary<string, string>();
     }
 
     public async Task<CredentialsLoginResult> LoginWithCredentialsAsync(
@@ -67,6 +69,7 @@ public class SteamAuthenticationService
             // Store the session for potential polling
             var sessionId = Guid.NewGuid().ToString();
             _activeAuthSessions[sessionId] = authSession;
+            _sessionUsernames[sessionId] = username;
 
             try
             {
@@ -89,6 +92,7 @@ public class SteamAuthenticationService
                     var logonSuccess = await WaitForLogonAsync();
                     
                     _activeAuthSessions.TryRemove(sessionId, out _);
+                    _sessionUsernames.TryRemove(sessionId, out _);
 
                     if (!logonSuccess)
                     {
@@ -113,6 +117,7 @@ public class SteamAuthenticationService
                 {
                     _logger.LogWarning("Authentication polling timed out for user: {Username}", username);
                     _activeAuthSessions.TryRemove(sessionId, out _);
+                    _sessionUsernames.TryRemove(sessionId, out _);
                     return new CredentialsLoginResult
                     {
                         Success = false,
@@ -170,6 +175,7 @@ public class SteamAuthenticationService
             {
                 // Always cleanup the session
                 _activeAuthSessions.TryRemove(sessionId, out _);
+                _sessionUsernames.TryRemove(sessionId, out _);
             }
         }
         catch (InvalidOperationException invalidOpEx) when (invalidOpEx.Message.Contains("SteamGuard"))
@@ -471,6 +477,7 @@ public class SteamAuthenticationService
         // Clear any active sessions
         _activeAuthSessions.Clear();
         _qrAuthSessions.Clear();
+        _sessionUsernames.Clear();
         
         return Task.FromResult(true);
     }
@@ -581,6 +588,13 @@ public class SteamAuthenticationService
                 };
             }
 
+            // Retrieve the stored username for this session
+            if (!_sessionUsernames.TryGetValue(sessionId, out var username))
+            {
+                _logger.LogWarning("Username not found for session: {SessionId}", sessionId);
+                username = ""; // Fallback to empty string if not found
+            }
+
             // Create a new authenticator with the provided codes
             var authenticator = new BridgeAuthenticator(guardCode, emailCode);
             
@@ -600,13 +614,14 @@ public class SteamAuthenticationService
                 _logger.LogDebug("Authentication session completed successfully: {SessionId}", sessionId);
 
                 // Log on with the access token
-                _steamClientManager.LogOn(pollResult.AccessToken, pollResult.RefreshToken, "");
+                _steamClientManager.LogOn(pollResult.AccessToken, pollResult.RefreshToken, username);
 
                 // Wait for successful logon
                 var logonSuccess = await WaitForLogonAsync();
                 
                 // Clean up the session
                 _activeAuthSessions.TryRemove(sessionId, out _);
+                _sessionUsernames.TryRemove(sessionId, out _);
 
                 if (!logonSuccess)
                 {
@@ -655,6 +670,7 @@ public class SteamAuthenticationService
                         
                     default:
                         _activeAuthSessions.TryRemove(sessionId, out _);
+                        _sessionUsernames.TryRemove(sessionId, out _);
                         return new CredentialsLoginResult
                         {
                             Success = false,
@@ -679,6 +695,7 @@ public class SteamAuthenticationService
         {
             _logger.LogError(ex, "Unexpected error continuing authentication session: {SessionId}", sessionId);
             _activeAuthSessions.TryRemove(sessionId, out _);
+            _sessionUsernames.TryRemove(sessionId, out _);
             return new CredentialsLoginResult
             {
                 Success = false,
