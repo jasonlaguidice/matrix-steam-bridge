@@ -150,6 +150,7 @@ public class SteamUserService : Proto.SteamUserService.SteamUserServiceBase
             PersonaName = userInfo.PersonaName,
             ProfileUrl = userInfo.ProfileUrl,
             AvatarUrl = userInfo.AvatarUrl,
+            AvatarHash = ExtractAvatarHash(userInfo.AvatarUrl),
             Status = MapToProtoPersonaState(userInfo.Status),
             CurrentGame = userInfo.CurrentGame
         };
@@ -162,10 +163,39 @@ public class SteamUserService : Proto.SteamUserService.SteamUserServiceBase
             SteamId = friend.SteamId,
             PersonaName = friend.PersonaName,
             AvatarUrl = friend.AvatarUrl,
+            AvatarHash = ExtractAvatarHash(friend.AvatarUrl),
             Status = MapToProtoPersonaState(friend.Status),
             CurrentGame = friend.CurrentGame,
             Relationship = MapToProtoFriendRelationship(friend.Relationship)
         };
+    }
+
+    private static string ExtractAvatarHash(string avatarUrl)
+    {
+        if (string.IsNullOrEmpty(avatarUrl))
+            return string.Empty;
+
+        try
+        {
+            // Steam avatar URLs look like: https://avatars.steamstatic.com/b5bd56c1aa4644a474a2e4972be27ef9e82e517e_full.jpg
+            // Extract the hash part before the suffix
+            var uri = new Uri(avatarUrl);
+            var filename = Path.GetFileNameWithoutExtension(uri.AbsolutePath);
+            
+            // Remove the size suffix (_full, _medium, etc.) to get just the hash
+            var underscoreIndex = filename.LastIndexOf('_');
+            if (underscoreIndex > 0)
+            {
+                return filename.Substring(0, underscoreIndex);
+            }
+            
+            return filename;
+        }
+        catch
+        {
+            // If URL parsing fails, return empty string
+            return string.Empty;
+        }
     }
 
     private static Proto.PersonaState MapToProtoPersonaState(Services.PersonaState state)

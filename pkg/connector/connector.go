@@ -5,6 +5,8 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -1242,7 +1244,7 @@ func (sc *SteamClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 
 // Steam ID conversion utilities
 func makeUserID(steamID uint64) networkid.UserID {
-	return networkid.UserID(fmt.Sprintf("steam:%d", steamID))
+	return networkid.UserID(fmt.Sprintf("%d", steamID))
 }
 
 func makePortalID(steamID uint64) networkid.PortalID {
@@ -1250,27 +1252,17 @@ func makePortalID(steamID uint64) networkid.PortalID {
 }
 
 func makeUserLoginID(steamID uint64) networkid.UserLoginID {
-	return networkid.UserLoginID(fmt.Sprintf("steam:%d", steamID))
+	return networkid.UserLoginID(fmt.Sprintf("%d", steamID))
 }
 
-// Parse Steam ID from network ID string
-func parseSteamID(netID string) (uint64, error) {
-	if !strings.HasPrefix(netID, "steam:") {
-		return 0, fmt.Errorf("invalid steam network ID format: %s", netID)
-	}
-	return strconv.ParseUint(netID[6:], 10, 64)
-}
 
-// Parse Steam ID from UserID
-func parseSteamIDFromUserID(userID networkid.UserID) (uint64, error) {
-	return parseSteamID(string(userID))
-}
 
 // Parse Steam ID from PortalID  
 func parseSteamIDFromPortalID(portalID networkid.PortalID) (uint64, error) {
 	// Portal IDs are now just the numeric Steam ID without prefix
 	return strconv.ParseUint(string(portalID), 10, 64)
 }
+
 
 // Identifier parsing and validation for Steam user search
 
@@ -1470,8 +1462,8 @@ func (sc *SteamClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 func (sc *SteamClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (*bridgev2.UserInfo, error) {
 	sc.br.Log.Info().Str("ghost_id", string(ghost.ID)).Msg("GetUserInfo() - Retrieving user info")
 
-	// Parse Steam ID from ghost ID
-	steamID, err := parseSteamIDFromUserID(networkid.UserID(ghost.ID))
+	// Parse Steam ID from ghost ID (now just numeric)
+	steamID, err := strconv.ParseUint(string(ghost.ID), 10, 64)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse Steam ID from ghost ID %s: %w", ghost.ID, err)
 	}
@@ -1497,7 +1489,7 @@ func (sc *SteamClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 		if ghostMeta.PersonaName != "" {
 			sc.br.Log.Warn().Err(err).Msg("Failed to fetch fresh user info, using cached data")
 			userInfo := &bridgev2.UserInfo{
-				Identifiers: []string{fmt.Sprintf("steam:%d", ghostMeta.SteamID)},
+				Identifiers: []string{fmt.Sprintf("%d", ghostMeta.SteamID)},
 				Name:        ptr.Ptr(ghostMeta.PersonaName),
 				IsBot:       ptr.Ptr(false),
 			}
@@ -1545,13 +1537,13 @@ func (sc *SteamClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 
 	// Create UserInfo with current data (NOT cached status/game data)
 	userInfoResult := &bridgev2.UserInfo{
-		Identifiers: []string{fmt.Sprintf("steam:%d", userInfo.SteamId)},
+		Identifiers: []string{fmt.Sprintf("%d", userInfo.SteamId)},
 		Name:        ptr.Ptr(userInfo.PersonaName),
 		IsBot:       ptr.Ptr(false),
 	}
 
 	// Handle avatar if present
-	if userInfo.AvatarUrl != "" {
+	if userInfo.AvatarHash != "" {
 		userInfoResult.Avatar = &bridgev2.Avatar{
 			ID: networkid.AvatarID(userInfo.AvatarHash), // Use hash as stable ID
 			Get: sc.createAvatarDownloader(userInfo.SteamId),
@@ -1567,26 +1559,60 @@ func (sc *SteamClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 // createAvatarDownloader creates a function that downloads avatar data for the given Steam ID
 func (sc *SteamClient) createAvatarDownloader(steamID uint64) func(ctx context.Context) ([]byte, error) {
 	return func(ctx context.Context) ([]byte, error) {
-		resp, err := sc.msgClient.GetUserAvatarData(ctx, &steamapi.GetUserAvatarDataRequest{
-			SteamId: steamID,
-		})
+		// Get the ghost metadata to access the avatar hash
+		userID := makeUserID(steamID)
+		ghost, err := sc.UserLogin.Bridge.GetGhostByID(ctx, userID)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch avatar data for Steam ID %d: %w", steamID, err)
+			return nil, fmt.Errorf("failed to get ghost for Steam ID %d: %w", steamID, err)
 		}
 		
-		if !resp.Success {
-			return nil, fmt.Errorf("avatar fetch failed for Steam ID %d: %s", steamID, resp.ErrorMessage)
+		ghostMeta, ok := ghost.Metadata.(*GhostMetadata)
+		if !ok || ghostMeta == nil || ghostMeta.AvatarHash == "" {
+			return nil, fmt.Errorf("no avatar hash available for Steam ID %d", steamID)
 		}
 		
-		// Return the image data if available
-		if len(resp.ImageData) > 0 {
-			return resp.ImageData, nil
-		}
+		// Build Steam CDN URL from hash: https://avatars.steamstatic.com/{hash}_full.jpg
+		avatarURL := fmt.Sprintf("https://avatars.steamstatic.com/%s_full.jpg", ghostMeta.AvatarHash)
 		
-		// If no image data but we have a URL, we could fallback to HTTP download
-		// For now, return an error to indicate no avatar data available
-		return nil, fmt.Errorf("no avatar image data available for Steam ID %d", steamID)
+		// Download the avatar from Steam CDN
+		return sc.downloadImageFromURL(ctx, avatarURL)
 	}
+}
+
+// downloadImageFromURL downloads an image from the given URL and returns the image data
+func (sc *SteamClient) downloadImageFromURL(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request for %s: %w", url, err)
+	}
+	
+	// Set user agent to identify as Steam bridge
+	req.Header.Set("User-Agent", "Steam-Bridge/1.0")
+	
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download image from %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to download image from %s: HTTP %d", url, resp.StatusCode)
+	}
+	
+	// Limit response size to prevent abuse (10MB max)
+	const maxImageSize = 10 * 1024 * 1024
+	limitedReader := io.LimitReader(resp.Body, maxImageSize)
+	
+	imageData, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read image data from %s: %w", url, err)
+	}
+	
+	return imageData, nil
 }
 
 // extractAvatarHash extracts a hash from Steam avatar URL for change detection
@@ -1685,7 +1711,7 @@ func (sc *SteamClient) handleTextMessage(ctx context.Context, msg *bridgev2.Matr
 
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
-			ID:        networkid.MessageID(fmt.Sprintf("steam:%d:%d", targetSteamID, resp.Timestamp)),
+			ID:        networkid.MessageID(fmt.Sprintf("%d:%d", targetSteamID, resp.Timestamp)),
 			MXID:      msg.Event.ID,
 			Timestamp: time.Unix(resp.Timestamp, 0),
 			Metadata:  msgMeta,
@@ -1723,7 +1749,7 @@ func (sc *SteamClient) handleStickerMessage(ctx context.Context, msg *bridgev2.M
 
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
-			ID:        networkid.MessageID(fmt.Sprintf("steam:%d:%d", targetSteamID, resp.Timestamp)),
+			ID:        networkid.MessageID(fmt.Sprintf("%d:%d", targetSteamID, resp.Timestamp)),
 			MXID:      msg.Event.ID,
 			Timestamp: time.Unix(resp.Timestamp, 0),
 			Metadata:  msgMeta,
@@ -1793,7 +1819,7 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
-			ID:        networkid.MessageID(fmt.Sprintf("steam:%d:%d", targetSteamID, resp.Timestamp)),
+			ID:        networkid.MessageID(fmt.Sprintf("%d:%d", targetSteamID, resp.Timestamp)),
 			MXID:      msg.Event.ID,
 			Timestamp: time.Unix(resp.Timestamp, 0),
 			Metadata:  msgMeta,
@@ -1821,9 +1847,9 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 	var msgID string
 	switch msgEvent.MessageType {
 	case steamapi.MessageType_INVITE_GAME:
-		msgID = fmt.Sprintf("steam:%d:%d:invite", msgEvent.SenderSteamId, msgEvent.Timestamp)
+		msgID = fmt.Sprintf("%d:%d:invite", msgEvent.SenderSteamId, msgEvent.Timestamp)
 	default:
-		msgID = fmt.Sprintf("steam:%d:%d", msgEvent.SenderSteamId, msgEvent.Timestamp)
+		msgID = fmt.Sprintf("%d:%d", msgEvent.SenderSteamId, msgEvent.Timestamp)
 	}
 
 	// Get current user's Steam ID to determine if this is a DM
@@ -2307,13 +2333,13 @@ func (sc *SteamClient) SearchUsers(ctx context.Context, query string) ([]*bridge
 
 		// Create user info from friend data
 		userInfo := &bridgev2.UserInfo{
-			Identifiers: []string{fmt.Sprintf("steam:%d", steamIDUint)},
+			Identifiers: []string{fmt.Sprintf("%d", steamIDUint)},
 			Name:        &friend.PersonaName,
 			IsBot:       ptr.Ptr(false),
 		}
 
 		// Handle avatar if present
-		if friend.AvatarUrl != "" {
+		if friend.AvatarHash != "" {
 			userInfo.Avatar = &bridgev2.Avatar{
 				ID: networkid.AvatarID(friend.AvatarHash), // Use hash as stable ID
 				Get: sc.createAvatarDownloader(friend.SteamId),

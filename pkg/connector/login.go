@@ -193,7 +193,7 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 		Username:         resp.UserInfo.AccountName,
 		PersonaName:      resp.UserInfo.PersonaName,
 		ProfileURL:       resp.UserInfo.ProfileUrl,
-		AvatarHash:       resp.UserInfo.AvatarUrl,
+		AvatarHash:       resp.UserInfo.AvatarHash,
 		RemoteID:         userLoginID,
 		AccessToken:      resp.AccessToken,
 		RefreshToken:     resp.RefreshToken,
@@ -360,7 +360,7 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		AccountName:      resp.UserInfo.AccountName, // Real Steam account name for authentication
 		PersonaName:      resp.UserInfo.PersonaName,
 		ProfileURL:       resp.UserInfo.ProfileUrl,
-		AvatarHash:       resp.UserInfo.AvatarUrl,
+		AvatarHash:       resp.UserInfo.AvatarHash,
 		RemoteID:         userLoginID,
 		AccessToken:      resp.AccessToken,
 		RefreshToken:     resp.RefreshToken,
