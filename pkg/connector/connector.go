@@ -761,6 +761,7 @@ const (
 
 
 
+
 // Connect implements bridgev2.NetworkAPI.
 func (sc *SteamClient) Connect(ctx context.Context) {
 	// Set connection state to prevent duplicate connections
@@ -1033,16 +1034,17 @@ func (sc *SteamClient) isPermanentError(err error) bool {
 		return false
 	}
 
-	// Context cancellation is permanent
+	// Context cancellation is NOT permanent - it's expected behavior in bridgev2
+	// Let bridgev2 handle connection lifecycle and retries
 	if err == context.Canceled || err == context.DeadlineExceeded {
-		return true
+		return false
 	}
 
 	// Check gRPC status codes
 	if grpcStatus, ok := grpcstatus.FromError(err); ok {
 		switch grpcStatus.Code() {
 		case codes.Canceled:
-			return true
+			return false // Context cancellation should be retryable
 		case codes.InvalidArgument:
 			return true
 		case codes.NotFound:
@@ -1116,10 +1118,11 @@ func (sc *SteamClient) handleSessionEvent(ctx context.Context, event *steamapi.S
 	// Send appropriate bridge state based on event type
 	switch event.EventType {
 	case steamapi.SessionEventType_SESSION_REPLACED:
-		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateBadCredentials,
+		// Session replacement can happen during relogin or multiple connections
+		// Treat as transient disconnect to allow reconnection instead of permanent failure
+		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateTransientDisconnect,
 			"Steam session replaced by another login",
-			withReason(event.Reason),
-			withUserAction(status.UserActionRelogin)))
+			withReason(event.Reason)))
 
 	case steamapi.SessionEventType_TOKEN_EXPIRED:
 		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateBadCredentials,
@@ -1149,8 +1152,8 @@ func (sc *SteamClient) handleSessionEvent(ctx context.Context, event *steamapi.S
 	}
 
 	// Invalidate user metadata if the session is permanently invalid
-	if event.EventType == steamapi.SessionEventType_SESSION_REPLACED ||
-		event.EventType == steamapi.SessionEventType_TOKEN_EXPIRED ||
+	// Note: SESSION_REPLACED is now treated as transient, so don't invalidate metadata
+	if event.EventType == steamapi.SessionEventType_TOKEN_EXPIRED ||
 		event.EventType == steamapi.SessionEventType_ACCOUNT_DISABLED {
 		
 		if meta := sc.getUserMetadata(); meta != nil {
@@ -1160,6 +1163,7 @@ func (sc *SteamClient) handleSessionEvent(ctx context.Context, event *steamapi.S
 		}
 	}
 }
+
 
 // Disconnect implements bridgev2.NetworkAPI.
 func (sc *SteamClient) Disconnect() {

@@ -215,11 +215,12 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 		DeleteOnConflict: true,
 		LoadUserLogin: func(ctx context.Context, login *bridgev2.UserLogin) error {
 			login.Client = &SteamClient{
-				UserLogin:  login,
-				authClient: slp.Main.authClient,
-				userClient: slp.Main.userClient,
-				msgClient:  slp.Main.msgClient,
-				br:         slp.Main.br,
+				UserLogin:     login,
+				authClient:    slp.Main.authClient,
+				userClient:    slp.Main.userClient,
+				msgClient:     slp.Main.msgClient,
+				sessionClient: slp.Main.sessionClient,
+				br:            slp.Main.br,
 			}
 			return nil
 		},
@@ -228,15 +229,21 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 		return nil, fmt.Errorf("failed to create user login: %w", err)
 	}
 	
-	// Auto-connect to Steam after successful login
+	// After fresh login, mark as connected since Steam session is already active
+	// Do NOT call Connect() as that would re-authenticate and cause session replacement
 	if steamClient, ok := userLogin.Client.(*SteamClient); ok {
-		go func() {
-			// Use a background context with timeout for connection
-			connectCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			
-			steamClient.Connect(connectCtx)
-		}()
+		// Set connection state - Steam is already connected via the login process
+		steamClient.stateMutex.Lock()
+		steamClient.isConnected = true
+		steamClient.isConnecting = false
+		steamClient.stateMutex.Unlock()
+		
+		// Send connected bridge state
+		steamClient.UserLogin.BridgeState.Send(steamClient.buildBridgeState(status.StateConnected,
+			"Connected to Steam",
+			withInfo(map[string]interface{}{
+				"connection_type": "fresh_login",
+			})))
 	}
 	
 	return &bridgev2.LoginStep{
@@ -375,11 +382,12 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		DeleteOnConflict: true,
 		LoadUserLogin: func(ctx context.Context, login *bridgev2.UserLogin) error {
 			login.Client = &SteamClient{
-				UserLogin:  login,
-				authClient: slq.Main.authClient,
-				userClient: slq.Main.userClient,
-				msgClient:  slq.Main.msgClient,
-				br:         slq.Main.br,
+				UserLogin:     login,
+				authClient:    slq.Main.authClient,
+				userClient:    slq.Main.userClient,
+				msgClient:     slq.Main.msgClient,
+				sessionClient: slq.Main.sessionClient,
+				br:            slq.Main.br,
 			}
 			return nil
 		},
@@ -388,15 +396,21 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		return nil, fmt.Errorf("failed to create user login: %w", err)
 	}
 
-	// Auto-connect to Steam after successful QR login
+	// After fresh QR login, mark as connected since Steam session is already active
+	// Do NOT call Connect() as that would re-authenticate and cause session replacement
 	if steamClient, ok := userLogin.Client.(*SteamClient); ok {
-		go func() {
-			// Use a background context with timeout for connection
-			connectCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			
-			steamClient.Connect(connectCtx)
-		}()
+		// Set connection state - Steam is already connected via the login process
+		steamClient.stateMutex.Lock()
+		steamClient.isConnected = true
+		steamClient.isConnecting = false
+		steamClient.stateMutex.Unlock()
+		
+		// Send connected bridge state
+		steamClient.UserLogin.BridgeState.Send(steamClient.buildBridgeState(status.StateConnected,
+			"Connected to Steam",
+			withInfo(map[string]interface{}{
+				"connection_type": "fresh_qr_login",
+			})))
 	}
 
 	return &bridgev2.LoginStep{
@@ -409,6 +423,7 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		},
 	}, nil
 }
+
 
 // Implement required interfaces
 var _ bridgev2.LoginProcessUserInput = (*SteamLoginPassword)(nil)
