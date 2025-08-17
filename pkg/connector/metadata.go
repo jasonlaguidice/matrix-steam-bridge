@@ -46,6 +46,11 @@ type MessageMetadata struct {
 	SteamMessageType string `json:"steam_message_type,omitempty"` // CHAT_MESSAGE, TYPING, EMOTE, INVITE_GAME
 	IsEcho           bool   `json:"is_echo,omitempty"`            // Echo from another client (prevents loops)
 	
+	// Message ordering and pagination
+	SteamID   uint64    `json:"steam_id,omitempty"`   // Sender Steam ID
+	Ordinal   uint32    `json:"ordinal,omitempty"`    // Message ordinal for ordering
+	Timestamp time.Time `json:"timestamp,omitempty"`  // Message timestamp
+	
 	// Game invite specific data (Steam-specific feature not available in Matrix)
 	GameInviteID string `json:"game_invite_id,omitempty"` // Steam game invite identifier
 	GameName     string `json:"game_name,omitempty"`      // Human-readable game name

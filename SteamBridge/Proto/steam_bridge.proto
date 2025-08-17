@@ -8,6 +8,7 @@ package steambridge;
 // Authentication Service
 service SteamAuthService {
   rpc LoginWithCredentials(CredentialsLoginRequest) returns (LoginResponse);
+  rpc ContinueAuthSession(ContinueAuthRequest) returns (LoginResponse);
   rpc LoginWithQR(QRLoginRequest) returns (QRLoginResponse);
   rpc GetAuthStatus(AuthStatusRequest) returns (AuthStatusResponse);
   rpc ReAuthenticateWithTokens(TokenReAuthRequest) returns (TokenReAuthResponse);
@@ -29,6 +30,7 @@ service SteamMessagingService {
   rpc SendTypingNotification(TypingNotificationRequest) returns (TypingNotificationResponse);
   rpc UploadImageToSteam(UploadImageRequest) returns (UploadImageResponse);
   rpc DownloadImageFromSteam(DownloadImageRequest) returns (DownloadImageResponse);
+  rpc GetChatMessageHistory(ChatMessageHistoryRequest) returns (ChatMessageHistoryResponse);
 }
 
 // Session Management Service
@@ -42,6 +44,7 @@ message CredentialsLoginRequest {
   string password = 2;
   string guard_code = 3; // Optional SteamGuard code
   bool remember_password = 4;
+  string email_code = 5; // Optional email verification code
 }
 
 message QRLoginRequest {
@@ -62,6 +65,13 @@ message LoginResponse {
   UserInfo user_info = 5;
   bool requires_guard = 6;
   bool requires_email_verification = 7;
+  string session_id = 8; // For continuing 2FA authentication
+}
+
+message ContinueAuthRequest {
+  string session_id = 1;
+  string guard_code = 2; // Optional SteamGuard code
+  string email_code = 3; // Optional email verification code
 }
 
 message AuthStatusRequest {
@@ -220,6 +230,34 @@ message DownloadImageResponse {
   string error_message = 2;
   bytes image_data = 3;
   string mime_type = 4;
+}
+
+// Chat Message History Messages
+message ChatMessageHistoryRequest {
+  uint64 chat_group_id = 1;
+  uint64 chat_id = 2;
+  uint32 last_time = 3; // Unix timestamp of last known message
+  uint32 last_ordinal = 4; // Ordinal of last known message
+  uint32 max_count = 5; // Maximum messages to return
+  bool forward = 6; // true for newer messages, false for older
+}
+
+message ChatMessageHistoryResponse {
+  bool success = 1;
+  string error_message = 2;
+  repeated ChatHistoryMessage messages = 3;
+  bool has_more = 4; // Whether more messages are available
+  uint32 next_time = 5; // Timestamp cursor for next request
+  uint32 next_ordinal = 6; // Ordinal cursor for next request
+}
+
+message ChatHistoryMessage {
+  uint64 sender_steam_id = 1;
+  uint32 timestamp = 2; // Unix timestamp
+  uint32 ordinal = 3; // Message ordinal for ordering
+  string message_content = 4;
+  MessageType message_type = 5;
+  optional string image_url = 6; // Steam CDN/UFS URL for image messages
 }
 
 // Enums

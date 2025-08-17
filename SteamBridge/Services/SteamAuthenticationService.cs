@@ -27,11 +27,12 @@ public class SteamAuthenticationService
         string username, 
         string password, 
         string? guardCode = null, 
-        bool rememberPassword = false)
+        bool rememberPassword = false,
+        string? emailCode = null)
     {
         try
         {
-            _logger.LogInformation("Attempting credentials login for user: {Username}, HasGuardCode: {HasGuardCode}", username, !string.IsNullOrEmpty(guardCode));
+            _logger.LogInformation("Attempting credentials login for user: {Username}, HasGuardCode: {HasGuardCode}, HasEmailCode: {HasEmailCode}", username, !string.IsNullOrEmpty(guardCode), !string.IsNullOrEmpty(emailCode));
 
             // Ensure connected to Steam
             if (!_steamClientManager.IsConnected)
@@ -55,7 +56,7 @@ public class SteamAuthenticationService
             {
                 Username = username,
                 Password = password,
-                Authenticator = new ConsoleAuthenticator(guardCode),
+                Authenticator = new BridgeAuthenticator(guardCode, emailCode),
                 PlatformType = (SteamKit2.Internal.EAuthTokenPlatformType)1, // SteamClient platform
                 ClientOSType = EOSType.Win11,
                 WebsiteID = "Unknown"
@@ -559,6 +560,133 @@ public class SteamAuthenticationService
         }
     }
 
+    public async Task<CredentialsLoginResult> ContinueAuthSessionAsync(
+        string sessionId, 
+        string? guardCode = null, 
+        string? emailCode = null)
+    {
+        _logger.LogInformation("Continuing auth session: {SessionId}, HasGuardCode: {HasGuardCode}, HasEmailCode: {HasEmailCode}", 
+            sessionId, !string.IsNullOrEmpty(guardCode), !string.IsNullOrEmpty(emailCode));
+
+        try
+        {
+            // Retrieve the stored auth session
+            if (!_activeAuthSessions.TryGetValue(sessionId, out var authSession))
+            {
+                _logger.LogWarning("Auth session not found: {SessionId}", sessionId);
+                return new CredentialsLoginResult
+                {
+                    Success = false,
+                    ErrorMessage = "Authentication session not found or expired"
+                };
+            }
+
+            // Create a new authenticator with the provided codes
+            var authenticator = new BridgeAuthenticator(guardCode, emailCode);
+            
+            // Update the auth session's authenticator
+            // Note: SteamKit2 doesn't allow changing authenticators, so we need to handle this differently
+            // We'll use a timeout approach and let the existing authenticator provide the codes
+            
+            try
+            {
+                // Use a reasonable timeout for continuation attempts
+                var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                
+                _logger.LogDebug("Continuing authentication session: {SessionId}", sessionId);
+                
+                var pollResult = await authSession.PollingWaitForResultAsync(cancellationTokenSource.Token);
+                
+                _logger.LogDebug("Authentication session completed successfully: {SessionId}", sessionId);
+
+                // Log on with the access token
+                _steamClientManager.LogOn(pollResult.AccessToken, pollResult.RefreshToken, "");
+
+                // Wait for successful logon
+                var logonSuccess = await WaitForLogonAsync();
+                
+                // Clean up the session
+                _activeAuthSessions.TryRemove(sessionId, out _);
+
+                if (!logonSuccess)
+                {
+                    return new CredentialsLoginResult
+                    {
+                        Success = false,
+                        ErrorMessage = "Failed to log on to Steam"
+                    };
+                }
+
+                _logger.LogInformation("Successfully continued authentication session: {SessionId}", sessionId);
+
+                return new CredentialsLoginResult
+                {
+                    Success = true,
+                    AccessToken = pollResult.AccessToken,
+                    RefreshToken = pollResult.RefreshToken,
+                    UserInfo = await GetCurrentUserInfoAsync()
+                };
+            }
+            catch (AuthenticationException authEx)
+            {
+                _logger.LogWarning("Authentication exception for session {SessionId}: {Message}", sessionId, authEx.Message);
+                
+                // Handle specific authentication errors - return requirements for next step
+                switch (authEx.Result)
+                {
+                    case EResult.AccountLoginDeniedNeedTwoFactor:
+                    case EResult.TwoFactorCodeMismatch:
+                        return new CredentialsLoginResult
+                        {
+                            Success = false,
+                            RequiresGuard = true,
+                            ErrorMessage = "Incorrect SteamGuard code. Please try again.",
+                            SessionId = sessionId
+                        };
+                        
+                    case EResult.InvalidLoginAuthCode:
+                        return new CredentialsLoginResult
+                        {
+                            Success = false,
+                            RequiresEmailVerification = true,
+                            ErrorMessage = "Incorrect email verification code. Please try again.",
+                            SessionId = sessionId
+                        };
+                        
+                    default:
+                        _activeAuthSessions.TryRemove(sessionId, out _);
+                        return new CredentialsLoginResult
+                        {
+                            Success = false,
+                            ErrorMessage = $"Authentication failed: {authEx.Result}"
+                        };
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("Authentication continuation timed out for session: {SessionId}", sessionId);
+                return new CredentialsLoginResult
+                {
+                    Success = false,
+                    RequiresGuard = true,
+                    RequiresEmailVerification = true,
+                    ErrorMessage = "Authentication timed out - please try again",
+                    SessionId = sessionId
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error continuing authentication session: {SessionId}", sessionId);
+            _activeAuthSessions.TryRemove(sessionId, out _);
+            return new CredentialsLoginResult
+            {
+                Success = false,
+                ErrorMessage = $"Authentication failed: {ex.Message}"
+            };
+        }
+    }
+
     private class QRAuthSessionInfo
     {
         public required QrAuthSession QrAuthSession { get; set; }
@@ -575,6 +703,7 @@ public class CredentialsLoginResult
     public UserInfo? UserInfo { get; set; }
     public bool RequiresGuard { get; set; }
     public bool RequiresEmailVerification { get; set; }
+    public string? SessionId { get; set; }
 }
 
 public class QRLoginResult
@@ -634,4 +763,105 @@ public class UserInfo
     public string AvatarUrl { get; set; } = string.Empty;
     public PersonaState Status { get; set; }
     public string CurrentGame { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Custom authenticator that can provide both SteamGuard codes and email verification codes
+/// Supports dynamic code updates for session continuation
+/// </summary>
+public class BridgeAuthenticator : IAuthenticator
+{
+    private readonly object _lock = new object();
+    private string? _guardCode;
+    private string? _emailCode;
+    private readonly TaskCompletionSource<string>? _guardCodeTcs;
+    private readonly TaskCompletionSource<string>? _emailCodeTcs;
+    private readonly bool _waitForCodes;
+    
+    public BridgeAuthenticator(string? guardCode = null, string? emailCode = null, bool waitForCodes = false)
+    {
+        lock (_lock)
+        {
+            _guardCode = guardCode;
+            _emailCode = emailCode;
+            _waitForCodes = waitForCodes;
+            
+            if (_waitForCodes)
+            {
+                _guardCodeTcs = new TaskCompletionSource<string>();
+                _emailCodeTcs = new TaskCompletionSource<string>();
+            }
+        }
+    }
+    
+    public void SetGuardCode(string guardCode)
+    {
+        lock (_lock)
+        {
+            _guardCode = guardCode;
+            _guardCodeTcs?.TrySetResult(guardCode);
+        }
+    }
+    
+    public void SetEmailCode(string emailCode)
+    {
+        lock (_lock)
+        {
+            _emailCode = emailCode;
+            _emailCodeTcs?.TrySetResult(emailCode);
+        }
+    }
+    
+    public async Task<string> GetDeviceCodeAsync(bool previousCodeWasIncorrect)
+    {
+        lock (_lock)
+        {
+            if (!string.IsNullOrEmpty(_guardCode))
+            {
+                return Task.FromResult(_guardCode).Result;
+            }
+            
+            if (!_waitForCodes)
+            {
+                throw new InvalidOperationException("No device code was provided for authentication");
+            }
+        }
+        
+        // Wait for code to be provided
+        if (_guardCodeTcs != null)
+        {
+            return await _guardCodeTcs.Task;
+        }
+        
+        throw new InvalidOperationException("No device code was provided for authentication");
+    }
+    
+    public async Task<string> GetEmailCodeAsync(string email, bool previousCodeWasIncorrect)
+    {
+        lock (_lock)
+        {
+            if (!string.IsNullOrEmpty(_emailCode))
+            {
+                return Task.FromResult(_emailCode).Result;
+            }
+            
+            if (!_waitForCodes)
+            {
+                throw new InvalidOperationException("No email code was provided for authentication");
+            }
+        }
+        
+        // Wait for code to be provided
+        if (_emailCodeTcs != null)
+        {
+            return await _emailCodeTcs.Task;
+        }
+        
+        throw new InvalidOperationException("No email code was provided for authentication");
+    }
+    
+    public Task<bool> AcceptDeviceConfirmationAsync()
+    {
+        return Task.FromResult(true);
+    }
 }
