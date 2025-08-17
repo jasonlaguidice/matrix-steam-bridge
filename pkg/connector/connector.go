@@ -1067,6 +1067,12 @@ func (sc *SteamClient) isPermanentError(err error) bool {
 func (sc *SteamClient) startSessionEventSubscription(ctx context.Context) {
 	sc.br.Log.Info().Msg("Starting Steam session event subscription")
 
+	// Check if sessionClient is nil before using it
+	if sc.sessionClient == nil {
+		sc.br.Log.Error().Msg("Session client is nil, cannot start session event subscription")
+		return
+	}
+
 	stream, err := sc.sessionClient.SubscribeToSessionEvents(ctx, &steamapi.SessionSubscriptionRequest{})
 	if err != nil {
 		sc.br.Log.Error().Err(err).Msg("Failed to start session event subscription")

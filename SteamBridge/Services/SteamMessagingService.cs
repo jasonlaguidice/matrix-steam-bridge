@@ -1,6 +1,8 @@
 using Grpc.Core;
 using SteamBridge.Proto;
 using Microsoft.Extensions.Logging;
+using SteamKit2;
+using SteamKit2.Internal;
 
 namespace SteamBridge.Services;
 
@@ -10,17 +12,20 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
     private readonly SteamMessagingManager _messagingManager;
     private readonly SteamImageService _imageService;
     private readonly SteamUserInformationService _userInfoService;
+    private readonly SteamClientManager _steamClientManager;
 
     public SteamMessagingService(
         ILogger<SteamMessagingService> logger,
         SteamMessagingManager messagingManager,
         SteamImageService imageService,
-        SteamUserInformationService userInfoService)
+        SteamUserInformationService userInfoService,
+        SteamClientManager steamClientManager)
     {
         _logger = logger;
         _messagingManager = messagingManager;
         _imageService = imageService;
         _userInfoService = userInfoService;
+        _steamClientManager = steamClientManager;
     }
 
     public override async Task<SendMessageResponse> SendMessage(
@@ -355,6 +360,139 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
             Services.MessageType.Emote => Proto.MessageType.Emote,
             Services.MessageType.InviteGame => Proto.MessageType.InviteGame,
             _ => Proto.MessageType.ChatMessage
+        };
+    }
+
+    public override async Task<ChatMessageHistoryResponse> GetChatMessageHistory(
+        ChatMessageHistoryRequest request, 
+        ServerCallContext context)
+    {
+        try
+        {
+            _logger.LogDebug("Getting chat message history for chat group {ChatGroupId}, chat {ChatId}", 
+                request.ChatGroupId, request.ChatId);
+
+            var steamUnified = _steamClientManager.SteamUnifiedMessages;
+            if (steamUnified == null)
+            {
+                _logger.LogError("SteamUnifiedMessages is not available");
+                return new ChatMessageHistoryResponse
+                {
+                    Success = false,
+                    ErrorMessage = "Steam client not connected"
+                };
+            }
+
+            // Create the Steam API request
+            var historyRequest = new CChatRoom_GetMessageHistory_Request
+            {
+                chat_group_id = request.ChatGroupId,
+                chat_id = request.ChatId,
+                max_count = Math.Min(request.MaxCount, 100) // Limit to reasonable batch size
+            };
+
+            // Set pagination cursor if provided
+            if (request.LastTime > 0 && request.LastOrdinal > 0)
+            {
+                if (request.Forward)
+                {
+                    historyRequest.start_time = request.LastTime;
+                    historyRequest.start_ordinal = request.LastOrdinal;
+                }
+                else
+                {
+                    historyRequest.last_time = request.LastTime;
+                    historyRequest.last_ordinal = request.LastOrdinal;
+                }
+            }
+
+            _logger.LogDebug("Sending GetMessageHistory request: GroupId={GroupId}, ChatId={ChatId}, MaxCount={MaxCount}, Forward={Forward}", 
+                historyRequest.chat_group_id, historyRequest.chat_id, historyRequest.max_count, request.Forward);
+
+            // Call Steam API
+            var job = steamUnified.SendMessage<CChatRoom_GetMessageHistory_Request, CChatRoom_GetMessageHistory_Response>(
+                "ChatRoom.GetMessageHistory#1", historyRequest);
+
+            var result = await job.ToTask();
+            if (result == null || result.Result != EResult.OK)
+            {
+                _logger.LogWarning("Failed to get message history: result={Result}", result?.Result);
+                return new ChatMessageHistoryResponse
+                {
+                    Success = false,
+                    ErrorMessage = $"Steam API returned error: {result?.Result}"
+                };
+            }
+
+            var response = result.Body;
+            _logger.LogDebug("Received {MessageCount} messages from Steam API", response.messages?.Count ?? 0);
+
+            var historyResponse = new ChatMessageHistoryResponse
+            {
+                Success = true,
+                HasMore = response.more_available,
+                Messages = { }
+            };
+
+            if (response.messages != null)
+            {
+                foreach (var msg in response.messages)
+                {
+                    var historyMessage = new ChatHistoryMessage
+                    {
+                        SenderSteamId = msg.sender,
+                        Timestamp = msg.server_timestamp,
+                        Ordinal = msg.ordinal,
+                        MessageContent = msg.message ?? string.Empty,
+                        MessageType = Proto.MessageType.ChatMessage // Default to chat message for now
+                    };
+
+                    // Parse image messages if present
+                    var (imageUrl, caption) = ParseImageMessage(historyMessage.MessageContent);
+                    if (!string.IsNullOrEmpty(imageUrl))
+                    {
+                        historyMessage.ImageUrl = imageUrl;
+                        historyMessage.MessageContent = caption;
+                    }
+
+                    historyResponse.Messages.Add(historyMessage);
+                }
+
+                // Set next cursor for pagination
+                if (response.messages.Count > 0)
+                {
+                    var lastMessage = response.messages.Last();
+                    historyResponse.NextTime = lastMessage.server_timestamp;
+                    historyResponse.NextOrdinal = lastMessage.ordinal;
+                }
+            }
+
+            _logger.LogDebug("Returning {MessageCount} processed messages, HasMore={HasMore}", 
+                historyResponse.Messages.Count, historyResponse.HasMore);
+
+            return historyResponse;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving chat message history");
+            return new ChatMessageHistoryResponse
+            {
+                Success = false,
+                ErrorMessage = $"Failed to retrieve message history: {ex.Message}"
+            };
+        }
+    }
+
+    private static Proto.MessageType ConvertSteamMessageType(uint steamMessageType)
+    {
+        // Steam message type constants from SteamKit2
+        return steamMessageType switch
+        {
+            1 => Proto.MessageType.ChatMessage, // k_EChatEntryType_ChatMsg
+            2 => Proto.MessageType.Typing,       // k_EChatEntryType_Typing
+            3 => Proto.MessageType.Emote,        // k_EChatEntryType_Emote
+            4 => Proto.MessageType.InviteGame,   // k_EChatEntryType_InviteGame
+            _ => Proto.MessageType.ChatMessage   // Default to chat message
         };
     }
 }

@@ -53,32 +53,41 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 	guardCode := input["guard_code"] // Optional SteamGuard code
 	emailCode := input["email_code"] // Optional email verification code
 	
-	if !hasUsername || !hasPassword {
-		return nil, fmt.Errorf("username and password are required")
-	}
-	
-	slp.Username = username
-	
-	// Use guard_code for both SteamGuard and email verification
-	// The SteamKit2 authenticator handles both scenarios
-	authCode := guardCode
-	if authCode == "" {
-		authCode = emailCode
-	}
-	
 	// Create timeout context for login attempt
 	loginCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
 	
-	// Attempt login with SteamBridge service
-	req := &steamapi.CredentialsLoginRequest{
-		Username:         username,
-		Password:         password,
-		GuardCode:        authCode,
-		RememberPassword: true,
-	}
+	var resp *steamapi.LoginResponse
+	var err error
 	
-	resp, err := slp.Main.authClient.LoginWithCredentials(loginCtx, req)
+	// Check if this is a 2FA continuation step (session ID exists, only codes provided)
+	if slp.SessionID != "" && (!hasUsername && !hasPassword) && (guardCode != "" || emailCode != "") {
+		// This is a 2FA continuation step - use the stored session
+		req := &steamapi.ContinueAuthRequest{
+			SessionId: slp.SessionID,
+			GuardCode: guardCode,
+			EmailCode: emailCode,
+		}
+		
+		resp, err = slp.Main.authClient.ContinueAuthSession(loginCtx, req)
+	} else {
+		// This is an initial login step
+		if !hasUsername || !hasPassword {
+			return nil, fmt.Errorf("username and password are required")
+		}
+		
+		slp.Username = username
+		
+		req := &steamapi.CredentialsLoginRequest{
+			Username:         username,
+			Password:         password,
+			GuardCode:        guardCode,
+			EmailCode:        emailCode,
+			RememberPassword: true,
+		}
+		
+		resp, err = slp.Main.authClient.LoginWithCredentials(loginCtx, req)
+	}
 	if err != nil {
 		// Check for context timeout
 		if loginCtx.Err() == context.DeadlineExceeded {
@@ -88,8 +97,13 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 	}
 	
 	if !resp.Success {
+		// Store session ID for continuation if provided
+		if resp.SessionId != "" {
+			slp.SessionID = resp.SessionId
+		}
+		
 		// Handle specific authentication requirements
-		if resp.RequiresGuard && authCode == "" {
+		if resp.RequiresGuard && guardCode == "" {
 			return &bridgev2.LoginStep{
 				Type:         bridgev2.LoginStepTypeUserInput,
 				StepID:       "guard_code",
@@ -107,7 +121,7 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 			}, nil
 		}
 		
-		if resp.RequiresEmailVerification && authCode == "" {
+		if resp.RequiresEmailVerification && emailCode == "" {
 			return &bridgev2.LoginStep{
 				Type:         bridgev2.LoginStepTypeUserInput,
 				StepID:       "email_code",
@@ -126,7 +140,7 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 		}
 		
 		// Handle incorrect codes
-		if resp.RequiresGuard && authCode != "" {
+		if resp.RequiresGuard && guardCode != "" {
 			return &bridgev2.LoginStep{
 				Type:         bridgev2.LoginStepTypeUserInput,
 				StepID:       "guard_code",
@@ -144,7 +158,7 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 			}, nil
 		}
 		
-		if resp.RequiresEmailVerification && authCode != "" {
+		if resp.RequiresEmailVerification && emailCode != "" {
 			return &bridgev2.LoginStep{
 				Type:         bridgev2.LoginStepTypeUserInput,
 				StepID:       "email_code",

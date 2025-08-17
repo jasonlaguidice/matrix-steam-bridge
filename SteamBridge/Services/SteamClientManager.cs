@@ -12,6 +12,7 @@ public class SteamClientManager : IDisposable
     private readonly CallbackManager _callbackManager;
     private readonly SteamUser _steamUser;
     private readonly SteamFriends _steamFriends;
+    private readonly SteamUnifiedMessages _steamUnifiedMessages;
     
     private readonly CancellationTokenSource _cancellationTokenSource;
     private readonly Task _callbackTask;
@@ -35,6 +36,7 @@ public class SteamClientManager : IDisposable
     public SteamUser SteamUser => _steamUser;
     public SteamFriends SteamFriends => _steamFriends;
     public SteamClient SteamClient => _steamClient;
+    public SteamUnifiedMessages SteamUnifiedMessages => _steamUnifiedMessages;
 
     public SteamClientManager(ILogger<SteamClientManager> logger)
     {
@@ -44,6 +46,7 @@ public class SteamClientManager : IDisposable
         
         _steamUser = _steamClient.GetHandler<SteamUser>()!;
         _steamFriends = _steamClient.GetHandler<SteamFriends>()!;
+        _steamUnifiedMessages = _steamClient.GetHandler<SteamUnifiedMessages>()!;
         
         _cancellationTokenSource = new CancellationTokenSource();
         

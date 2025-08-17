@@ -29,7 +29,8 @@ public class SteamAuthService : Proto.SteamAuthService.SteamAuthServiceBase
                 request.Username,
                 request.Password,
                 string.IsNullOrEmpty(request.GuardCode) ? null : request.GuardCode,
-                request.RememberPassword);
+                request.RememberPassword,
+                string.IsNullOrEmpty(request.EmailCode) ? null : request.EmailCode);
 
             var response = new LoginResponse
             {
@@ -38,7 +39,8 @@ public class SteamAuthService : Proto.SteamAuthService.SteamAuthServiceBase
                 AccessToken = result.AccessToken ?? string.Empty,
                 RefreshToken = result.RefreshToken ?? string.Empty,
                 RequiresGuard = result.RequiresGuard,
-                RequiresEmailVerification = result.RequiresEmailVerification
+                RequiresEmailVerification = result.RequiresEmailVerification,
+                SessionId = result.SessionId ?? string.Empty
             };
 
             if (result.UserInfo != null)
@@ -120,6 +122,49 @@ public class SteamAuthService : Proto.SteamAuthService.SteamAuthServiceBase
             {
                 State = AuthStatusResponse.Types.AuthState.Failed,
                 ErrorMessage = $"Internal error: {ex.Message}"
+            };
+        }
+    }
+
+    public override async Task<LoginResponse> ContinueAuthSession(
+        ContinueAuthRequest request, 
+        ServerCallContext context)
+    {
+        _logger.LogInformation("Received auth session continuation request for session: {SessionId}", request.SessionId);
+
+        try
+        {
+            var result = await _authService.ContinueAuthSessionAsync(
+                request.SessionId,
+                request.GuardCode,
+                request.EmailCode);
+
+            var response = new LoginResponse
+            {
+                Success = result.Success,
+                ErrorMessage = result.ErrorMessage ?? string.Empty,
+                AccessToken = result.AccessToken ?? string.Empty,
+                RefreshToken = result.RefreshToken ?? string.Empty,
+                RequiresGuard = result.RequiresGuard,
+                RequiresEmailVerification = result.RequiresEmailVerification,
+                SessionId = request.SessionId
+            };
+
+            if (result.UserInfo != null)
+            {
+                response.UserInfo = MapToProtoUserInfo(result.UserInfo);
+            }
+
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing auth session continuation");
+            return new LoginResponse
+            {
+                Success = false,
+                ErrorMessage = $"Internal error: {ex.Message}",
+                SessionId = request.SessionId
             };
         }
     }

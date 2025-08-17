@@ -8,7 +8,9 @@ cd "$(dirname "$0")"
 
 echo "Generating C# protobuf files..."
 cd SteamBridge
-protoc --csharp_out=. Proto/steam_bridge.proto
+# Clean old generated protobuf files only (not hand-written .cs files)
+rm -f *Bridge.cs *BridgeGrpc.cs
+rm -rf obj bin
 cd ..
 
 echo "Generating Go protobuf files..."

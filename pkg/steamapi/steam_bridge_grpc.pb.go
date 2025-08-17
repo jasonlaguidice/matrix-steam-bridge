@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	SteamAuthService_LoginWithCredentials_FullMethodName     = "/steambridge.SteamAuthService/LoginWithCredentials"
+	SteamAuthService_ContinueAuthSession_FullMethodName      = "/steambridge.SteamAuthService/ContinueAuthSession"
 	SteamAuthService_LoginWithQR_FullMethodName              = "/steambridge.SteamAuthService/LoginWithQR"
 	SteamAuthService_GetAuthStatus_FullMethodName            = "/steambridge.SteamAuthService/GetAuthStatus"
 	SteamAuthService_ReAuthenticateWithTokens_FullMethodName = "/steambridge.SteamAuthService/ReAuthenticateWithTokens"
@@ -33,6 +34,7 @@ const (
 // Authentication Service
 type SteamAuthServiceClient interface {
 	LoginWithCredentials(ctx context.Context, in *CredentialsLoginRequest, opts ...grpc.CallOption) (*LoginResponse, error)
+	ContinueAuthSession(ctx context.Context, in *ContinueAuthRequest, opts ...grpc.CallOption) (*LoginResponse, error)
 	LoginWithQR(ctx context.Context, in *QRLoginRequest, opts ...grpc.CallOption) (*QRLoginResponse, error)
 	GetAuthStatus(ctx context.Context, in *AuthStatusRequest, opts ...grpc.CallOption) (*AuthStatusResponse, error)
 	ReAuthenticateWithTokens(ctx context.Context, in *TokenReAuthRequest, opts ...grpc.CallOption) (*TokenReAuthResponse, error)
@@ -51,6 +53,16 @@ func (c *steamAuthServiceClient) LoginWithCredentials(ctx context.Context, in *C
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(LoginResponse)
 	err := c.cc.Invoke(ctx, SteamAuthService_LoginWithCredentials_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *steamAuthServiceClient) ContinueAuthSession(ctx context.Context, in *ContinueAuthRequest, opts ...grpc.CallOption) (*LoginResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(LoginResponse)
+	err := c.cc.Invoke(ctx, SteamAuthService_ContinueAuthSession_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -104,6 +116,7 @@ func (c *steamAuthServiceClient) Logout(ctx context.Context, in *LogoutRequest, 
 // Authentication Service
 type SteamAuthServiceServer interface {
 	LoginWithCredentials(context.Context, *CredentialsLoginRequest) (*LoginResponse, error)
+	ContinueAuthSession(context.Context, *ContinueAuthRequest) (*LoginResponse, error)
 	LoginWithQR(context.Context, *QRLoginRequest) (*QRLoginResponse, error)
 	GetAuthStatus(context.Context, *AuthStatusRequest) (*AuthStatusResponse, error)
 	ReAuthenticateWithTokens(context.Context, *TokenReAuthRequest) (*TokenReAuthResponse, error)
@@ -120,6 +133,9 @@ type UnimplementedSteamAuthServiceServer struct{}
 
 func (UnimplementedSteamAuthServiceServer) LoginWithCredentials(context.Context, *CredentialsLoginRequest) (*LoginResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LoginWithCredentials not implemented")
+}
+func (UnimplementedSteamAuthServiceServer) ContinueAuthSession(context.Context, *ContinueAuthRequest) (*LoginResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ContinueAuthSession not implemented")
 }
 func (UnimplementedSteamAuthServiceServer) LoginWithQR(context.Context, *QRLoginRequest) (*QRLoginResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method LoginWithQR not implemented")
@@ -168,6 +184,24 @@ func _SteamAuthService_LoginWithCredentials_Handler(srv interface{}, ctx context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(SteamAuthServiceServer).LoginWithCredentials(ctx, req.(*CredentialsLoginRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SteamAuthService_ContinueAuthSession_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ContinueAuthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SteamAuthServiceServer).ContinueAuthSession(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SteamAuthService_ContinueAuthSession_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SteamAuthServiceServer).ContinueAuthSession(ctx, req.(*ContinueAuthRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -254,6 +288,10 @@ var SteamAuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "LoginWithCredentials",
 			Handler:    _SteamAuthService_LoginWithCredentials_Handler,
+		},
+		{
+			MethodName: "ContinueAuthSession",
+			Handler:    _SteamAuthService_ContinueAuthSession_Handler,
 		},
 		{
 			MethodName: "LoginWithQR",
@@ -503,6 +541,7 @@ const (
 	SteamMessagingService_UploadImageToSteam_FullMethodName     = "/steambridge.SteamMessagingService/UploadImageToSteam"
 	SteamMessagingService_DownloadImageFromSteam_FullMethodName = "/steambridge.SteamMessagingService/DownloadImageFromSteam"
 	SteamMessagingService_GetUserAvatarData_FullMethodName      = "/steambridge.SteamMessagingService/GetUserAvatarData"
+	SteamMessagingService_GetChatMessageHistory_FullMethodName  = "/steambridge.SteamMessagingService/GetChatMessageHistory"
 )
 
 // SteamMessagingServiceClient is the client API for SteamMessagingService service.
@@ -517,6 +556,7 @@ type SteamMessagingServiceClient interface {
 	UploadImageToSteam(ctx context.Context, in *UploadImageRequest, opts ...grpc.CallOption) (*UploadImageResponse, error)
 	DownloadImageFromSteam(ctx context.Context, in *DownloadImageRequest, opts ...grpc.CallOption) (*DownloadImageResponse, error)
 	GetUserAvatarData(ctx context.Context, in *GetUserAvatarDataRequest, opts ...grpc.CallOption) (*GetUserAvatarDataResponse, error)
+	GetChatMessageHistory(ctx context.Context, in *ChatMessageHistoryRequest, opts ...grpc.CallOption) (*ChatMessageHistoryResponse, error)
 }
 
 type steamMessagingServiceClient struct {
@@ -596,6 +636,16 @@ func (c *steamMessagingServiceClient) GetUserAvatarData(ctx context.Context, in 
 	return out, nil
 }
 
+func (c *steamMessagingServiceClient) GetChatMessageHistory(ctx context.Context, in *ChatMessageHistoryRequest, opts ...grpc.CallOption) (*ChatMessageHistoryResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ChatMessageHistoryResponse)
+	err := c.cc.Invoke(ctx, SteamMessagingService_GetChatMessageHistory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SteamMessagingServiceServer is the server API for SteamMessagingService service.
 // All implementations must embed UnimplementedSteamMessagingServiceServer
 // for forward compatibility.
@@ -608,6 +658,7 @@ type SteamMessagingServiceServer interface {
 	UploadImageToSteam(context.Context, *UploadImageRequest) (*UploadImageResponse, error)
 	DownloadImageFromSteam(context.Context, *DownloadImageRequest) (*DownloadImageResponse, error)
 	GetUserAvatarData(context.Context, *GetUserAvatarDataRequest) (*GetUserAvatarDataResponse, error)
+	GetChatMessageHistory(context.Context, *ChatMessageHistoryRequest) (*ChatMessageHistoryResponse, error)
 	mustEmbedUnimplementedSteamMessagingServiceServer()
 }
 
@@ -635,6 +686,9 @@ func (UnimplementedSteamMessagingServiceServer) DownloadImageFromSteam(context.C
 }
 func (UnimplementedSteamMessagingServiceServer) GetUserAvatarData(context.Context, *GetUserAvatarDataRequest) (*GetUserAvatarDataResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetUserAvatarData not implemented")
+}
+func (UnimplementedSteamMessagingServiceServer) GetChatMessageHistory(context.Context, *ChatMessageHistoryRequest) (*ChatMessageHistoryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetChatMessageHistory not implemented")
 }
 func (UnimplementedSteamMessagingServiceServer) mustEmbedUnimplementedSteamMessagingServiceServer() {}
 func (UnimplementedSteamMessagingServiceServer) testEmbeddedByValue()                               {}
@@ -758,6 +812,24 @@ func _SteamMessagingService_GetUserAvatarData_Handler(srv interface{}, ctx conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SteamMessagingService_GetChatMessageHistory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ChatMessageHistoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SteamMessagingServiceServer).GetChatMessageHistory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SteamMessagingService_GetChatMessageHistory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SteamMessagingServiceServer).GetChatMessageHistory(ctx, req.(*ChatMessageHistoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SteamMessagingService_ServiceDesc is the grpc.ServiceDesc for SteamMessagingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -784,6 +856,10 @@ var SteamMessagingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetUserAvatarData",
 			Handler:    _SteamMessagingService_GetUserAvatarData_Handler,
+		},
+		{
+			MethodName: "GetChatMessageHistory",
+			Handler:    _SteamMessagingService_GetChatMessageHistory_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
