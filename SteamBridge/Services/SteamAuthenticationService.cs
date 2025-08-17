@@ -632,6 +632,7 @@ public class UserInfo
     public string PersonaName { get; set; } = string.Empty;
     public string ProfileUrl { get; set; } = string.Empty;
     public string AvatarUrl { get; set; } = string.Empty;
+    public string AvatarHash { get; set; } = string.Empty;
     public PersonaState Status { get; set; }
     public string CurrentGame { get; set; } = string.Empty;
 }

@@ -885,7 +885,7 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		if resp.UserInfo != nil {
 			meta.PersonaName = resp.UserInfo.PersonaName
 			meta.ProfileURL = resp.UserInfo.ProfileUrl
-			meta.AvatarHash = resp.UserInfo.AvatarUrl
+			meta.AvatarHash = resp.UserInfo.AvatarHash // Use hash instead of URL
 		}
 
 		meta.IsValid = true
@@ -1485,12 +1485,21 @@ func (sc *SteamClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 		// On API error, fall back to cached data if available
 		if ghostMeta.PersonaName != "" {
 			sc.br.Log.Warn().Err(err).Msg("Failed to fetch fresh user info, using cached data")
-			return &bridgev2.UserInfo{
+			userInfo := &bridgev2.UserInfo{
 				Identifiers: []string{fmt.Sprintf("steam:%d", ghostMeta.SteamID)},
 				Name:        ptr.Ptr(ghostMeta.PersonaName),
-				Avatar:      &bridgev2.Avatar{}, // TODO: implement avatar handling
 				IsBot:       ptr.Ptr(false),
-			}, nil
+			}
+			
+			// Add cached avatar if available
+			if ghostMeta.AvatarHash != "" {
+				userInfo.Avatar = &bridgev2.Avatar{
+					ID: networkid.AvatarID(ghostMeta.AvatarHash),
+					Get: sc.createAvatarDownloader(steamID),
+				}
+			}
+			
+			return userInfo, nil
 		}
 		return nil, fmt.Errorf("failed to get user info for Steam ID %d: %w", steamID, err)
 	}
@@ -1515,12 +1524,10 @@ func (sc *SteamClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 	}
 
 	// Check for avatar changes (hash comparison for efficiency)
-	if userInfo.AvatarUrl != "" {
-		// Extract hash from avatar URL for change detection
-		// Steam avatar URLs typically contain hashes
-		newAvatarHash := extractAvatarHash(userInfo.AvatarUrl)
-		if newAvatarHash != ghostMeta.AvatarHash {
-			ghostMeta.AvatarHash = newAvatarHash
+	if userInfo.AvatarHash != "" {
+		// Use the avatar hash from Steam API for change detection
+		if userInfo.AvatarHash != ghostMeta.AvatarHash {
+			ghostMeta.AvatarHash = userInfo.AvatarHash
 			ghostMeta.LastAvatarUpdate = time.Now()
 		}
 	}
@@ -1535,8 +1542,8 @@ func (sc *SteamClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 	// Handle avatar if present
 	if userInfo.AvatarUrl != "" {
 		userInfoResult.Avatar = &bridgev2.Avatar{
-			ID: networkid.AvatarID(userInfo.AvatarUrl),
-			// URL will be handled by the bridgev2 framework
+			ID: networkid.AvatarID(userInfo.AvatarHash), // Use hash as stable ID
+			Get: sc.createAvatarDownloader(userInfo.SteamId),
 		}
 	}
 
@@ -1544,6 +1551,31 @@ func (sc *SteamClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 	// presence data that should be handled through presence events, not user profile
 
 	return userInfoResult, nil
+}
+
+// createAvatarDownloader creates a function that downloads avatar data for the given Steam ID
+func (sc *SteamClient) createAvatarDownloader(steamID uint64) func(ctx context.Context) ([]byte, error) {
+	return func(ctx context.Context) ([]byte, error) {
+		resp, err := sc.msgClient.GetUserAvatarData(ctx, &steamapi.GetUserAvatarDataRequest{
+			SteamId: steamID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to fetch avatar data for Steam ID %d: %w", steamID, err)
+		}
+		
+		if !resp.Success {
+			return nil, fmt.Errorf("avatar fetch failed for Steam ID %d: %s", steamID, resp.ErrorMessage)
+		}
+		
+		// Return the image data if available
+		if len(resp.ImageData) > 0 {
+			return resp.ImageData, nil
+		}
+		
+		// If no image data but we have a URL, we could fallback to HTTP download
+		// For now, return an error to indicate no avatar data available
+		return nil, fmt.Errorf("no avatar image data available for Steam ID %d", steamID)
+	}
 }
 
 // extractAvatarHash extracts a hash from Steam avatar URL for change detection
@@ -2272,7 +2304,8 @@ func (sc *SteamClient) SearchUsers(ctx context.Context, query string) ([]*bridge
 		// Handle avatar if present
 		if friend.AvatarUrl != "" {
 			userInfo.Avatar = &bridgev2.Avatar{
-				ID: networkid.AvatarID(friend.AvatarUrl),
+				ID: networkid.AvatarID(friend.AvatarHash), // Use hash as stable ID
+				Get: sc.createAvatarDownloader(friend.SteamId),
 			}
 		}
 
@@ -2280,7 +2313,7 @@ func (sc *SteamClient) SearchUsers(ctx context.Context, query string) ([]*bridge
 		if ghostMeta, ok := ghost.Metadata.(*GhostMetadata); ok && ghostMeta != nil {
 			ghostMeta.SteamID = steamIDUint
 			ghostMeta.PersonaName = friend.PersonaName
-			ghostMeta.AvatarHash = extractAvatarHash(friend.AvatarUrl)
+			ghostMeta.AvatarHash = friend.AvatarHash // Use hash from API
 			ghostMeta.LastProfileUpdate = time.Now()
 			// Store relationship info if available
 			ghostMeta.Relationship = friend.Relationship.String()
@@ -2289,7 +2322,7 @@ func (sc *SteamClient) SearchUsers(ctx context.Context, query string) ([]*bridge
 			ghost.Metadata = &GhostMetadata{
 				SteamID:             steamIDUint,
 				PersonaName:         friend.PersonaName,
-				AvatarHash:          extractAvatarHash(friend.AvatarUrl),
+				AvatarHash:          friend.AvatarHash, // Use hash from API
 				LastProfileUpdate:   time.Now(),
 				Relationship:        friend.Relationship.String(),
 			}

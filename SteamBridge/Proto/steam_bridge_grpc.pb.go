@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             v3.21.12
-// source: Proto/steam_bridge.proto
+// source: SteamBridge/Proto/steam_bridge.proto
 
 package steamapi
 
@@ -273,7 +273,7 @@ var SteamAuthService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "Proto/steam_bridge.proto",
+	Metadata: "SteamBridge/Proto/steam_bridge.proto",
 }
 
 const (
@@ -493,7 +493,7 @@ var SteamUserService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "Proto/steam_bridge.proto",
+	Metadata: "SteamBridge/Proto/steam_bridge.proto",
 }
 
 const (
@@ -793,7 +793,7 @@ var SteamMessagingService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "Proto/steam_bridge.proto",
+	Metadata: "SteamBridge/Proto/steam_bridge.proto",
 }
 
 const (
@@ -902,5 +902,5 @@ var SteamSessionService_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "Proto/steam_bridge.proto",
+	Metadata: "SteamBridge/Proto/steam_bridge.proto",
 }

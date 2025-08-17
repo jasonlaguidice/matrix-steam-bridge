@@ -29,6 +29,7 @@ service SteamMessagingService {
   rpc SendTypingNotification(TypingNotificationRequest) returns (TypingNotificationResponse);
   rpc UploadImageToSteam(UploadImageRequest) returns (UploadImageResponse);
   rpc DownloadImageFromSteam(DownloadImageRequest) returns (DownloadImageResponse);
+  rpc GetUserAvatarData(GetUserAvatarDataRequest) returns (GetUserAvatarDataResponse);
 }
 
 // Session Management Service
@@ -120,8 +121,9 @@ message UserInfo {
   string persona_name = 3; // Display name
   string profile_url = 4;
   string avatar_url = 5;
-  PersonaState status = 6;
-  string current_game = 7;
+  string avatar_hash = 6; // Base64-encoded SHA-1 hash of avatar for change detection
+  PersonaState status = 7;
+  string current_game = 8;
 }
 
 message FriendsListRequest {
@@ -136,9 +138,10 @@ message Friend {
   uint64 steam_id = 1;
   string persona_name = 2;
   string avatar_url = 3;
-  PersonaState status = 4;
-  string current_game = 5;
-  FriendRelationship relationship = 6;
+  string avatar_hash = 4; // Base64-encoded SHA-1 hash of avatar for change detection
+  PersonaState status = 5;
+  string current_game = 6;
+  FriendRelationship relationship = 7;
 }
 
 message UserStatusRequest {
@@ -220,6 +223,20 @@ message DownloadImageResponse {
   string error_message = 2;
   bytes image_data = 3;
   string mime_type = 4;
+}
+
+// Avatar Messages
+message GetUserAvatarDataRequest {
+  uint64 steam_id = 1;
+}
+
+message GetUserAvatarDataResponse {
+  bool success = 1;
+  string error_message = 2;
+  string avatar_hash = 3; // Base64-encoded SHA-1 hash for change detection
+  string avatar_url = 4; // Avatar URL for fallback
+  bytes image_data = 5; // Avatar image data (empty if download failed)
+  string mime_type = 6; // Image MIME type
 }
 
 // Enums

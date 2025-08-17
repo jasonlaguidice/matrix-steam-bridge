@@ -44,6 +44,7 @@ public class SteamUserInformationService
 
         try
         {
+            var avatarHash = GetAvatarHash(targetSteamId);
             var userInfo = new UserInfo
             {
                 SteamId = targetSteamId.ConvertToUInt64(),
@@ -52,7 +53,8 @@ public class SteamUserInformationService
                 Status = MapPersonaState(steamFriends.GetFriendPersonaState(targetSteamId)),
                 CurrentGame = steamFriends.GetFriendGamePlayedName(targetSteamId) ?? string.Empty,
                 ProfileUrl = $"https://steamcommunity.com/profiles/{targetSteamId.ConvertToUInt64()}",
-                AvatarUrl = GetAvatarUrl(targetSteamId)
+                AvatarUrl = GetAvatarUrl(targetSteamId),
+                AvatarHash = avatarHash != null ? Convert.ToBase64String(avatarHash) : string.Empty
             };
 
             _logger.LogDebug("Retrieved user info for SteamID: {SteamID}", targetSteamId);
@@ -88,6 +90,7 @@ public class SteamUserInformationService
 
                 var relationship = steamFriends.GetFriendRelationship(friendSteamId);
                 
+                var avatarHash = GetAvatarHash(friendSteamId);
                 var friend = new Friend
                 {
                     SteamId = friendSteamId.ConvertToUInt64(),
@@ -95,7 +98,8 @@ public class SteamUserInformationService
                     Status = MapPersonaState(steamFriends.GetFriendPersonaState(friendSteamId)),
                     CurrentGame = steamFriends.GetFriendGamePlayedName(friendSteamId) ?? string.Empty,
                     Relationship = MapFriendRelationship(relationship),
-                    AvatarUrl = GetAvatarUrl(friendSteamId)
+                    AvatarUrl = GetAvatarUrl(friendSteamId),
+                    AvatarHash = avatarHash != null ? Convert.ToBase64String(avatarHash) : string.Empty
                 };
 
                 friends.Add(friend);
@@ -251,12 +255,45 @@ public class SteamUserInformationService
         };
     }
 
-    private static string GetAvatarUrl(SteamID steamId)
+    private string GetAvatarUrl(SteamID steamId)
     {
-        // Steam avatar URLs follow a pattern - this is a simplified version
-        // In a production implementation, you'd want to make actual Steam Web API calls
-        var steamId64 = steamId.ConvertToUInt64();
-        return $"https://avatars.steamstatic.com/{steamId64}.jpg";
+        try 
+        {
+            var steamFriends = _steamClientManager.SteamFriends;
+            var avatarHash = steamFriends.GetFriendAvatar(steamId);
+            
+            if (avatarHash != null && avatarHash.Length > 0)
+            {
+                // Convert hash bytes to hex string
+                var hashString = BitConverter.ToString(avatarHash).Replace("-", "").ToLowerInvariant();
+                return $"https://avatars.steamstatic.com/{hashString}_full.jpg";
+            }
+            
+            // Fallback to default avatar pattern if hash not available
+            _logger.LogDebug("No avatar hash found for Steam ID {SteamId}, using fallback", steamId);
+            var steamId64 = steamId.ConvertToUInt64();
+            return $"https://avatars.steamstatic.com/{steamId64}.jpg";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get avatar hash for Steam ID {SteamId}, using fallback", steamId);
+            var steamId64 = steamId.ConvertToUInt64();
+            return $"https://avatars.steamstatic.com/{steamId64}.jpg";
+        }
+    }
+
+    private byte[]? GetAvatarHash(SteamID steamId)
+    {
+        try 
+        {
+            var steamFriends = _steamClientManager.SteamFriends;
+            return steamFriends.GetFriendAvatar(steamId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to get avatar hash for Steam ID {SteamId}", steamId);
+            return null;
+        }
     }
 }
 
@@ -265,6 +302,7 @@ public class Friend
     public ulong SteamId { get; set; }
     public string PersonaName { get; set; } = string.Empty;
     public string AvatarUrl { get; set; } = string.Empty;
+    public string AvatarHash { get; set; } = string.Empty;
     public PersonaState Status { get; set; }
     public string CurrentGame { get; set; } = string.Empty;
     public FriendRelationship Relationship { get; set; }
