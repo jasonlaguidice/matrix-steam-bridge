@@ -1246,7 +1246,7 @@ func makeUserID(steamID uint64) networkid.UserID {
 }
 
 func makePortalID(steamID uint64) networkid.PortalID {
-	return networkid.PortalID(fmt.Sprintf("steam:%d", steamID))
+	return networkid.PortalID(fmt.Sprintf("%d", steamID))
 }
 
 func makeUserLoginID(steamID uint64) networkid.UserLoginID {
@@ -1266,9 +1266,10 @@ func parseSteamIDFromUserID(userID networkid.UserID) (uint64, error) {
 	return parseSteamID(string(userID))
 }
 
-// Parse Steam ID from PortalID
+// Parse Steam ID from PortalID  
 func parseSteamIDFromPortalID(portalID networkid.PortalID) (uint64, error) {
-	return parseSteamID(string(portalID))
+	// Portal IDs are now just the numeric Steam ID without prefix
+	return strconv.ParseUint(string(portalID), 10, 64)
 }
 
 // Identifier parsing and validation for Steam user search
