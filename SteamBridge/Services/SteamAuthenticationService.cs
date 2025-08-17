@@ -73,17 +73,19 @@ public class SteamAuthenticationService
 
             try
             {
-                // Use SteamKit2's built-in polling mechanism with timeout
-                var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                // Use SteamKit2's built-in polling mechanism without timeout
+                // SteamKit2 handles its own timeouts and will properly throw AuthenticationException
+                // when email verification or other 2FA is required
                 
                 try
                 {
-                    _logger.LogDebug("Starting authentication polling for user: {Username}", username);
+                    _logger.LogInformation("Starting authentication polling for user: {Username}", username);
                     
                     // PollingWaitForResultAsync handles all the polling logic internally
-                    var pollResult = await authSession.PollingWaitForResultAsync(cancellationTokenSource.Token);
+                    // Don't pass cancellation token - let SteamKit2 handle timeouts and 2FA detection
+                    var pollResult = await authSession.PollingWaitForResultAsync();
                     
-                    _logger.LogDebug("Authentication polling completed successfully for user: {Username}", username);
+                    _logger.LogInformation("Authentication polling completed successfully for user: {Username}", username);
 
                     // Log on with the access token, including username for SteamKit2 compatibility
                     _steamClientManager.LogOn(pollResult.AccessToken, pollResult.RefreshToken, username);
@@ -113,15 +115,26 @@ public class SteamAuthenticationService
                         UserInfo = await GetCurrentUserInfoAsync()
                     };
                 }
-                catch (OperationCanceledException)
+                catch (InvalidOperationException invalidOpEx) when (invalidOpEx.Message.Contains("email code"))
                 {
-                    _logger.LogWarning("Authentication polling timed out for user: {Username}", username);
-                    _activeAuthSessions.TryRemove(sessionId, out _);
-                    _sessionUsernames.TryRemove(sessionId, out _);
+                    _logger.LogInformation("Email verification required for user: {Username}, Exception: {Message}", username, invalidOpEx.Message);
                     return new CredentialsLoginResult
                     {
                         Success = false,
-                        ErrorMessage = "Authentication timed out"
+                        RequiresEmailVerification = true,
+                        ErrorMessage = "Email verification required",
+                        SessionId = sessionId
+                    };
+                }
+                catch (InvalidOperationException invalidOpEx) when (invalidOpEx.Message.Contains("device code"))
+                {
+                    _logger.LogInformation("SteamGuard verification required for user: {Username}, Exception: {Message}", username, invalidOpEx.Message);
+                    return new CredentialsLoginResult
+                    {
+                        Success = false,
+                        RequiresGuard = true,
+                        ErrorMessage = "SteamGuard authentication required",
+                        SessionId = sessionId
                     };
                 }
                 catch (AuthenticationException authEx)
@@ -137,7 +150,8 @@ public class SteamAuthenticationService
                             {
                                 Success = false,
                                 RequiresGuard = true,
-                                ErrorMessage = "SteamGuard authentication required"
+                                ErrorMessage = "SteamGuard authentication required",
+                                SessionId = sessionId  // Return session ID for continuation
                             };
                             
                         case EResult.InvalidLoginAuthCode:
@@ -145,7 +159,8 @@ public class SteamAuthenticationService
                             {
                                 Success = false,
                                 RequiresEmailVerification = true,
-                                ErrorMessage = "Email verification required"
+                                ErrorMessage = "Email verification required",
+                                SessionId = sessionId  // Return session ID for continuation
                             };
                             
                         case EResult.InvalidPassword:
@@ -200,7 +215,7 @@ public class SteamAuthenticationService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during credentials login for user: {Username}", username);
+            _logger.LogError(ex, "Error during credentials login for user: {Username}, Exception type: {ExceptionType}, Message: {Message}", username, ex.GetType().Name, ex.Message);
             return new CredentialsLoginResult
             {
                 Success = false,
