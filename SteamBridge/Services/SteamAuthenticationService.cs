@@ -70,6 +70,8 @@ public class SteamAuthenticationService
             var sessionId = Guid.NewGuid().ToString();
             _activeAuthSessions[sessionId] = authSession;
             _sessionUsernames[sessionId] = username;
+            
+            bool shouldCleanupSession = true; // Flag to control session cleanup
 
             try
             {
@@ -118,6 +120,7 @@ public class SteamAuthenticationService
                 catch (InvalidOperationException invalidOpEx) when (invalidOpEx.Message.Contains("email code"))
                 {
                     _logger.LogInformation("Email verification required for user: {Username}, Exception: {Message}", username, invalidOpEx.Message);
+                    shouldCleanupSession = false; // Preserve session for continuation
                     return new CredentialsLoginResult
                     {
                         Success = false,
@@ -129,6 +132,7 @@ public class SteamAuthenticationService
                 catch (InvalidOperationException invalidOpEx) when (invalidOpEx.Message.Contains("device code"))
                 {
                     _logger.LogInformation("SteamGuard verification required for user: {Username}, Exception: {Message}", username, invalidOpEx.Message);
+                    shouldCleanupSession = false; // Preserve session for continuation
                     return new CredentialsLoginResult
                     {
                         Success = false,
@@ -188,9 +192,12 @@ public class SteamAuthenticationService
             }
             finally
             {
-                // Always cleanup the session
-                _activeAuthSessions.TryRemove(sessionId, out _);
-                _sessionUsernames.TryRemove(sessionId, out _);
+                // Cleanup the session only if not needed for continuation
+                if (shouldCleanupSession)
+                {
+                    _activeAuthSessions.TryRemove(sessionId, out _);
+                    _sessionUsernames.TryRemove(sessionId, out _);
+                }
             }
         }
         catch (InvalidOperationException invalidOpEx) when (invalidOpEx.Message.Contains("SteamGuard"))
@@ -610,12 +617,31 @@ public class SteamAuthenticationService
                 username = ""; // Fallback to empty string if not found
             }
 
-            // Create a new authenticator with the provided codes
-            var authenticator = new BridgeAuthenticator(guardCode, emailCode);
-            
-            // Update the auth session's authenticator
-            // Note: SteamKit2 doesn't allow changing authenticators, so we need to handle this differently
-            // We'll use a timeout approach and let the existing authenticator provide the codes
+            // Update the existing authenticator with the provided codes
+            // The authSession still references the original BridgeAuthenticator
+            if (authSession.Authenticator is BridgeAuthenticator bridgeAuth)
+            {
+                if (!string.IsNullOrEmpty(guardCode))
+                {
+                    bridgeAuth.SetGuardCode(guardCode);
+                    _logger.LogDebug("Updated authenticator with guard code for session: {SessionId}", sessionId);
+                }
+                
+                if (!string.IsNullOrEmpty(emailCode))
+                {
+                    bridgeAuth.SetEmailCode(emailCode);
+                    _logger.LogDebug("Updated authenticator with email code for session: {SessionId}", sessionId);
+                }
+            }
+            else
+            {
+                _logger.LogWarning("Auth session authenticator is not a BridgeAuthenticator: {SessionId}", sessionId);
+                return new CredentialsLoginResult
+                {
+                    Success = false,
+                    ErrorMessage = "Invalid authenticator type for session continuation"
+                };
+            }
             
             try
             {
