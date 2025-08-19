@@ -236,7 +236,7 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		sc.br.Log.Info().Str("username", authUsername).Msg("Attempting re-authentication with stored tokens")
 
 		reAuthReq := &steamapi.TokenReAuthRequest{
-			AccessToken:  meta.AccessToken,  // Send tokens as stored 
+			AccessToken:  meta.AccessToken, // Send tokens as stored
 			RefreshToken: meta.RefreshToken,
 			Username:     authUsername,
 		}
@@ -318,7 +318,7 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 			withUserAction(status.UserActionRelogin),
 			withInfo(map[string]interface{}{
 				"verification_failed": true,
-				"session_type":       meta.SessionType,
+				"session_type":        meta.SessionType,
 			})))
 		return
 	}
@@ -452,6 +452,6 @@ func (sc *SteamClient) verifysteamAuthentication(ctx context.Context) (bool, err
 		Uint64("steam_id", resp.UserInfo.SteamId).
 		Str("persona_name", resp.UserInfo.PersonaName).
 		Msg("Steam authentication verification successful")
-	
+
 	return true, nil
 }

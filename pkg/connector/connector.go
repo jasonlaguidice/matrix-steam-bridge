@@ -26,6 +26,17 @@ import (
 	"go.shadowdrake.org/steam/pkg/steamapi"
 )
 
+//go:embed example-config.yaml
+var ExampleConfig string
+
+// Config contains the configuration for the Steam connector
+type Config struct {
+	Path           string `yaml:"steam_bridge_path"`
+	Address        string `yaml:"steam_bridge_address"`
+	AutoStart      bool   `yaml:"steam_bridge_auto_start"`
+	StartupTimeout int    `yaml:"steam_bridge_startup_timeout"`
+}
+
 // SteamConnector implements the NetworkConnector interface for Steam
 type SteamConnector struct {
 	br *bridgev2.Bridge
@@ -49,16 +60,75 @@ type SteamConnector struct {
 	log                zerolog.Logger
 }
 
-type Config struct {
-	Path           string `yaml:"steam_bridge_path"`
-	Address        string `yaml:"steam_bridge_address"`
-	AutoStart      bool   `yaml:"steam_bridge_auto_start"`
-	StartupTimeout int    `yaml:"steam_bridge_startup_timeout"`
+// SteamClient implements the NetworkAPI for Steam
+type SteamClient struct {
+	UserLogin     *bridgev2.UserLogin
+	authClient    steamapi.SteamAuthServiceClient
+	userClient    steamapi.SteamUserServiceClient
+	msgClient     steamapi.SteamMessagingServiceClient
+	sessionClient steamapi.SteamSessionServiceClient
+
+	br *bridgev2.Bridge
+
+	// Bridge state debouncing (following Signal bridge pattern)
+	disconnectDebounceTimer *time.Timer
+	disconnectDebounceMutex sync.Mutex
+
+	// Connection monitoring
+	connectionCtx    context.Context
+	connectionCancel context.CancelFunc
+	connectionMutex  sync.Mutex
+
+	// Connection state tracking
+	isConnecting bool
+	isConnected  bool
+	stateMutex   sync.RWMutex
+
+	// Message subscription tracking
+	messageCount    uint64
+	messageCountMux sync.RWMutex
 }
 
-//go:embed example-config.yaml
-var ExampleConfig string
+// SteamLoginPassword implements password-based login flow
+type SteamLoginPassword struct {
+	Main       *SteamConnector
+	User       *bridgev2.User
+	cancelFunc context.CancelFunc
+	// Store session info for 2FA continuation
+	SessionID string
+	Username  string // Store username for UserLogin creation
+}
 
+// SteamLoginQR implements QR code-based login flow
+type SteamLoginQR struct {
+	Main *SteamConnector
+	User *bridgev2.User
+
+	// QR login state management
+	cancelCtx  context.Context
+	cancelFunc context.CancelFunc
+
+	// Steam QR authentication data
+	ChallengeID  string
+	QRCodeData   string
+	PollInterval time.Duration
+	PollTimeout  time.Duration
+
+	// Matrix UI management
+	QRMessageID      id.EventID   // For redacting QR messages
+	StatusMessageIDs []id.EventID // For redacting status update messages
+}
+
+// Interface compliance checks
+var _ bridgev2.NetworkConnector = (*SteamConnector)(nil)
+var _ bridgev2.LoginProcess = (*SteamLoginPassword)(nil)
+var _ bridgev2.LoginProcess = (*SteamLoginQR)(nil)
+var _ bridgev2.NetworkAPI = (*SteamClient)(nil)
+var _ bridgev2.IdentifierResolvingNetworkAPI = (*SteamClient)(nil)
+var _ bridgev2.UserSearchingNetworkAPI = (*SteamClient)(nil)
+var _ bridgev2.BackfillingNetworkAPI = (*SteamClient)(nil)
+
+// upgradeConfig handles configuration upgrades
 func upgradeConfig(helper configupgrade.Helper) {
 	helper.Copy(configupgrade.Str, "steam_bridge_path")
 	helper.Copy(configupgrade.Str, "steam_bridge_address")
@@ -72,6 +142,228 @@ func (sc *SteamConnector) Init(bridge *bridgev2.Bridge) {
 	sc.log = log.With().Str("component", "steam_connector").Logger()
 	sc.log.Info().Msg("Initializing Steam connector")
 }
+
+// Start implements bridgev2.NetworkConnector.
+func (sc *SteamConnector) Start(ctx context.Context) error {
+	sc.log.Info().Msg("Starting Steam connector")
+
+	// Handle auto-start functionality
+	if sc.Config.AutoStart {
+		sc.log.Info().Msg("Auto-start is enabled, starting SteamBridge service")
+
+		// Start the Steam Bridge service
+		if err := sc.startSteamBridgeService(ctx); err != nil {
+			return fmt.Errorf("failed to start SteamBridge service: %w", err)
+		}
+
+		// Wait for the service to be ready
+		// Health check endpoint has been added to SteamBridge service at /health
+		if err := sc.waitForServiceReady(ctx); err != nil {
+			// If service failed to start, try to stop it to clean up
+			if stopErr := sc.stopSteamBridgeService(); stopErr != nil {
+				sc.log.Warn().Err(stopErr).Msg("Failed to stop SteamBridge service after startup failure")
+			}
+			return fmt.Errorf("SteamBridge service failed to become ready: %w", err)
+		}
+	} else {
+		sc.log.Info().Msg("Auto-start is disabled, assuming SteamBridge service is running externally")
+	}
+
+	// Use configured address for gRPC connection
+	address := sc.Config.Address
+	if address == "" {
+		address = "localhost:50051" // fallback to default
+		sc.log.Warn().Msg("No steam_bridge_address configured, using default localhost:50051")
+	}
+
+	sc.log.Info().Str("address", address).Msg("Establishing gRPC connection to SteamBridge service")
+
+	// Establish gRPC connection to SteamBridge service
+	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return fmt.Errorf("failed to connect to SteamBridge service at %s: %w", address, err)
+	}
+
+	sc.steamConn = conn
+	sc.authClient = steamapi.NewSteamAuthServiceClient(conn)
+	sc.userClient = steamapi.NewSteamUserServiceClient(conn)
+	sc.msgClient = steamapi.NewSteamMessagingServiceClient(conn)
+	sc.sessionClient = steamapi.NewSteamSessionServiceClient(conn)
+	sc.healthClient = grpc_health_v1.NewHealthClient(conn)
+
+	sc.log.Info().Str("address", address).Msg("Successfully connected to SteamBridge service")
+	return nil
+}
+
+// Stop implements graceful shutdown of the SteamConnector
+func (sc *SteamConnector) Stop() error {
+	sc.log.Info().Msg("Stopping Steam connector")
+
+	// Close gRPC connection if it exists
+	if sc.steamConn != nil {
+		sc.log.Info().Msg("Closing gRPC connection to SteamBridge service")
+		if err := sc.steamConn.Close(); err != nil {
+			sc.log.Error().Err(err).Msg("Failed to close gRPC connection")
+			// Don't return error here, continue with cleanup
+		}
+		sc.steamConn = nil
+		sc.authClient = nil
+		sc.userClient = nil
+		sc.msgClient = nil
+		sc.sessionClient = nil
+		sc.healthClient = nil
+	}
+
+	// Stop the managed SteamBridge service if we started it
+	if err := sc.stopSteamBridgeService(); err != nil {
+		sc.log.Error().Err(err).Msg("Failed to stop SteamBridge service")
+		return fmt.Errorf("failed to stop SteamBridge service: %w", err)
+	}
+
+	sc.log.Info().Msg("Steam connector stopped successfully")
+	return nil
+}
+
+// GetCapabilities implements bridgev2.NetworkConnector.
+func (sc *SteamConnector) GetCapabilities() *bridgev2.NetworkGeneralCapabilities {
+	return &bridgev2.NetworkGeneralCapabilities{
+		DisappearingMessages: false,
+		AggressiveUpdateInfo: true,
+	}
+}
+
+// GetBridgeInfoVersion implements bridgev2.NetworkConnector.
+func (sc *SteamConnector) GetBridgeInfoVersion() (info int, capabilities int) {
+	return 1, 1
+}
+
+// GetName implements bridgev2.NetworkConnector.
+func (sc *SteamConnector) GetName() bridgev2.BridgeName {
+	return bridgev2.BridgeName{
+		DisplayName:      "Steam",
+		NetworkURL:       "https://store.steampowered.com",
+		NetworkIcon:      "mxc://shadowdrake.org/EeNKAcrmByNubPwoyceQsBaN",
+		NetworkID:        "steam",
+		BeeperBridgeType: "go.shadowdrake.org/steam",
+		DefaultPort:      50051,
+	}
+}
+
+// GetConfig implements bridgev2.NetworkConnector.
+func (sc *SteamConnector) GetConfig() (example string, data any, upgrader configupgrade.Upgrader) {
+	return ExampleConfig, &sc.Config, configupgrade.SimpleUpgrader(upgradeConfig)
+}
+
+// GetDBMetaTypes implements bridgev2.NetworkConnector.
+func (sc *SteamConnector) GetDBMetaTypes() database.MetaTypes {
+	return database.MetaTypes{
+		Portal: func() any {
+			return &PortalMetadata{}
+		},
+		Ghost: func() any {
+			return &GhostMetadata{}
+		},
+		Message: func() any {
+			return &MessageMetadata{}
+		},
+		UserLogin: func() any {
+			return &UserLoginMetadata{}
+		},
+	}
+}
+
+// GetLoginFlows implements bridgev2.NetworkConnector.
+func (sc *SteamConnector) GetLoginFlows() []bridgev2.LoginFlow {
+	sc.br.Log.Info().Msg("GetLoginFlows() - Sending available login flows")
+
+	return []bridgev2.LoginFlow{
+		{
+			Name:        "Username/Password",
+			Description: "Log in with your Steam username and password",
+			ID:          "password",
+		},
+		{
+			Name:        "QR Code",
+			Description: "Log in by scanning a QR code with your Steam mobile app",
+			ID:          "qr",
+		},
+	}
+}
+
+// CreateLogin implements bridgev2.NetworkConnector.
+func (sc *SteamConnector) CreateLogin(ctx context.Context, user *bridgev2.User, flowID string) (bridgev2.LoginProcess, error) {
+	sc.br.Log.Info().Msg("CreateLogin() - Initiating login flow")
+
+	switch flowID {
+	case "password":
+		return &SteamLoginPassword{
+			Main:       sc,
+			User:       user,
+			cancelFunc: func() {}, // Password login uses per-request timeouts instead of persistent cancellation
+		}, nil
+	case "qr":
+		ctx, cancel := context.WithCancel(context.Background())
+		return &SteamLoginQR{
+			Main:       sc,
+			User:       user,
+			cancelCtx:  ctx,
+			cancelFunc: cancel,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown login flow ID: %s", flowID)
+	}
+}
+
+// LoadUserLogin implements bridgev2.NetworkConnector.
+func (sc *SteamConnector) LoadUserLogin(ctx context.Context, login *bridgev2.UserLogin) error {
+	sc.br.Log.Info().Msg("LoadUserLogin - connecting to service")
+
+	meta := login.Metadata.(*UserLoginMetadata)
+	if meta == nil {
+		return fmt.Errorf("no user login metadata found")
+	}
+
+	// Create Steam client with the loaded session data
+	login.Client = &SteamClient{
+		UserLogin:     login,
+		authClient:    sc.authClient,
+		userClient:    sc.userClient,
+		msgClient:     sc.msgClient,
+		sessionClient: sc.sessionClient,
+		br:            sc.br,
+	}
+
+	// Auto-connect the login - mautrix-go bridgev2 doesn't automatically call Connect()
+	// after login, so we need to do this ourselves, following the pattern used by
+	// other mautrix bridges like Signal and WhatsApp
+	if client, ok := login.Client.(*SteamClient); ok {
+		// Check if already connecting/connected to prevent duplicate connections
+		client.stateMutex.RLock()
+		alreadyConnecting := client.isConnecting || client.isConnected
+		client.stateMutex.RUnlock()
+
+		if !alreadyConnecting {
+			go client.Connect(ctx)
+		} else {
+			sc.br.Log.Debug().Msg("Skipping auto-connect - client already connecting/connected")
+		}
+	} else {
+		sc.br.Log.Error().Msg("Failed to cast client to SteamClient for auto-connect")
+	}
+
+	return nil
+}
+
+// GetCapabilities implements bridgev2.NetworkAPI.
+func (sc *SteamClient) GetCapabilities(ctx context.Context, portal *bridgev2.Portal) *event.RoomFeatures {
+	sc.br.Log.Info().Msg("Sending room capabilities")
+
+	return &event.RoomFeatures{
+		MaxTextLength: 4096,
+	}
+}
+
+// Steam service process management functions
 
 // startSteamBridgeService launches the SteamBridge service using the compiled executable
 func (sc *SteamConnector) startSteamBridgeService(ctx context.Context) error {
@@ -308,300 +600,6 @@ func (sc *SteamConnector) stopSteamBridgeService() error {
 	return nil
 }
 
-// Start implements bridgev2.NetworkConnector.
-func (sc *SteamConnector) Start(ctx context.Context) error {
-	sc.log.Info().Msg("Starting Steam connector")
-
-	// Handle auto-start functionality
-	if sc.Config.AutoStart {
-		sc.log.Info().Msg("Auto-start is enabled, starting SteamBridge service")
-
-		// Start the Steam Bridge service
-		if err := sc.startSteamBridgeService(ctx); err != nil {
-			return fmt.Errorf("failed to start SteamBridge service: %w", err)
-		}
-
-		// Wait for the service to be ready
-		// Health check endpoint has been added to SteamBridge service at /health
-		if err := sc.waitForServiceReady(ctx); err != nil {
-			// If service failed to start, try to stop it to clean up
-			if stopErr := sc.stopSteamBridgeService(); stopErr != nil {
-				sc.log.Warn().Err(stopErr).Msg("Failed to stop SteamBridge service after startup failure")
-			}
-			return fmt.Errorf("SteamBridge service failed to become ready: %w", err)
-		}
-	} else {
-		sc.log.Info().Msg("Auto-start is disabled, assuming SteamBridge service is running externally")
-	}
-
-	// Use configured address for gRPC connection
-	address := sc.Config.Address
-	if address == "" {
-		address = "localhost:50051" // fallback to default
-		sc.log.Warn().Msg("No steam_bridge_address configured, using default localhost:50051")
-	}
-
-	sc.log.Info().Str("address", address).Msg("Establishing gRPC connection to SteamBridge service")
-
-	// Establish gRPC connection to SteamBridge service
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
-	if err != nil {
-		return fmt.Errorf("failed to connect to SteamBridge service at %s: %w", address, err)
-	}
-
-	sc.steamConn = conn
-	sc.authClient = steamapi.NewSteamAuthServiceClient(conn)
-	sc.userClient = steamapi.NewSteamUserServiceClient(conn)
-	sc.msgClient = steamapi.NewSteamMessagingServiceClient(conn)
-	sc.sessionClient = steamapi.NewSteamSessionServiceClient(conn)
-	sc.healthClient = grpc_health_v1.NewHealthClient(conn)
-
-	sc.log.Info().Str("address", address).Msg("Successfully connected to SteamBridge service")
-	return nil
-}
-
-// Stop implements graceful shutdown of the SteamConnector
-func (sc *SteamConnector) Stop() error {
-	sc.log.Info().Msg("Stopping Steam connector")
-
-	// Close gRPC connection if it exists
-	if sc.steamConn != nil {
-		sc.log.Info().Msg("Closing gRPC connection to SteamBridge service")
-		if err := sc.steamConn.Close(); err != nil {
-			sc.log.Error().Err(err).Msg("Failed to close gRPC connection")
-			// Don't return error here, continue with cleanup
-		}
-		sc.steamConn = nil
-		sc.authClient = nil
-		sc.userClient = nil
-		sc.msgClient = nil
-		sc.sessionClient = nil
-		sc.healthClient = nil
-	}
-
-	// Stop the managed SteamBridge service if we started it
-	if err := sc.stopSteamBridgeService(); err != nil {
-		sc.log.Error().Err(err).Msg("Failed to stop SteamBridge service")
-		return fmt.Errorf("failed to stop SteamBridge service: %w", err)
-	}
-
-	sc.log.Info().Msg("Steam connector stopped successfully")
-	return nil
-}
-
-// GetCapabilities implements bridgev2.NetworkConnector.
-func (sc *SteamConnector) GetCapabilities() *bridgev2.NetworkGeneralCapabilities {
-	return &bridgev2.NetworkGeneralCapabilities{
-		DisappearingMessages: false,
-		AggressiveUpdateInfo: true,
-	}
-}
-
-// GetBridgeInfoVersion implements bridgev2.NetworkConnector.
-func (sc *SteamConnector) GetBridgeInfoVersion() (info int, capabilities int) {
-	return 1, 1
-}
-
-// GetName implements bridgev2.NetworkConnector.
-func (sc *SteamConnector) GetName() bridgev2.BridgeName {
-	return bridgev2.BridgeName{
-		DisplayName:      "Steam",
-		NetworkURL:       "https://store.steampowered.com",
-		NetworkIcon:      "mxc://shadowdrake.org/EeNKAcrmByNubPwoyceQsBaN",
-		NetworkID:        "steam",
-		BeeperBridgeType: "go.shadowdrake.org/steam",
-		DefaultPort:      50051,
-	}
-}
-
-// GetConfig implements bridgev2.NetworkConnector.
-func (sc *SteamConnector) GetConfig() (example string, data any, upgrader configupgrade.Upgrader) {
-	return ExampleConfig, &sc.Config, configupgrade.SimpleUpgrader(upgradeConfig)
-}
-
-// GetDBMetaTypes implements bridgev2.NetworkConnector.
-func (sc *SteamConnector) GetDBMetaTypes() database.MetaTypes {
-	return database.MetaTypes{
-		Portal: func() any {
-			return &PortalMetadata{}
-		},
-		Ghost: func() any {
-			return &GhostMetadata{}
-		},
-		Message: func() any {
-			return &MessageMetadata{}
-		},
-		UserLogin: func() any {
-			return &UserLoginMetadata{}
-		},
-	}
-}
-
-// LoadUserLogin implements bridgev2.NetworkConnector.
-func (sc *SteamConnector) LoadUserLogin(ctx context.Context, login *bridgev2.UserLogin) error {
-	sc.br.Log.Info().Msg("LoadUserLogin - connecting to service")
-
-	meta := login.Metadata.(*UserLoginMetadata)
-	if meta == nil {
-		return fmt.Errorf("no user login metadata found")
-	}
-
-	// Create Steam client with the loaded session data
-	login.Client = &SteamClient{
-		UserLogin:     login,
-		authClient:    sc.authClient,
-		userClient:    sc.userClient,
-		msgClient:     sc.msgClient,
-		sessionClient: sc.sessionClient,
-		br:            sc.br,
-	}
-
-	// Auto-connect the login - mautrix-go bridgev2 doesn't automatically call Connect()
-	// after login, so we need to do this ourselves, following the pattern used by
-	// other mautrix bridges like Signal and WhatsApp
-	if client, ok := login.Client.(*SteamClient); ok {
-		// Check if already connecting/connected to prevent duplicate connections
-		client.stateMutex.RLock()
-		alreadyConnecting := client.isConnecting || client.isConnected
-		client.stateMutex.RUnlock()
-
-		if !alreadyConnecting {
-			go client.Connect(ctx)
-		} else {
-			sc.br.Log.Debug().Msg("Skipping auto-connect - client already connecting/connected")
-		}
-	} else {
-		sc.br.Log.Error().Msg("Failed to cast client to SteamClient for auto-connect")
-	}
-
-	return nil
-}
-
-// GetLoginFlows implements bridgev2.NetworkConnector.
-func (sc *SteamConnector) GetLoginFlows() []bridgev2.LoginFlow {
-	sc.br.Log.Info().Msg("GetLoginFlows() - Sending available login flows")
-
-	return []bridgev2.LoginFlow{
-		{
-			Name:        "Username/Password",
-			Description: "Log in with your Steam username and password",
-			ID:          "password",
-		},
-		{
-			Name:        "QR Code",
-			Description: "Log in by scanning a QR code with your Steam mobile app",
-			ID:          "qr",
-		},
-	}
-}
-
-// CreateLogin implements bridgev2.NetworkConnector.
-func (sc *SteamConnector) CreateLogin(ctx context.Context, user *bridgev2.User, flowID string) (bridgev2.LoginProcess, error) {
-	sc.br.Log.Info().Msg("CreateLogin() - Initiating login flow")
-
-	switch flowID {
-	case "password":
-		return &SteamLoginPassword{
-			Main:       sc,
-			User:       user,
-			cancelFunc: func() {}, // Password login uses per-request timeouts instead of persistent cancellation
-		}, nil
-	case "qr":
-		ctx, cancel := context.WithCancel(context.Background())
-		return &SteamLoginQR{
-			Main:       sc,
-			User:       user,
-			cancelCtx:  ctx,
-			cancelFunc: cancel,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unknown login flow ID: %s", flowID)
-	}
-}
-
-type SteamLoginPassword struct {
-	Main       *SteamConnector
-	User       *bridgev2.User
-	cancelFunc context.CancelFunc
-	// Store session info for 2FA continuation
-	SessionID string
-	Username  string // Store username for UserLogin creation
-}
-
-type SteamLoginQR struct {
-	Main *SteamConnector
-	User *bridgev2.User
-
-	// QR login state management
-	cancelCtx  context.Context
-	cancelFunc context.CancelFunc
-
-	// Steam QR authentication data
-	ChallengeID  string
-	QRCodeData   string
-	PollInterval time.Duration
-	PollTimeout  time.Duration
-
-	// Matrix UI management
-	QRMessageID      id.EventID   // For redacting QR messages
-	StatusMessageIDs []id.EventID // For redacting status update messages
-}
-
-// Implement the bridgev2.LoginProcess interface for password login
-var _ bridgev2.LoginProcess = (*SteamLoginPassword)(nil)
-var _ bridgev2.LoginProcess = (*SteamLoginQR)(nil)
-
-// Helper methods for comprehensive status reporting
-
-// buildBridgeState creates a properly configured BridgeState following Signal bridge patterns
-
-var _ bridgev2.NetworkConnector = (*SteamConnector)(nil)
-
-////////////////
-// NETWORKAPI //
-////////////////
-
-var _ bridgev2.IdentifierResolvingNetworkAPI = (*SteamClient)(nil)
-var _ bridgev2.UserSearchingNetworkAPI = (*SteamClient)(nil)
-var _ bridgev2.BackfillingNetworkAPI = (*SteamClient)(nil)
-
-type SteamClient struct {
-	UserLogin     *bridgev2.UserLogin
-	authClient    steamapi.SteamAuthServiceClient
-	userClient    steamapi.SteamUserServiceClient
-	msgClient     steamapi.SteamMessagingServiceClient
-	sessionClient steamapi.SteamSessionServiceClient
-
-	br *bridgev2.Bridge
-
-	// Bridge state debouncing (following Signal bridge pattern)
-	disconnectDebounceTimer *time.Timer
-	disconnectDebounceMutex sync.Mutex
-
-	// Connection monitoring
-	connectionCtx    context.Context
-	connectionCancel context.CancelFunc
-	connectionMutex  sync.Mutex
-
-	// Connection state tracking
-	isConnecting bool
-	isConnected  bool
-	stateMutex   sync.RWMutex
-
-	// Message subscription tracking
-	messageCount    uint64
-	messageCountMux sync.RWMutex
-}
-
-// GetCapabilities implements bridgev2.NetworkAPI.
-func (sc *SteamClient) GetCapabilities(ctx context.Context, portal *bridgev2.Portal) *event.RoomFeatures {
-	sc.br.Log.Info().Msg("Sending room capabilities")
-
-	return &event.RoomFeatures{
-		MaxTextLength: 4096,
-	}
-}
-
 // Steam ID conversion utilities
 func makeUserID(steamID uint64) networkid.UserID {
 	return networkid.UserID(fmt.Sprintf("%d", steamID))
@@ -620,32 +618,3 @@ func parseSteamIDFromPortalID(portalID networkid.PortalID) (uint64, error) {
 	// Portal IDs are now just the numeric Steam ID without prefix
 	return strconv.ParseUint(string(portalID), 10, 64)
 }
-
-// Identifier parsing and validation for Steam user search
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// Chat ID mapping utilities
-
-
-
-
-
-
-
-
-var _ bridgev2.NetworkAPI = (*SteamClient)(nil)

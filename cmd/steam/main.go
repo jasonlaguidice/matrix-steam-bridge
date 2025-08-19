@@ -1,8 +1,8 @@
 package main
 
 import (
-	"maunium.net/go/mautrix/bridgev2/matrix/mxmain"
 	"go.shadowdrake.org/steam/pkg/connector"
+	"maunium.net/go/mautrix/bridgev2/matrix/mxmain"
 )
 
 var (

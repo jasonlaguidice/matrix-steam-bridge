@@ -17,20 +17,20 @@ type PortalMetadata struct {
 type GhostMetadata struct {
 	// Core identifiers (persistent, rarely change)
 	SteamID uint64 `json:"steam_id,omitempty"`
-	
+
 	// Cached user profile data (for performance optimization)
-	AccountName  string `json:"account_name,omitempty"`  // Steam login name (rarely changes)
-	PersonaName  string `json:"persona_name,omitempty"`  // Display name (changes frequently)
-	ProfileURL   string `json:"profile_url,omitempty"`   // Steam community profile URL
-	AvatarHash   string `json:"avatar_hash,omitempty"`   // Avatar hash for change detection
-	
+	AccountName string `json:"account_name,omitempty"` // Steam login name (rarely changes)
+	PersonaName string `json:"persona_name,omitempty"` // Display name (changes frequently)
+	ProfileURL  string `json:"profile_url,omitempty"`  // Steam community profile URL
+	AvatarHash  string `json:"avatar_hash,omitempty"`  // Avatar hash for change detection
+
 	// Relationship context (affects portal behavior)
 	Relationship string `json:"relationship,omitempty"` // friend, blocked, etc.
-	
+
 	// Cache invalidation tracking
 	LastProfileUpdate time.Time `json:"last_profile_update"`
 	LastAvatarUpdate  time.Time `json:"last_avatar_update"`
-	
+
 	// NOTE: Status and CurrentGame should NOT be stored here as they're
 	// real-time presence data that should be fetched fresh via GetUserInfo()
 }
@@ -45,23 +45,23 @@ type MessageMetadata struct {
 	// Core message context - affects bridge behavior
 	SteamMessageType string `json:"steam_message_type,omitempty"` // CHAT_MESSAGE, TYPING, EMOTE, INVITE_GAME
 	IsEcho           bool   `json:"is_echo,omitempty"`            // Echo from another client (prevents loops)
-	
+
 	// Message ordering and pagination
-	SteamID   uint64    `json:"steam_id,omitempty"`   // Sender Steam ID
-	Ordinal   uint32    `json:"ordinal,omitempty"`    // Message ordinal for ordering
-	Timestamp time.Time `json:"timestamp,omitempty"`  // Message timestamp
-	
+	SteamID   uint64    `json:"steam_id,omitempty"`  // Sender Steam ID
+	Ordinal   uint32    `json:"ordinal,omitempty"`   // Message ordinal for ordering
+	Timestamp time.Time `json:"timestamp,omitempty"` // Message timestamp
+
 	// Game invite specific data (Steam-specific feature not available in Matrix)
 	GameInviteID string `json:"game_invite_id,omitempty"` // Steam game invite identifier
 	GameName     string `json:"game_name,omitempty"`      // Human-readable game name
 	GameAppID    uint32 `json:"game_app_id,omitempty"`    // Steam App ID for the game
-	
+
 	// Content type flags for processing
 	ContainsRichContent bool `json:"contains_rich_content,omitempty"` // Images, stickers, special formatting
-	
+
 	// Image data for Matrix→Steam messages
 	ImageURL string `json:"image_url,omitempty"` // Steam UGC or data URL for images
-	
+
 	// Future extension points
 	// EditTimestamp int64 `json:"edit_timestamp,omitempty"` // For when Steam adds message editing
 }
@@ -82,7 +82,7 @@ type UserLoginMetadata struct {
 	RefreshToken     string    `json:"refresh_token,omitempty"`     // Steam refresh token for renewal
 	GuardData        string    `json:"guard_data,omitempty"`        // Steam Guard machine auth data
 	SessionTimestamp int64     `json:"session_timestamp,omitempty"` // Unix timestamp of session creation
-	ExpiresAt        time.Time `json:"expires_at"`                  // When session expires  
+	ExpiresAt        time.Time `json:"expires_at"`                  // When session expires
 	LastValidated    time.Time `json:"last_validated"`              // Last successful validation
 
 	// Session state tracking

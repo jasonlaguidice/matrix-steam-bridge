@@ -52,14 +52,14 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 	password, hasPassword := input["password"]
 	guardCode := input["guard_code"] // Optional SteamGuard code
 	emailCode := input["email_code"] // Optional email verification code
-	
+
 	// Create timeout context for login attempt
 	loginCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
-	
+
 	var resp *steamapi.LoginResponse
 	var err error
-	
+
 	// Check if this is a 2FA continuation step (session ID exists, only codes provided)
 	if slp.SessionID != "" && (!hasUsername && !hasPassword) && (guardCode != "" || emailCode != "") {
 		// This is a 2FA continuation step - use the stored session
@@ -68,16 +68,16 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 			GuardCode: guardCode,
 			EmailCode: emailCode,
 		}
-		
+
 		resp, err = slp.Main.authClient.ContinueAuthSession(loginCtx, req)
 	} else {
 		// This is an initial login step
 		if !hasUsername || !hasPassword {
 			return nil, fmt.Errorf("username and password are required")
 		}
-		
+
 		slp.Username = username
-		
+
 		req := &steamapi.CredentialsLoginRequest{
 			Username:         username,
 			Password:         password,
@@ -85,7 +85,7 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 			EmailCode:        emailCode,
 			RememberPassword: true,
 		}
-		
+
 		resp, err = slp.Main.authClient.LoginWithCredentials(loginCtx, req)
 	}
 	if err != nil {
@@ -95,13 +95,13 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 		}
 		return nil, fmt.Errorf("failed to authenticate with Steam: %w", err)
 	}
-	
+
 	if !resp.Success {
 		// Store session ID for continuation if provided
 		if resp.SessionId != "" {
 			slp.SessionID = resp.SessionId
 		}
-		
+
 		// Handle specific authentication requirements
 		if resp.RequiresGuard && guardCode == "" {
 			return &bridgev2.LoginStep{
@@ -120,7 +120,7 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 				},
 			}, nil
 		}
-		
+
 		if resp.RequiresEmailVerification && emailCode == "" {
 			return &bridgev2.LoginStep{
 				Type:         bridgev2.LoginStepTypeUserInput,
@@ -138,7 +138,7 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 				},
 			}, nil
 		}
-		
+
 		// Handle incorrect codes
 		if resp.RequiresGuard && guardCode != "" {
 			return &bridgev2.LoginStep{
@@ -157,7 +157,7 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 				},
 			}, nil
 		}
-		
+
 		if resp.RequiresEmailVerification && emailCode != "" {
 			return &bridgev2.LoginStep{
 				Type:         bridgev2.LoginStepTypeUserInput,
@@ -175,10 +175,10 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 				},
 			}, nil
 		}
-		
+
 		return nil, fmt.Errorf("Steam authentication failed: %s", resp.ErrorMessage)
 	}
-	
+
 	// Authentication successful, create user login
 	return slp.finishLogin(ctx, resp)
 }
@@ -187,7 +187,7 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.LoginResponse) (*bridgev2.LoginStep, error) {
 	// Create user login metadata
 	userLoginID := makeUserLoginID(resp.UserInfo.SteamId)
-	
+
 	metadata := &UserLoginMetadata{
 		SteamID:          resp.UserInfo.SteamId,
 		Username:         resp.UserInfo.AccountName,
@@ -202,7 +202,7 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 		IsValid:          true,
 		RecentlyCreated:  time.Now(),
 	}
-	
+
 	// Create user login in database
 	userLogin, err := slp.User.NewLogin(ctx, &database.UserLogin{
 		ID:         userLoginID,
@@ -228,7 +228,7 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 	if err != nil {
 		return nil, fmt.Errorf("failed to create user login: %w", err)
 	}
-	
+
 	// After fresh login, mark as connected since Steam session is already active
 	// Do NOT call Connect() as that would re-authenticate and cause session replacement
 	if steamClient, ok := userLogin.Client.(*SteamClient); ok {
@@ -237,7 +237,7 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 		steamClient.isConnected = true
 		steamClient.isConnecting = false
 		steamClient.stateMutex.Unlock()
-		
+
 		// Send connected bridge state
 		steamClient.UserLogin.BridgeState.Send(steamClient.buildBridgeState(status.StateConnected,
 			"Connected to Steam",
@@ -258,7 +258,7 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 		// Save the user login with updated metadata
 		steamClient.UserLogin.Save(ctx)
 	}
-	
+
 	return &bridgev2.LoginStep{
 		Type:         bridgev2.LoginStepTypeComplete,
 		StepID:       "complete",
@@ -279,13 +279,13 @@ func (slq *SteamLoginQR) Start(ctx context.Context) (*bridgev2.LoginStep, error)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start QR login: %w", err)
 	}
-	
+
 	slq.ChallengeID = resp.SessionId
-	
+
 	// Determine what to display - prioritize QR image, fallback to URL
 	var qrData string
 	var displayType bridgev2.LoginDisplayType = bridgev2.LoginDisplayTypeQR
-	
+
 	if resp.ChallengeUrl != "" {
 		// Use raw Steam challenge URL - let the client handle QR generation
 		qrData = resp.ChallengeUrl
@@ -369,8 +369,8 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 
 	metadata := &UserLoginMetadata{
 		SteamID:          resp.UserInfo.SteamId,
-		Username:         string(makeUserLoginID(resp.UserInfo.SteamId)), // Use SteamID format for bridge identification  
-		AccountName:      resp.UserInfo.AccountName, // Real Steam account name for authentication
+		Username:         string(makeUserLoginID(resp.UserInfo.SteamId)), // Use SteamID format for bridge identification
+		AccountName:      resp.UserInfo.AccountName,                      // Real Steam account name for authentication
 		PersonaName:      resp.UserInfo.PersonaName,
 		ProfileURL:       resp.UserInfo.ProfileUrl,
 		AvatarHash:       resp.UserInfo.AvatarHash,
@@ -417,7 +417,7 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		steamClient.isConnected = true
 		steamClient.isConnecting = false
 		steamClient.stateMutex.Unlock()
-		
+
 		// Send connected bridge state
 		steamClient.UserLogin.BridgeState.Send(steamClient.buildBridgeState(status.StateConnected,
 			"Connected to Steam",
@@ -449,7 +449,6 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		},
 	}, nil
 }
-
 
 // Implement required interfaces
 var _ bridgev2.LoginProcessUserInput = (*SteamLoginPassword)(nil)

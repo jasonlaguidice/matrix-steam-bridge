@@ -550,7 +550,7 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 		if data.ImageUrl != nil && *data.ImageUrl != "" {
 			return sc.convertImageMessage(ctx, portal, intent, data)
 		}
-		
+
 		content = &event.MessageEventContent{
 			MsgType: event.MsgText,
 			Body:    data.Message,
