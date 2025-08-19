@@ -128,12 +128,20 @@ public class SteamAuthenticationService
 
                     _logger.LogInformation("Successfully authenticated user: {Username}", username);
 
+                    // Get current user info but preserve the AccountName from password authentication  
+                    var userInfo = await GetCurrentUserInfoAsync();
+                    if (userInfo != null && !string.IsNullOrEmpty(pollResult.AccountName))
+                    {
+                        // Override AccountName with the real account name from password authentication
+                        userInfo.AccountName = pollResult.AccountName;
+                    }
+
                     return new CredentialsLoginResult
                     {
                         Success = true,
                         AccessToken = pollResult.AccessToken,
                         RefreshToken = pollResult.RefreshToken,
-                        UserInfo = await GetCurrentUserInfoAsync()
+                        UserInfo = userInfo
                     };
                 }
                 catch (InvalidOperationException invalidOpEx) when (invalidOpEx.Message.Contains("email code"))
@@ -748,12 +756,20 @@ public class SteamAuthenticationService
 
                 _logger.LogInformation("Successfully continued authentication session: {SessionId}", sessionId);
 
+                // Get current user info but preserve the AccountName from password authentication
+                var userInfo = await GetCurrentUserInfoAsync();
+                if (userInfo != null && !string.IsNullOrEmpty(pollResult.AccountName))
+                {
+                    // Override AccountName with the real account name from password authentication
+                    userInfo.AccountName = pollResult.AccountName;
+                }
+
                 return new CredentialsLoginResult
                 {
                     Success = true,
                     AccessToken = pollResult.AccessToken,
                     RefreshToken = pollResult.RefreshToken,
-                    UserInfo = await GetCurrentUserInfoAsync()
+                    UserInfo = userInfo
                 };
             }
             catch (AuthenticationException authEx)
