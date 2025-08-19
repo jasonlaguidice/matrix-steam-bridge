@@ -833,7 +833,7 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		sc.br.Log.Info().Str("username", authUsername).Msg("Attempting re-authentication with stored tokens")
 
 		reAuthReq := &steamapi.TokenReAuthRequest{
-			AccessToken:  meta.AccessToken,
+			AccessToken:  meta.AccessToken,  // Send tokens as stored 
 			RefreshToken: meta.RefreshToken,
 			Username:     authUsername,
 		}
@@ -895,6 +895,32 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		meta.LastValidated = time.Now()
 		sc.UserLogin.Save(ctx)
 	}
+
+	// Verify Steam is actually logged in before reporting connected
+	sc.br.Log.Info().Msg("Verifying Steam authentication state before reporting connected")
+	verified, err := sc.verifysteamAuthentication(ctx)
+	if err != nil {
+		sc.br.Log.Err(err).Msg("Failed to verify Steam authentication state")
+		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,
+			"Failed to verify Steam authentication",
+			withReason(err.Error()),
+			withUserAction(status.UserActionRestart)))
+		return
+	}
+
+	if !verified {
+		sc.br.Log.Warn().Msg("Steam authentication verification failed - not actually logged in")
+		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateBadCredentials,
+			"Steam authentication incomplete - please log in again",
+			withUserAction(status.UserActionRelogin),
+			withInfo(map[string]interface{}{
+				"verification_failed": true,
+				"session_type":       meta.SessionType,
+			})))
+		return
+	}
+
+	sc.br.Log.Info().Msg("Steam authentication verified successfully")
 
 	// Cancel any pending disconnect debounce and report connected state
 	sc.cancelDisconnectDebounce()
@@ -1231,6 +1257,51 @@ func (sc *SteamClient) LogoutRemote(ctx context.Context) {
 	}
 
 	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateLoggedOut, "Successfully logged out from Steam"))
+}
+
+// verifysteamAuthentication verifies that Steam is actually logged in and ready
+func (sc *SteamClient) verifysteamAuthentication(ctx context.Context) (bool, error) {
+	if sc.userClient == nil {
+		return false, fmt.Errorf("user client not available")
+	}
+
+	// Call GetUserInfo to verify we can actually communicate with Steam
+	// This will fail if Steam is not logged in properly
+	meta := sc.getUserMetadata()
+	if meta == nil {
+		return false, fmt.Errorf("user metadata not available")
+	}
+
+	req := &steamapi.UserInfoRequest{
+		SteamId: meta.SteamID,
+	}
+
+	resp, err := sc.userClient.GetUserInfo(ctx, req)
+	if err != nil {
+		sc.br.Log.Err(err).Msg("Steam user info request failed during verification")
+		return false, err
+	}
+
+	if resp.UserInfo == nil {
+		sc.br.Log.Warn().Msg("Steam user info is null - authentication not complete")
+		return false, nil
+	}
+
+	// Verify the returned user info matches our stored metadata
+	if resp.UserInfo.SteamId != meta.SteamID {
+		sc.br.Log.Warn().
+			Uint64("expected_steam_id", meta.SteamID).
+			Uint64("actual_steam_id", resp.UserInfo.SteamId).
+			Msg("Steam ID mismatch during verification")
+		return false, nil
+	}
+
+	sc.br.Log.Info().
+		Uint64("steam_id", resp.UserInfo.SteamId).
+		Str("persona_name", resp.UserInfo.PersonaName).
+		Msg("Steam authentication verification successful")
+	
+	return true, nil
 }
 
 // GetCapabilities implements bridgev2.NetworkAPI.

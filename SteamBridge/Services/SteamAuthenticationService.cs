@@ -98,12 +98,31 @@ public class SteamAuthenticationService
                     _activeAuthSessions.TryRemove(sessionId, out _);
                     _sessionUsernames.TryRemove(sessionId, out _);
 
-                    if (!logonSuccess)
+                    if (!logonSuccess || !_steamClientManager.IsLoggedOn)
                     {
+                        _logger.LogWarning("Steam logon failed for user: {Username} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}", 
+                            username, logonSuccess, _steamClientManager.IsLoggedOn);
+                        
+                        // Additional verification - check if Steam is actually connected
+                        bool steamConnected = _steamClientManager.IsConnected && _steamClientManager.IsLoggedOn;
+                        
                         return new CredentialsLoginResult
                         {
                             Success = false,
-                            ErrorMessage = "Failed to log on to Steam"
+                            ErrorMessage = steamConnected ? 
+                                "Steam logon failed - credentials may be invalid" : 
+                                "Steam connection lost during authentication"
+                        };
+                    }
+
+                    // Verify Steam client state before reporting success
+                    if (!_steamClientManager.IsConnected)
+                    {
+                        _logger.LogError("Steam client not connected after successful logon for user: {Username}", username);
+                        return new CredentialsLoginResult
+                        {
+                            Success = false,
+                            ErrorMessage = "Steam client disconnected after authentication"
                         };
                     }
 
@@ -358,12 +377,31 @@ public class SteamAuthenticationService
             
             _qrAuthSessions.TryRemove(sessionId, out _);
 
-            if (!logonSuccess)
+            if (!logonSuccess || !_steamClientManager.IsLoggedOn)
             {
+                _logger.LogWarning("QR authentication logon failed for session: {SessionId} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}", 
+                    sessionId, logonSuccess, _steamClientManager.IsLoggedOn);
+                
+                // Additional verification - check if Steam is actually connected
+                bool steamConnected = _steamClientManager.IsConnected && _steamClientManager.IsLoggedOn;
+                
+                return new AuthStatusResult
+                {
+                    State = steamConnected ? AuthState.Failed : AuthState.Expired,
+                    ErrorMessage = steamConnected ? 
+                        "Steam logon failed - authentication incomplete" : 
+                        "Steam connection lost during authentication"
+                };
+            }
+
+            // Verify Steam client state before reporting success
+            if (!_steamClientManager.IsConnected)
+            {
+                _logger.LogError("Steam client not connected after successful QR logon for session: {SessionId}", sessionId);
                 return new AuthStatusResult
                 {
                     State = AuthState.Failed,
-                    ErrorMessage = "Failed to log on to Steam"
+                    ErrorMessage = "Steam client disconnected after authentication"
                 };
             }
 
@@ -452,14 +490,33 @@ public class SteamAuthenticationService
             // Wait for logon result
             var logonSuccess = await WaitForLogonAsync();
             
-            if (!logonSuccess)
+            if (!logonSuccess || !_steamClientManager.IsLoggedOn)
             {
-                _logger.LogWarning("Token re-authentication failed for user: {Username} - logon unsuccessful", username);
+                _logger.LogWarning("Token re-authentication failed for user: {Username} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}", 
+                    username, logonSuccess, _steamClientManager.IsLoggedOn);
+                
+                // Additional verification - check if Steam is actually connected
+                bool steamConnected = _steamClientManager.IsConnected && _steamClientManager.IsLoggedOn;
+                
                 return new TokenReAuthResult
                 {
                     Success = false,
-                    State = AuthState.Expired,
-                    ErrorMessage = "Stored credentials are no longer valid"
+                    State = steamConnected ? AuthState.Failed : AuthState.Expired,
+                    ErrorMessage = steamConnected ? 
+                        "Steam logon failed - credentials may be invalid" : 
+                        "Steam connection lost during authentication"
+                };
+            }
+
+            // Verify Steam client state before reporting success
+            if (!_steamClientManager.IsConnected)
+            {
+                _logger.LogError("Steam client not connected after successful logon for user: {Username}", username);
+                return new TokenReAuthResult
+                {
+                    Success = false,
+                    State = AuthState.Failed,
+                    ErrorMessage = "Steam client disconnected after authentication"
                 };
             }
 
@@ -664,12 +721,28 @@ public class SteamAuthenticationService
                 _activeAuthSessions.TryRemove(sessionId, out _);
                 _sessionUsernames.TryRemove(sessionId, out _);
 
-                if (!logonSuccess)
+                if (!logonSuccess || !_steamClientManager.IsLoggedOn)
                 {
+                    _logger.LogWarning("Continuation authentication logon failed for session: {SessionId} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}", 
+                        sessionId, logonSuccess, _steamClientManager.IsLoggedOn);
+                    
                     return new CredentialsLoginResult
                     {
                         Success = false,
-                        ErrorMessage = "Failed to log on to Steam"
+                        ErrorMessage = _steamClientManager.IsConnected ? 
+                            "Steam logon failed - please verify your credentials" : 
+                            "Steam connection lost during authentication"
+                    };
+                }
+
+                // Verify Steam client state before reporting success
+                if (!_steamClientManager.IsConnected)
+                {
+                    _logger.LogError("Steam client not connected after successful continuation logon for session: {SessionId}", sessionId);
+                    return new CredentialsLoginResult
+                    {
+                        Success = false,
+                        ErrorMessage = "Steam client disconnected after authentication"
                     };
                 }
 

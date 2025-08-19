@@ -422,4 +422,4 @@ steam.log*
 # Temporary/test files
 test_*
 debug_*
-__debug*
+__debug*connector-refactor.md

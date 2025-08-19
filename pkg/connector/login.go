@@ -244,6 +244,19 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 			withInfo(map[string]interface{}{
 				"connection_type": "fresh_login",
 			})))
+
+		// Start connection monitoring and message subscriptions for fresh login
+		ctx := context.Background()
+		steamClient.startConnectionMonitoring(ctx)
+
+		// Start gRPC message subscription for real-time messages
+		go steamClient.startMessageSubscription(ctx)
+
+		// Start session event subscription for logout notifications
+		go steamClient.startSessionEventSubscription(ctx)
+
+		// Save the user login with updated metadata
+		steamClient.UserLogin.Save(ctx)
 	}
 	
 	return &bridgev2.LoginStep{
@@ -411,6 +424,19 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 			withInfo(map[string]interface{}{
 				"connection_type": "fresh_qr_login",
 			})))
+
+		// Start connection monitoring and message subscriptions for fresh QR login
+		ctx := context.Background()
+		steamClient.startConnectionMonitoring(ctx)
+
+		// Start gRPC message subscription for real-time messages
+		go steamClient.startMessageSubscription(ctx)
+
+		// Start session event subscription for logout notifications
+		go steamClient.startSessionEventSubscription(ctx)
+
+		// Save the user login with updated metadata
+		steamClient.UserLogin.Save(ctx)
 	}
 
 	return &bridgev2.LoginStep{
