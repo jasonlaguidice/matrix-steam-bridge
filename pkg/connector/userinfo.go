@@ -27,11 +27,9 @@ func parseIdentifier(identifier string) (steamID64 string, identifierType string
 
 	// Check if direct SteamID64 (17 digits)
 	if len(identifier) == 17 && isNumeric(identifier) {
-		// Validate SteamID64 range (Steam IDs start from 76561197960265728)
-		if steamID, err := strconv.ParseUint(identifier, 10, 64); err == nil {
-			if steamID >= 76561197960265728 { // Minimum valid SteamID64
-				return identifier, "steamid64", nil
-			}
+		// Validate SteamID64 format (17 digits, numeric only)
+		if _, err := strconv.ParseUint(identifier, 10, 64); err == nil {
+			return identifier, "steamid64", nil
 		}
 	}
 
@@ -70,7 +68,7 @@ func parseFromURL(url string) (steamID64 string, identifierType string, err erro
 
 		// Validate it's a 17-digit SteamID64
 		if len(steamID) == 17 && isNumeric(steamID) {
-			if id, err := strconv.ParseUint(steamID, 10, 64); err == nil && id >= 76561197960265728 {
+			if _, err := strconv.ParseUint(steamID, 10, 64); err == nil {
 				return steamID, "steamid64", nil
 			}
 		}
@@ -151,29 +149,14 @@ func isNumeric(s string) bool {
 	return true
 }
 
-// validateSteamID64 validates a SteamID64 format and range
+// validateSteamID64 validates a SteamID64 format
 func validateSteamID64(steamID string) bool {
 	if len(steamID) != 17 || !isNumeric(steamID) {
 		return false
 	}
 
-	id, err := strconv.ParseUint(steamID, 10, 64)
-	return err == nil && id >= 76561197960265728 // Minimum valid SteamID64
-}
-
-// extractAvatarHash extracts a hash from Steam avatar URL for change detection
-func extractAvatarHash(avatarURL string) string {
-	// Steam avatar URLs typically look like:
-	// https://avatars.steamstatic.com/b5bd56c1aa4644a474a2e4972be27ef9e82e517e_full.jpg
-	// Extract the hash part for change detection
-	if idx := strings.LastIndex(avatarURL, "/"); idx != -1 {
-		filename := avatarURL[idx+1:]
-		if dotIdx := strings.LastIndex(filename, "."); dotIdx != -1 {
-			return filename[:dotIdx]
-		}
-		return filename
-	}
-	return avatarURL // Fallback to full URL if parsing fails
+	_, err := strconv.ParseUint(steamID, 10, 64)
+	return err == nil
 }
 
 // downloadImageFromURL downloads an image from the given URL and returns the image data
