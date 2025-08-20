@@ -179,7 +179,7 @@ message SendMessageRequest {
   uint64 target_steam_id = 1;
   string message = 2;
   MessageType message_type = 3;
-  optional string image_url = 4; // Steam CDN/UFS URL for image messages
+  string image_url = 4; // Steam CDN/UFS URL for image messages
 }
 
 message SendMessageResponse {
@@ -199,7 +199,7 @@ message MessageEvent {
   MessageType message_type = 4;
   int64 timestamp = 5;
   bool is_echo = 6; // True if this is an echo of our own message from another client
-  optional string image_url = 7; // Steam CDN/UFS URL for image messages
+  string image_url = 7; // Steam CDN/UFS URL for image messages
 }
 
 message TypingNotificationRequest {
@@ -274,7 +274,7 @@ message ChatHistoryMessage {
   uint32 ordinal = 3; // Message ordinal for ordering
   string message_content = 4;
   MessageType message_type = 5;
-  optional string image_url = 6; // Steam CDN/UFS URL for image messages
+  string image_url = 6; // Steam CDN/UFS URL for image messages
 }
 
 // Enums

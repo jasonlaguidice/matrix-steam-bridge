@@ -15,15 +15,12 @@ jobs:
           - goos: linux
             goarch: amd64
             runner: ubuntu-latest
-            dotnet_runtime: linux-x64
           - goos: linux
             goarch: arm64
             runner: [self-hosted, Linux, ARM64]
-            dotnet_runtime: linux-arm64
           - goos: windows
             goarch: amd64
-            runner: ubuntu-latest
-            dotnet_runtime: win-x64
+            runner: windows-latest
 
     steps:
     - name: Checkout code
@@ -40,52 +37,86 @@ jobs:
         dotnet-version: '8.0'
 
     - name: Install system dependencies (Linux)
-      if: matrix.goos == 'linux'
+      if: runner.os == 'Linux'
       run: |
-        if [ "${{ runner.os }}" = "Linux" ]; then
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler gcc-multilib libc6-dev libsqlite3-dev
-          if [ "${{ matrix.goarch }}" = "arm64" ] && [ "${{ matrix.runner }}" = "ubuntu-latest" ]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-          fi
-        fi
+        sudo apt-get update
+        sudo apt-get install -y protobuf-compiler libc6-dev libsqlite3-dev libolm-dev
 
-    - name: Build .NET SteamBridge
+    - name: Install dependencies (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install protoc
+        # Build olm library from source for Matrix encryption
+        git clone https://gitlab.matrix.org/matrix-org/olm.git C:\olm
+        cd C:\olm
+        cmake -S . -B build -DCMAKE_INSTALL_PREFIX=C:\olm-install -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        cmake --build build --config Release
+        cmake --install build
+
+    - name: Build .NET SteamBridge (Linux)
+      if: runner.os == 'Linux'
       working-directory: SteamBridge
       run: |
-        # Set cross-compilation CC for ARM64 on x64 runners
-        if [ "${{ matrix.goos }}" = "linux" ] && [ "${{ matrix.goarch }}" = "arm64" ] && [ "${{ matrix.runner }}" = "ubuntu-latest" ]; then
-          export CC=aarch64-linux-gnu-gcc
+        # Force use of system protoc on ARM64 to avoid segfault
+        if [ "${{ matrix.goarch }}" = "arm64" ]; then
+          export Protobuf_ProtocFullPath=$(which protoc)
         fi
         
-        dotnet publish -c Release --runtime ${{ matrix.dotnet_runtime }} --self-contained true \
-          -p:PublishSingleFile=true -p:PublishTrimmed=false \
-          -o ../steambridge-dist
+        # Build SteamBridge (matching build.sh approach)
+        dotnet build --configuration Release
+        
+        # Copy built files to distribution directory
+        mkdir -p ../steambridge-dist
+        cp -r bin/Release/net8.0/* ../steambridge-dist/
 
-    - name: Build Go binary
+    - name: Build .NET SteamBridge (Windows)
+      if: runner.os == 'Windows'
+      working-directory: SteamBridge
+      run: |
+        # Build SteamBridge (matching build.sh approach)
+        dotnet build --configuration Release
+        
+        # Copy built files to distribution directory
+        mkdir -p ../steambridge-dist
+        cp -r bin/Release/net8.0/* ../steambridge-dist/
+
+    - name: Build Go binary (Linux)
+      if: runner.os == 'Linux'
       env:
-        GOOS: ${{ matrix.goos }}
-        GOARCH: ${{ matrix.goarch }}
         CGO_ENABLED: 1
       run: |
-        # Set cross-compilation environment for ARM64 on x64 runners
-        if [ "${{ matrix.goos }}" = "linux" ] && [ "${{ matrix.goarch }}" = "arm64" ] && [ "${{ matrix.runner }}" = "ubuntu-latest" ]; then
-          export CC=aarch64-linux-gnu-gcc
-        fi
+        # Build ldflags matching build.sh
+        MAUTRIX_VERSION=$(cat go.mod | grep 'maunium.net/go/mautrix ' | awk '{ print $2 }' | head -n1)
+        GO_LDFLAGS="-s -w -X main.Tag=$(git describe --exact-match --tags 2>/dev/null) -X main.Commit=$(git rev-parse HEAD) -X 'main.BuildTime=$(date -Iseconds)' -X 'maunium.net/go/mautrix.GoModVersion=$MAUTRIX_VERSION'"
         
-        # Set binary name
-        BINARY_NAME="steam"
-        if [ "${{ matrix.goos }}" = "windows" ]; then
-          BINARY_NAME="${BINARY_NAME}.exe"
-        fi
-        
-        # Build the Go binary
-        go build -a -ldflags="-s -w" -o "${BINARY_NAME}" ./cmd/steam
+        # Build the Go binary natively (no cross-compilation)
+        go build -ldflags="$GO_LDFLAGS" -o "steam" ./cmd/steam
         
         # Move to distribution directory
-        mv "${BINARY_NAME}" steambridge-dist/
+        mv "steam" steambridge-dist/
 
-    - name: Create release package
+    - name: Build Go binary (Windows)
+      if: runner.os == 'Windows'
+      env:
+        CGO_ENABLED: 1
+        CGO_CFLAGS: "-IC:/olm-install/include"
+        CGO_LDFLAGS: "-LC:/olm-install/lib"
+      run: |
+        # Build ldflags matching build.sh (PowerShell syntax)
+        $MAUTRIX_VERSION = (Select-String -Path go.mod -Pattern 'maunium.net/go/mautrix ' | Select-Object -First 1).Line.Split()[1]
+        $TAG = git describe --exact-match --tags 2>$null
+        $COMMIT = git rev-parse HEAD
+        $BUILD_TIME = Get-Date -Format "yyyy-MM-ddTHH:mm:sszzz"
+        $GO_LDFLAGS = "-s -w -X main.Tag=$TAG -X main.Commit=$COMMIT -X `"main.BuildTime=$BUILD_TIME`" -X `"maunium.net/go/mautrix.GoModVersion=$MAUTRIX_VERSION`""
+        
+        # Build the Go binary natively (no cross-compilation)
+        go build -ldflags="$GO_LDFLAGS" -o "steam.exe" ./cmd/steam
+        
+        # Move to distribution directory
+        mv "steam.exe" steambridge-dist/
+
+    - name: Create release package (Linux)
+      if: runner.os == 'Linux'
       run: |
         PACKAGE_NAME="matrix-steam-bridge-${{ matrix.goos }}-${{ matrix.goarch }}"
         
@@ -98,13 +129,25 @@ jobs:
         if [ -f config.example.yaml ]; then cp config.example.yaml "${PACKAGE_NAME}/"; fi
         
         # Create archive
-        if [ "${{ matrix.goos }}" = "windows" ]; then
-          zip -r "${PACKAGE_NAME}.zip" "${PACKAGE_NAME}/"
-          echo "ASSET_NAME=${PACKAGE_NAME}.zip" >> $GITHUB_ENV
-        else
-          tar -czf "${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}/"
-          echo "ASSET_NAME=${PACKAGE_NAME}.tar.gz" >> $GITHUB_ENV
-        fi
+        tar -czf "${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}/"
+        echo "ASSET_NAME=${PACKAGE_NAME}.tar.gz" >> $GITHUB_ENV
+
+    - name: Create release package (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        $PACKAGE_NAME = "matrix-steam-bridge-${{ matrix.goos }}-${{ matrix.goarch }}"
+        
+        # Create release directory structure
+        mkdir "$PACKAGE_NAME"
+        Copy-Item -Recurse steambridge-dist/* "$PACKAGE_NAME/"
+        
+        # Add README and example config if they exist
+        if (Test-Path README.md) { Copy-Item README.md "$PACKAGE_NAME/" }
+        if (Test-Path config.example.yaml) { Copy-Item config.example.yaml "$PACKAGE_NAME/" }
+        
+        # Create archive
+        Compress-Archive -Path "$PACKAGE_NAME" -DestinationPath "$PACKAGE_NAME.zip"
+        echo "ASSET_NAME=$PACKAGE_NAME.zip" >> $env:GITHUB_ENV
 
     - name: Upload binary artifact
       uses: actions/upload-artifact@v4

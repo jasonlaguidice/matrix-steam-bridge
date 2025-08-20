@@ -14,6 +14,7 @@ COPY SteamBridge/ ./SteamBridge/
 # Build the C# gRPC service
 WORKDIR /src/SteamBridge
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
+        export Protobuf_ProtocFullPath=$(which protoc); \
         dotnet restore --runtime linux-arm64; \
         dotnet publish -c Release --runtime linux-arm64 --self-contained false -o /app/steambridge; \
     else \
