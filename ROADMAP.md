@@ -39,9 +39,9 @@
   * [ ] Network presence/status
     * [ ] Online/Offline/Away
     * [ ] Rich in-game presence
-  * [ ] Initial profile/contact info
-    * [ ] Display name
-    * [ ] Avatar
+  * [x] Initial profile/contact info
+    * [x] Display name
+    * [x] Avatar
   * [ ] Profile/contact info changes
     * [ ] When restarting bridge or syncing
         * [ ] Display name
@@ -64,11 +64,11 @@
   * [ ] Group permissions
   * [x] Typing notifications
 * Misc
-  * [ ] Login
+  * [x] Login
     * [x] Password
     * [x] SteamGuard 2FA code
     * [x] QR
-    * [ ] SteamGuard Prompt / E-mail
+    * [x] SteamGuard Prompt / E-mail
   * [ ] Session Management
     * [x] Logout command
     * [x] Relogin command
