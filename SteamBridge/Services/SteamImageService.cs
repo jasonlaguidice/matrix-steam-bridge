@@ -33,6 +33,12 @@ public class SteamImageService
     /// <returns>A URL for the uploaded image</returns>
     public async Task<string> UploadImageAsync(byte[] imageData, string mimeType, string filename)
     {
+        // Enhanced connection state validation for SteamKit2 v3+ AsyncJob requirements
+        if (!_steamClientManager.IsConnected)
+        {
+            throw new InvalidOperationException("Must be connected to Steam before uploading images. SteamKit2 v3+ AsyncJobs instantly fail if not connected.");
+        }
+        
         if (!_steamClientManager.IsLoggedOn)
         {
             throw new InvalidOperationException("Must be logged on to Steam before uploading images");
@@ -49,6 +55,9 @@ public class SteamImageService
 
         try
         {
+            // Create Cloud service instance using SteamKit2 v3+ API
+            var cloudService = unifiedMessages.CreateService<SteamKit2.Internal.Cloud>();
+            
             // Step 1: Begin UGC Upload
             var beginRequest = new CCloud_BeginUGCUpload_Request
             {
@@ -62,8 +71,20 @@ public class SteamImageService
             _logger.LogDebug("Sending BeginUGCUpload request: {Filename}, SHA1: {SHA1}", 
                 filename, beginRequest.file_sha);
 
-            var beginJob = unifiedMessages.SendMessage<CCloud_BeginUGCUpload_Request, CCloud_BeginUGCUpload_Response>("Cloud.BeginUGCUpload#1", beginRequest);
-            var beginResponse = await beginJob.ToTask().ConfigureAwait(false);
+            // Use the new SteamKit2 v3+ unified messaging API with timeout
+            var beginJob = cloudService.BeginUGCUpload(beginRequest);
+            
+            // Add timeout to prevent indefinite hanging - SteamKit2 v3.2.0 AsyncJobs can fail instantly
+            var beginTask = beginJob.ToTask();
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30));
+            var completedTask = await Task.WhenAny(beginTask, timeoutTask).ConfigureAwait(false);
+            
+            if (completedTask == timeoutTask)
+            {
+                throw new TimeoutException("Steam UGC BeginUpload request timed out after 30 seconds. This may indicate Steam server issues or client authentication problems.");
+            }
+            
+            var beginResponse = await beginTask.ConfigureAwait(false);
 
             if (beginResponse?.Body == null)
             {
@@ -121,8 +142,19 @@ public class SteamImageService
             _logger.LogDebug("Sending CommitUGCUpload request: UGC ID {UGCID}, Success: {Success}", 
                 beginResult.ugcid, uploadSucceeded);
 
-            var commitJob = unifiedMessages.SendMessage<CCloud_CommitUGCUpload_Request, CCloud_CommitUGCUpload_Response>("Cloud.CommitUGCUpload#1", commitRequest);
-            var commitResponse = await commitJob.ToTask().ConfigureAwait(false);
+            // Use the new SteamKit2 v3+ unified messaging API with timeout
+            var commitJob = cloudService.CommitUGCUpload(commitRequest);
+            
+            var commitTask = commitJob.ToTask();
+            var commitTimeoutTask = Task.Delay(TimeSpan.FromSeconds(30));
+            var completedCommitTask = await Task.WhenAny(commitTask, commitTimeoutTask).ConfigureAwait(false);
+            
+            if (completedCommitTask == commitTimeoutTask)
+            {
+                throw new TimeoutException("Steam UGC CommitUpload request timed out after 30 seconds.");
+            }
+            
+            var commitResponse = await commitTask.ConfigureAwait(false);
 
             if (commitResponse?.Body == null)
             {
