@@ -33,6 +33,7 @@ go.work
 # Claude files
 .claude/
 CLAUDE.md
+.serena/
 
 # IDE files
 .vscode/
