@@ -360,6 +360,19 @@ func (sc *SteamClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 
 	return &event.RoomFeatures{
 		MaxTextLength: 4096,
+		File: event.FileFeatureMap{
+			event.MsgImage: &event.FileFeatures{
+				MimeTypes: map[string]event.CapabilitySupportLevel{
+					"image/jpeg": event.CapLevelFullySupported, // Steam uploads to steamusercontent.com
+					"image/png":  event.CapLevelFullySupported, // Steam uploads to steamusercontent.com
+					"image/gif":  event.CapLevelFullySupported, // Steam uploads to steamusercontent.com
+					"image/webp": event.CapLevelFullySupported, // Steam uploads to steamusercontent.com
+				},
+				MaxSize: 50 * 1024 * 1024, // Steam's actual image upload limit
+				Caption: event.CapLevelFullySupported,
+			},
+		},
+		TypingNotifications: true,
 	}
 }
 
