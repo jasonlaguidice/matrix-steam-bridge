@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -336,7 +337,7 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 		TargetSteamId: targetSteamID,
 		Message:       content.Body, // Caption
 		MessageType:   steamapi.MessageType_CHAT_MESSAGE,
-		ImageUrl:      &uploadResp.ImageUrl,
+		ImageUrl:      uploadResp.ImageUrl,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to send image message to Steam: %w", err)
@@ -540,14 +541,58 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 	}
 }
 
+// detectImageURL scans a message for image URLs and returns the first one found
+func detectImageURL(message string) string {
+	if message == "" {
+		return ""
+	}
+	
+	// Steam image URL patterns
+	imagePatterns := []string{
+		// Steam's native image uploads
+		`https://images\.steamusercontent\.com/ugc/\d+/[A-F0-9]+/?`,
+		// Steam community screenshots  
+		`https://steamcommunity\.com/sharedfiles/filedetails/\?id=\d+`,
+		// Steam CDN images
+		`https://steamcdn-a\.akamaihd\.net/.*\.(jpg|jpeg|png|gif|webp)`,
+		// Steam user images
+		`https://steamuserimages-a\.akamaihd\.net/.*\.(jpg|jpeg|png|gif|webp)`,
+		// Common external image hosts
+		`https://(?:i\.)?imgur\.com/[a-zA-Z0-9]+(?:\.(jpg|jpeg|png|gif|webp))?`,
+		// Direct image URLs
+		`https?://.*\.(jpg|jpeg|png|gif|webp)(?:\?.*)?$`,
+	}
+	
+	for _, pattern := range imagePatterns {
+		if re, err := regexp.Compile("(?i)" + pattern); err == nil {
+			if match := re.FindString(message); match != "" {
+				return match
+			}
+		}
+	}
+	
+	return ""
+}
+
 // convertSteamMessage converts a Steam message event to a Matrix message
 func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, data *steamapi.MessageEvent) (*bridgev2.ConvertedMessage, error) {
 	var content *event.MessageEventContent
 
 	switch data.MessageType {
 	case steamapi.MessageType_CHAT_MESSAGE:
+		// Auto-detect image URLs in Steam messages if not already set
+		if data.ImageUrl == "" {
+			if detectedURL := detectImageURL(data.Message); detectedURL != "" {
+				data.ImageUrl = detectedURL
+				sc.br.Log.Info().
+					Str("detected_image_url", detectedURL).
+					Str("original_message", data.Message).
+					Msg("Auto-detected image URL in Steam message")
+			}
+		}
+		
 		// Check if this message contains an image URL
-		if data.ImageUrl != nil && *data.ImageUrl != "" {
+		if data.ImageUrl != "" {
 			return sc.convertImageMessage(ctx, portal, intent, data)
 		}
 
@@ -579,11 +624,11 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 
 // convertImageMessage converts a Steam image message to a Matrix image message
 func (sc *SteamClient) convertImageMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, data *steamapi.MessageEvent) (*bridgev2.ConvertedMessage, error) {
-	if data.ImageUrl == nil || *data.ImageUrl == "" {
+	if data.ImageUrl == "" {
 		return nil, fmt.Errorf("no image URL provided in message")
 	}
 
-	imageURL := *data.ImageUrl
+	imageURL := data.ImageUrl
 	sc.br.Log.Info().
 		Str("image_url", imageURL).
 		Str("caption", data.Message).

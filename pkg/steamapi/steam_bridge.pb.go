@@ -1561,7 +1561,7 @@ type SendMessageRequest struct {
 	TargetSteamId uint64                 `protobuf:"varint,1,opt,name=target_steam_id,json=targetSteamId,proto3" json:"target_steam_id,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	MessageType   MessageType            `protobuf:"varint,3,opt,name=message_type,json=messageType,proto3,enum=steambridge.MessageType" json:"message_type,omitempty"`
-	ImageUrl      *string                `protobuf:"bytes,4,opt,name=image_url,json=imageUrl,proto3,oneof" json:"image_url,omitempty"` // Steam CDN/UFS URL for image messages
+	ImageUrl      string                 `protobuf:"bytes,4,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"` // Steam CDN/UFS URL for image messages
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1618,8 +1618,8 @@ func (x *SendMessageRequest) GetMessageType() MessageType {
 }
 
 func (x *SendMessageRequest) GetImageUrl() string {
-	if x != nil && x.ImageUrl != nil {
-		return *x.ImageUrl
+	if x != nil {
+		return x.ImageUrl
 	}
 	return ""
 }
@@ -1727,8 +1727,8 @@ type MessageEvent struct {
 	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	MessageType   MessageType            `protobuf:"varint,4,opt,name=message_type,json=messageType,proto3,enum=steambridge.MessageType" json:"message_type,omitempty"`
 	Timestamp     int64                  `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	IsEcho        bool                   `protobuf:"varint,6,opt,name=is_echo,json=isEcho,proto3" json:"is_echo,omitempty"`            // True if this is an echo of our own message from another client
-	ImageUrl      *string                `protobuf:"bytes,7,opt,name=image_url,json=imageUrl,proto3,oneof" json:"image_url,omitempty"` // Steam CDN/UFS URL for image messages
+	IsEcho        bool                   `protobuf:"varint,6,opt,name=is_echo,json=isEcho,proto3" json:"is_echo,omitempty"`      // True if this is an echo of our own message from another client
+	ImageUrl      string                 `protobuf:"bytes,7,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"` // Steam CDN/UFS URL for image messages
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1806,8 +1806,8 @@ func (x *MessageEvent) GetIsEcho() bool {
 }
 
 func (x *MessageEvent) GetImageUrl() string {
-	if x != nil && x.ImageUrl != nil {
-		return *x.ImageUrl
+	if x != nil {
+		return x.ImageUrl
 	}
 	return ""
 }
@@ -2446,7 +2446,7 @@ type ChatHistoryMessage struct {
 	Ordinal        uint32                 `protobuf:"varint,3,opt,name=ordinal,proto3" json:"ordinal,omitempty"`     // Message ordinal for ordering
 	MessageContent string                 `protobuf:"bytes,4,opt,name=message_content,json=messageContent,proto3" json:"message_content,omitempty"`
 	MessageType    MessageType            `protobuf:"varint,5,opt,name=message_type,json=messageType,proto3,enum=steambridge.MessageType" json:"message_type,omitempty"`
-	ImageUrl       *string                `protobuf:"bytes,6,opt,name=image_url,json=imageUrl,proto3,oneof" json:"image_url,omitempty"` // Steam CDN/UFS URL for image messages
+	ImageUrl       string                 `protobuf:"bytes,6,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"` // Steam CDN/UFS URL for image messages
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -2517,8 +2517,8 @@ func (x *ChatHistoryMessage) GetMessageType() MessageType {
 }
 
 func (x *ChatHistoryMessage) GetImageUrl() string {
-	if x != nil && x.ImageUrl != nil {
-		return *x.ImageUrl
+	if x != nil {
+		return x.ImageUrl
 	}
 	return ""
 }
@@ -2727,29 +2727,25 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\x18ResolveVanityURLResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x19\n" +
 	"\bsteam_id\x18\x02 \x01(\tR\asteamId\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"\xc3\x01\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"\xb0\x01\n" +
 	"\x12SendMessageRequest\x12&\n" +
 	"\x0ftarget_steam_id\x18\x01 \x01(\x04R\rtargetSteamId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12;\n" +
-	"\fmessage_type\x18\x03 \x01(\x0e2\x18.steambridge.MessageTypeR\vmessageType\x12 \n" +
-	"\timage_url\x18\x04 \x01(\tH\x00R\bimageUrl\x88\x01\x01B\f\n" +
-	"\n" +
-	"_image_url\"r\n" +
+	"\fmessage_type\x18\x03 \x01(\x0e2\x18.steambridge.MessageTypeR\vmessageType\x12\x1b\n" +
+	"\timage_url\x18\x04 \x01(\tR\bimageUrl\"r\n" +
 	"\x13SendMessageResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1c\n" +
 	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"\x1c\n" +
-	"\x1aMessageSubscriptionRequest\"\x9c\x02\n" +
+	"\x1aMessageSubscriptionRequest\"\x89\x02\n" +
 	"\fMessageEvent\x12&\n" +
 	"\x0fsender_steam_id\x18\x01 \x01(\x04R\rsenderSteamId\x12&\n" +
 	"\x0ftarget_steam_id\x18\x02 \x01(\x04R\rtargetSteamId\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12;\n" +
 	"\fmessage_type\x18\x04 \x01(\x0e2\x18.steambridge.MessageTypeR\vmessageType\x12\x1c\n" +
 	"\ttimestamp\x18\x05 \x01(\x03R\ttimestamp\x12\x17\n" +
-	"\ais_echo\x18\x06 \x01(\bR\x06isEcho\x12 \n" +
-	"\timage_url\x18\a \x01(\tH\x00R\bimageUrl\x88\x01\x01B\f\n" +
-	"\n" +
-	"_image_url\"`\n" +
+	"\ais_echo\x18\x06 \x01(\bR\x06isEcho\x12\x1b\n" +
+	"\timage_url\x18\a \x01(\tR\bimageUrl\"`\n" +
 	"\x19TypingNotificationRequest\x12&\n" +
 	"\x0ftarget_steam_id\x18\x01 \x01(\x04R\rtargetSteamId\x12\x1b\n" +
 	"\tis_typing\x18\x02 \x01(\bR\bisTyping\"6\n" +
@@ -2797,16 +2793,14 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\bmessages\x18\x03 \x03(\v2\x1f.steambridge.ChatHistoryMessageR\bmessages\x12\x19\n" +
 	"\bhas_more\x18\x04 \x01(\bR\ahasMore\x12\x1b\n" +
 	"\tnext_time\x18\x05 \x01(\rR\bnextTime\x12!\n" +
-	"\fnext_ordinal\x18\x06 \x01(\rR\vnextOrdinal\"\x8a\x02\n" +
+	"\fnext_ordinal\x18\x06 \x01(\rR\vnextOrdinal\"\xf7\x01\n" +
 	"\x12ChatHistoryMessage\x12&\n" +
 	"\x0fsender_steam_id\x18\x01 \x01(\x04R\rsenderSteamId\x12\x1c\n" +
 	"\ttimestamp\x18\x02 \x01(\rR\ttimestamp\x12\x18\n" +
 	"\aordinal\x18\x03 \x01(\rR\aordinal\x12'\n" +
 	"\x0fmessage_content\x18\x04 \x01(\tR\x0emessageContent\x12;\n" +
-	"\fmessage_type\x18\x05 \x01(\x0e2\x18.steambridge.MessageTypeR\vmessageType\x12 \n" +
-	"\timage_url\x18\x06 \x01(\tH\x00R\bimageUrl\x88\x01\x01B\f\n" +
-	"\n" +
-	"_image_url\"\x1c\n" +
+	"\fmessage_type\x18\x05 \x01(\x0e2\x18.steambridge.MessageTypeR\vmessageType\x12\x1b\n" +
+	"\timage_url\x18\x06 \x01(\tR\bimageUrl\"\x1c\n" +
 	"\x1aSessionSubscriptionRequest\"\x82\x01\n" +
 	"\fSessionEvent\x12<\n" +
 	"\n" +
@@ -2995,9 +2989,6 @@ func file_Proto_steam_bridge_proto_init() {
 	if File_Proto_steam_bridge_proto != nil {
 		return
 	}
-	file_Proto_steam_bridge_proto_msgTypes[21].OneofWrappers = []any{}
-	file_Proto_steam_bridge_proto_msgTypes[24].OneofWrappers = []any{}
-	file_Proto_steam_bridge_proto_msgTypes[35].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

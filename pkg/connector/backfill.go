@@ -15,6 +15,7 @@ import (
 	"go.shadowdrake.org/steam/pkg/steamapi"
 )
 
+
 // PaginationCursor represents a cursor for message pagination
 type PaginationCursor struct {
 	Time    uint32 `json:"time"`
@@ -162,9 +163,20 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 	var convertedMsg *bridgev2.ConvertedMessage
 	var err error
 
-	if steamMsg.ImageUrl != nil && *steamMsg.ImageUrl != "" {
+	// Auto-detect image URLs in historical messages if not already set
+	if steamMsg.ImageUrl == "" {
+		if detectedURL := detectImageURL(steamMsg.MessageContent); detectedURL != "" {
+			steamMsg.ImageUrl = detectedURL
+			sc.br.Log.Info().
+				Str("detected_image_url", detectedURL).
+				Str("original_message", steamMsg.MessageContent).
+				Msg("Auto-detected image URL in historical Steam message")
+		}
+	}
+
+	if steamMsg.ImageUrl != "" {
 		// Handle image message
-		convertedMsg, err = sc.convertImageMessageFromHistory(ctx, steamMsg.MessageContent, *steamMsg.ImageUrl, portal)
+		convertedMsg, err = sc.convertImageMessageFromHistory(ctx, steamMsg.MessageContent, steamMsg.ImageUrl, portal)
 	} else {
 		// Handle text message
 		convertedMsg, err = sc.convertTextMessageFromHistory(ctx, steamMsg.MessageContent, portal)
