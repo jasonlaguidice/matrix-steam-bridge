@@ -129,7 +129,7 @@ public class SteamClientManager : IDisposable
         {
             PlatformType = (SteamKit2.Internal.EAuthTokenPlatformType)1, // SteamClient platform
             ClientOSType = EOSType.Win11,
-            WebsiteID = "Unknown"
+            WebsiteID = "Client" // Masquerade as official Steam desktop client
         };
         
         return await _steamClient.Authentication.BeginAuthSessionViaQRAsync(authSessionDetails);
@@ -157,11 +157,24 @@ public class SteamClientManager : IDisposable
         {
             Username = username, // Username is required even with access token
             AccessToken = refreshToken ?? accessToken, // Use RefreshToken as AccessToken per SteamKit2 sample
+            
+            // Enhanced client masquerading to appear as official Steam client
+            ClientOSType = EOSType.Win11, // Modern Windows client
+            MachineName = Environment.MachineName, // Remove "(SteamKit2)" suffix
+            UIMode = SteamKit2.EUIMode.Desktop, // Desktop Steam client mode
+            ChatMode = SteamUser.ChatMode.NewSteamChat, // Use new Steam chat system
+            ClientLanguage = "english",
+            AccountInstance = SteamID.DesktopInstance, // PC Steam instance
+            
+            // Generate consistent LoginID for this session
+            LoginID = GenerateStableLoginID()
         };
         
-        _logger.LogInformation("Creating LogOnDetails:");
+        _logger.LogInformation("Creating LogOnDetails with client masquerading:");
         _logger.LogInformation("  LogOnDetails.Username: {Username}", string.IsNullOrEmpty(logOnDetails.Username) ? "NULL/EMPTY" : $"[{logOnDetails.Username}]");
         _logger.LogInformation("  LogOnDetails.AccessToken: {AccessToken}", string.IsNullOrEmpty(logOnDetails.AccessToken) ? "NULL/EMPTY" : $"[{logOnDetails.AccessToken.Length} chars]");
+        _logger.LogInformation("  ClientOSType: {OSType}, MachineName: {MachineName}", logOnDetails.ClientOSType, logOnDetails.MachineName);
+        _logger.LogInformation("  UIMode: {UIMode}, ChatMode: {ChatMode}, LoginID: {LoginID}", logOnDetails.UIMode, logOnDetails.ChatMode, logOnDetails.LoginID);
         
         _steamUser.LogOn(logOnDetails);
     }
@@ -277,5 +290,25 @@ public class SteamClientManager : IDisposable
         
         _cancellationTokenSource.Dispose();
         _logger.LogInformation("SteamClientManager disposed");
+    }
+    
+    /// <summary>
+    /// Generates a stable LoginID based on machine characteristics.
+    /// This makes multiple sessions from the same machine appear consistent to Steam.
+    /// </summary>
+    private uint GenerateStableLoginID()
+    {
+        // Generate a stable LoginID based on machine name and process ID
+        // This ensures consistent identification while allowing multiple bridge instances
+        var machineHash = Environment.MachineName.GetHashCode();
+        var processHash = Environment.ProcessId.GetHashCode();
+        
+        // Combine hashes to create a stable but unique LoginID
+        var combinedHash = (uint)(machineHash ^ (processHash << 16));
+        
+        _logger.LogDebug("Generated stable LoginID: {LoginID} (Machine: {Machine}, PID: {PID})", 
+            combinedHash, Environment.MachineName, Environment.ProcessId);
+        
+        return combinedHash;
     }
 }
