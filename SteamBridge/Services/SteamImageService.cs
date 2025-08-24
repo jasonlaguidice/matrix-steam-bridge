@@ -97,11 +97,38 @@ public class SteamImageService
                 throw new InvalidOperationException("BeginUGCUpload failed: Invalid response type");
             }
 
-            _logger.LogDebug("BeginUGCUpload successful. UGC ID: {UGCID}, Host: {Host}, Path: {Path}", 
-                beginResult.ugcid, beginResult.url_host, beginResult.url_path);
+            _logger.LogInformation("BeginUGCUpload response details: UGC ID: {UGCID}, Host: '{Host}', Path: '{Path}', UseHttps: {UseHttps}, Headers: {HeaderCount}", 
+                beginResult.ugcid, beginResult.url_host ?? "NULL", beginResult.url_path ?? "NULL", beginResult.use_https, 
+                beginResult.request_headers?.Count ?? 0);
+                
+            // Log all request headers if any
+            if (beginResult.request_headers != null && beginResult.request_headers.Count > 0)
+            {
+                foreach (var header in beginResult.request_headers)
+                {
+                    _logger.LogDebug("Steam UGC Header: {Name} = {Value}", header.name, header.value);
+                }
+            }
+            else
+            {
+                _logger.LogWarning("No request headers provided by Steam UGC BeginUpload");
+            }
+
+            // Validate Steam response before constructing URL
+            if (string.IsNullOrEmpty(beginResult.url_host))
+            {
+                throw new InvalidOperationException($"Steam UGC BeginUpload returned null or empty url_host. UGC ID: {beginResult.ugcid}");
+            }
+            
+            if (string.IsNullOrEmpty(beginResult.url_path))
+            {
+                throw new InvalidOperationException($"Steam UGC BeginUpload returned null or empty url_path. UGC ID: {beginResult.ugcid}");
+            }
 
             // Step 2: HTTP Upload to Steam servers
             var uploadUrl = $"{(beginResult.use_https ? "https" : "http")}://{beginResult.url_host}{beginResult.url_path}";
+            
+            _logger.LogInformation("Constructed upload URL: {UploadUrl}", uploadUrl);
             
             using var httpRequest = new HttpRequestMessage(HttpMethod.Put, uploadUrl);
             httpRequest.Content = new ByteArrayContent(imageData);
