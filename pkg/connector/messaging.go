@@ -312,7 +312,64 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 		Str("caption", content.Body).
 		Msg("Processing image message from Matrix")
 
-	// Download image from Matrix
+	// Try to use public media if available (preferred approach)
+	if matrixConn, ok := sc.br.Matrix.(bridgev2.MatrixConnectorWithPublicMedia); ok {
+		publicURL := matrixConn.GetPublicMediaAddress(content.URL)
+		if publicURL != "" {
+			sc.br.Log.Info().
+				Str("public_url", publicURL).
+				Msg("Using Matrix public media URL for Steam")
+
+			// Create message with caption and public URL
+			messageText := content.Body // Image caption
+			if messageText == "" {
+				messageText = "Image" // Fallback if no caption
+			}
+			messageText += "\n" + publicURL
+
+			// Send to Steam as regular message with HTTP URL
+			resp, err := sc.msgClient.SendMessage(ctx, &steamapi.SendMessageRequest{
+				TargetSteamId: targetSteamID,
+				Message:       messageText,
+				MessageType:   steamapi.MessageType_CHAT_MESSAGE,
+				// No ImageUrl field - Steam will receive the URL as clickable text
+			})
+			if err != nil {
+				return nil, fmt.Errorf("failed to send image message to Steam: %w", err)
+			}
+
+			if !resp.Success {
+				return nil, fmt.Errorf("steam image message send failed: %s", resp.ErrorMessage)
+			}
+
+			msgMeta := &MessageMetadata{
+				SteamMessageType: "IMAGE_PUBLIC_URL",
+				IsEcho:           false,
+				ImageURL:         publicURL,
+			}
+
+			sc.br.Log.Info().
+				Str("public_url", publicURL).
+				Int64("timestamp", resp.Timestamp).
+				Msg("Image message sent to Steam successfully using public media URL")
+
+			return &bridgev2.MatrixMessageResponse{
+				DB: &database.Message{
+					ID:        networkid.MessageID(fmt.Sprintf("%d:%d", targetSteamID, resp.Timestamp)),
+					MXID:      msg.Event.ID,
+					Timestamp: time.Unix(resp.Timestamp, 0),
+					Metadata:  msgMeta,
+				},
+			}, nil
+		}
+
+		sc.br.Log.Warn().Msg("Public media interface available but returned empty URL")
+	} else {
+		sc.br.Log.Info().Msg("Public media interface not available, falling back to Steam UGC upload")
+	}
+
+	// Fallback: Download image from Matrix and attempt Steam UGC upload
+	// This will likely fail due to Steam's restrictions, but kept as backup
 	imageData, err := sc.br.Bot.DownloadMedia(ctx, content.URL, content.File)
 	if err != nil {
 		return nil, fmt.Errorf("failed to download image from Matrix: %w", err)
@@ -356,7 +413,7 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 	sc.br.Log.Info().
 		Str("steam_image_url", uploadResp.ImageUrl).
 		Int64("timestamp", resp.Timestamp).
-		Msg("Image message sent to Steam successfully")
+		Msg("Image message sent to Steam successfully using Steam UGC (fallback)")
 
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
