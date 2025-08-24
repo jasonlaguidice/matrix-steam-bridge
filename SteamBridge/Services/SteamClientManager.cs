@@ -161,7 +161,7 @@ public class SteamClientManager : IDisposable
             // Enhanced client masquerading to appear as official Steam client
             ClientOSType = EOSType.Win11, // Modern Windows client
             MachineName = Environment.MachineName, // Remove "(SteamKit2)" suffix
-            UIMode = SteamKit2.EUIMode.Desktop, // Desktop Steam client mode
+            UIMode = SteamKit2.EUIMode.ClientUI, // Desktop Steam client UI mode
             ChatMode = SteamUser.ChatMode.NewSteamChat, // Use new Steam chat system
             ClientLanguage = "english",
             AccountInstance = SteamID.DesktopInstance, // PC Steam instance
