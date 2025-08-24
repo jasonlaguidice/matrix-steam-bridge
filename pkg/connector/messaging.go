@@ -364,65 +364,15 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 		}
 
 		sc.br.Log.Warn().Msg("Public media interface available but returned empty URL")
-	} else {
-		sc.br.Log.Info().Msg("Public media interface not available, falling back to Steam UGC upload")
 	}
 
-	// Fallback: Download image from Matrix and attempt Steam UGC upload
-	// This will likely fail due to Steam's restrictions, but kept as backup
-	imageData, err := sc.br.Bot.DownloadMedia(ctx, content.URL, content.File)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download image from Matrix: %w", err)
-	}
+	// No public media available - Matrix→Steam image sharing not supported
+	// Steam blocks UGC uploads from third-party clients, so we cannot upload images to Steam
+	sc.br.Log.Error().
+		Str("reason", "public_media_unavailable").
+		Msg("Cannot send image to Steam: public media not configured and Steam blocks UGC uploads from third-party clients")
 
-	// Upload image to Steam via gRPC
-	uploadResp, err := sc.msgClient.UploadImageToSteam(ctx, &steamapi.UploadImageRequest{
-		ImageData: imageData,
-		MimeType:  content.Info.MimeType,
-		Filename:  content.Body, // Use caption as filename, fallback to default if empty
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to upload image to Steam: %w", err)
-	}
-
-	if !uploadResp.Success {
-		return nil, fmt.Errorf("steam image upload failed: %s", uploadResp.ErrorMessage)
-	}
-
-	// Send message with image URL
-	resp, err := sc.msgClient.SendMessage(ctx, &steamapi.SendMessageRequest{
-		TargetSteamId: targetSteamID,
-		Message:       content.Body, // Caption
-		MessageType:   steamapi.MessageType_CHAT_MESSAGE,
-		ImageUrl:      uploadResp.ImageUrl,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to send image message to Steam: %w", err)
-	}
-
-	if !resp.Success {
-		return nil, fmt.Errorf("steam image message send failed: %s", resp.ErrorMessage)
-	}
-
-	msgMeta := &MessageMetadata{
-		SteamMessageType: "IMAGE",
-		IsEcho:           false,
-		ImageURL:         uploadResp.ImageUrl,
-	}
-
-	sc.br.Log.Info().
-		Str("steam_image_url", uploadResp.ImageUrl).
-		Int64("timestamp", resp.Timestamp).
-		Msg("Image message sent to Steam successfully using Steam UGC (fallback)")
-
-	return &bridgev2.MatrixMessageResponse{
-		DB: &database.Message{
-			ID:        networkid.MessageID(fmt.Sprintf("%d:%d", targetSteamID, resp.Timestamp)),
-			MXID:      msg.Event.ID,
-			Timestamp: time.Unix(resp.Timestamp, 0),
-			Metadata:  msgMeta,
-		},
-	}, nil
+	return nil, fmt.Errorf("image sharing to Steam requires public media configuration. Please enable 'public_media.enabled: true' and set 'appservice.public_address' in bridge config")
 }
 
 // extractFilenameFromURL extracts a filename from a URL path

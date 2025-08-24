@@ -1,9 +1,5 @@
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using System.Security.Cryptography;
-using System.Text;
-using SteamKit2;
-using SteamKit2.Internal;
 
 namespace SteamBridge.Services;
 
@@ -24,194 +20,28 @@ public class SteamImageService
     }
 
     /// <summary>
-    /// Uploads an image to Steam UGC and returns a URL for sharing.
-    /// Uses Steam's official UGC (User Generated Content) API to host images on steamusercontent.com.
+    /// Steam UGC upload is not supported for third-party clients.
+    /// Steam blocks UGC uploads from clients that are not the official Steam client, even with 
+    /// proper authentication and client masquerading. This is a server-side restriction by design.
+    /// 
+    /// For Matrix→Steam image sharing, use bridgev2's public media feature instead, which allows
+    /// the Matrix server to host images at public HTTP URLs that Steam users can access.
     /// </summary>
     /// <param name="imageData">The image data bytes</param>
     /// <param name="mimeType">The MIME type (e.g., image/png, image/jpeg)</param>
     /// <param name="filename">The filename for the image</param>
-    /// <returns>A URL for the uploaded image</returns>
-    public async Task<string> UploadImageAsync(byte[] imageData, string mimeType, string filename)
+    /// <returns>Always throws an exception explaining that UGC upload is blocked</returns>
+    [Obsolete("Steam blocks UGC uploads from third-party clients. Use bridgev2 public media instead.")]
+    public Task<string> UploadImageAsync(byte[] imageData, string mimeType, string filename)
     {
-        // Enhanced connection state validation for SteamKit2 v3+ AsyncJob requirements
-        if (!_steamClientManager.IsConnected)
-        {
-            throw new InvalidOperationException("Must be connected to Steam before uploading images. SteamKit2 v3+ AsyncJobs instantly fail if not connected.");
-        }
+        _logger.LogWarning("Steam UGC upload attempted but blocked: {Filename}, {MimeType}, {Size} bytes. " +
+                          "Steam restricts UGC uploads to official clients only.", filename, mimeType, imageData.Length);
         
-        if (!_steamClientManager.IsLoggedOn)
-        {
-            throw new InvalidOperationException("Must be logged on to Steam before uploading images");
-        }
-
-        var unifiedMessages = _steamClientManager.SteamUnifiedMessages;
-        if (unifiedMessages == null)
-        {
-            throw new InvalidOperationException("SteamUnifiedMessages is not available");
-        }
-
-        _logger.LogInformation("Starting Steam UGC upload: {Filename}, {MimeType}, {Size} bytes", 
-            filename, mimeType, imageData.Length);
-
-        try
-        {
-            // Create Cloud service instance using SteamKit2 v3+ API
-            var cloudService = unifiedMessages.CreateService<SteamKit2.Internal.Cloud>();
-            
-            // Step 1: Begin UGC Upload
-            var beginRequest = new CCloud_BeginUGCUpload_Request
-            {
-                appid = 0, // Steam Community uploads
-                file_size = (uint)imageData.Length,
-                filename = filename,
-                file_sha = ComputeSHA1Hash(imageData),
-                content_type = mimeType
-            };
-
-            _logger.LogDebug("Sending BeginUGCUpload request: {Filename}, SHA1: {SHA1}", 
-                filename, beginRequest.file_sha);
-
-            // Use the new SteamKit2 v3+ unified messaging API with timeout
-            var beginJob = cloudService.BeginUGCUpload(beginRequest);
-            
-            // Add timeout to prevent indefinite hanging - SteamKit2 v3.2.0 AsyncJobs can fail instantly
-            var beginTask = beginJob.ToTask();
-            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30));
-            var completedTask = await Task.WhenAny(beginTask, timeoutTask).ConfigureAwait(false);
-            
-            if (completedTask == timeoutTask)
-            {
-                throw new TimeoutException("Steam UGC BeginUpload request timed out after 30 seconds. This may indicate Steam server issues or client authentication problems.");
-            }
-            
-            var beginResponse = await beginTask.ConfigureAwait(false);
-
-            if (beginResponse?.Body == null)
-            {
-                throw new InvalidOperationException("BeginUGCUpload failed: No response received");
-            }
-
-            var beginResult = beginResponse.Body;
-            if (beginResult == null)
-            {
-                throw new InvalidOperationException("BeginUGCUpload failed: Invalid response type");
-            }
-
-            _logger.LogInformation("BeginUGCUpload response details: UGC ID: {UGCID}, Host: '{Host}', Path: '{Path}', UseHttps: {UseHttps}, Headers: {HeaderCount}", 
-                beginResult.ugcid, beginResult.url_host ?? "NULL", beginResult.url_path ?? "NULL", beginResult.use_https, 
-                beginResult.request_headers?.Count ?? 0);
-                
-            // Log all request headers if any
-            if (beginResult.request_headers != null && beginResult.request_headers.Count > 0)
-            {
-                foreach (var header in beginResult.request_headers)
-                {
-                    _logger.LogDebug("Steam UGC Header: {Name} = {Value}", header.name, header.value);
-                }
-            }
-            else
-            {
-                _logger.LogWarning("No request headers provided by Steam UGC BeginUpload");
-            }
-
-            // Validate Steam response before constructing URL
-            if (string.IsNullOrEmpty(beginResult.url_host))
-            {
-                throw new InvalidOperationException($"Steam UGC BeginUpload returned null or empty url_host. UGC ID: {beginResult.ugcid}");
-            }
-            
-            if (string.IsNullOrEmpty(beginResult.url_path))
-            {
-                throw new InvalidOperationException($"Steam UGC BeginUpload returned null or empty url_path. UGC ID: {beginResult.ugcid}");
-            }
-
-            // Step 2: HTTP Upload to Steam servers
-            var uploadUrl = $"{(beginResult.use_https ? "https" : "http")}://{beginResult.url_host}{beginResult.url_path}";
-            
-            _logger.LogInformation("Constructed upload URL: {UploadUrl}", uploadUrl);
-            
-            using var httpRequest = new HttpRequestMessage(HttpMethod.Put, uploadUrl);
-            httpRequest.Content = new ByteArrayContent(imageData);
-            httpRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType);
-            
-            // Add required headers from Steam's response
-            foreach (var header in beginResult.request_headers)
-            {
-                if (header.name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
-                    continue; // Already set above
-                    
-                httpRequest.Headers.TryAddWithoutValidation(header.name, header.value);
-            }
-
-            _logger.LogDebug("Uploading image data to Steam: {Url}", uploadUrl);
-            
-            using var httpResponse = await _httpClient.SendAsync(httpRequest).ConfigureAwait(false);
-            var uploadSucceeded = httpResponse.IsSuccessStatusCode;
-            
-            if (!uploadSucceeded)
-            {
-                _logger.LogWarning("HTTP upload failed: {StatusCode} {ReasonPhrase}", 
-                    httpResponse.StatusCode, httpResponse.ReasonPhrase);
-            }
-            else
-            {
-                _logger.LogDebug("HTTP upload successful: {StatusCode}", httpResponse.StatusCode);
-            }
-
-            // Step 3: Commit UGC Upload
-            var commitRequest = new CCloud_CommitUGCUpload_Request
-            {
-                transfer_succeeded = uploadSucceeded,
-                appid = 0,
-                ugcid = beginResult.ugcid
-            };
-
-            _logger.LogDebug("Sending CommitUGCUpload request: UGC ID {UGCID}, Success: {Success}", 
-                beginResult.ugcid, uploadSucceeded);
-
-            // Use the new SteamKit2 v3+ unified messaging API with timeout
-            var commitJob = cloudService.CommitUGCUpload(commitRequest);
-            
-            var commitTask = commitJob.ToTask();
-            var commitTimeoutTask = Task.Delay(TimeSpan.FromSeconds(30));
-            var completedCommitTask = await Task.WhenAny(commitTask, commitTimeoutTask).ConfigureAwait(false);
-            
-            if (completedCommitTask == commitTimeoutTask)
-            {
-                throw new TimeoutException("Steam UGC CommitUpload request timed out after 30 seconds.");
-            }
-            
-            var commitResponse = await commitTask.ConfigureAwait(false);
-
-            if (commitResponse?.Body == null)
-            {
-                throw new InvalidOperationException("CommitUGCUpload failed: No response received");
-            }
-
-            var commitResult = commitResponse.Body;
-            if (commitResult == null)
-            {
-                throw new InvalidOperationException("CommitUGCUpload failed: Invalid response type");
-            }
-
-            if (!commitResult.file_committed)
-            {
-                throw new InvalidOperationException($"Steam UGC upload failed to commit: UGC ID {beginResult.ugcid}");
-            }
-
-            // Construct the final Steam UGC URL
-            var ugcUrl = $"https://images.steamusercontent.com/ugc/{beginResult.ugcid}/{beginResult.ugcid}/";
-            
-            _logger.LogInformation("Steam UGC upload completed successfully: {Filename} -> {URL}", 
-                filename, ugcUrl);
-
-            return ugcUrl;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to upload image to Steam UGC: {Filename}", filename);
-            throw;
-        }
+        throw new NotSupportedException(
+            "Steam UGC upload is not supported from third-party clients. " +
+            "Steam blocks these uploads as a security measure. " +
+            "For Matrix→Steam image sharing, configure 'public_media' in the bridge to generate " +
+            "public HTTP URLs that Steam users can access directly.");
     }
 
     /// <summary>
@@ -351,18 +181,6 @@ public class SteamImageService
         };
     }
 
-    /// <summary>
-    /// Computes SHA1 hash of image data for Steam UGC upload.
-    /// Steam requires a SHA1 hash of the file content for verification.
-    /// </summary>
-    /// <param name="data">The image data bytes</param>
-    /// <returns>SHA1 hash as lowercase hex string</returns>
-    private static string ComputeSHA1Hash(byte[] data)
-    {
-        using var sha1 = SHA1.Create();
-        var hash = sha1.ComputeHash(data);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
 
     private string GetFileExtension(string mimeType)
     {
