@@ -372,6 +372,7 @@ func (sc *SteamClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 				Caption: event.CapLevelFullySupported,
 			},
 		},
+		TypingNotifications: true,
 	}
 }
 
