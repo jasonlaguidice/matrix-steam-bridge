@@ -23,7 +23,7 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
     fi
 
 # Stage 2: Build Go bridge
-FROM golang:1.24.5-alpine AS go-builder
+FROM golang:1.24.6-alpine AS go-builder
 
 # Install build dependencies including gcc/g++ for CGO and olm for encryption
 RUN apk add --no-cache git ca-certificates gcc g++ musl-dev sqlite-dev olm-dev
