@@ -18,7 +18,7 @@ Please see [ROADMAP.md](ROADMAP.md)
 
 ### Prerequisites
 
-- Go 1.24.5 or later
+- Go 1.24.6 or later
 - .NET 8.0 SDK
 
 ### Building from Source
