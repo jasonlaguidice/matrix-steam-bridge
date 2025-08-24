@@ -24,10 +24,8 @@ public class SteamImageService
     }
 
     /// <summary>
-    /// Uploads an image and returns a URL for sharing.
-    /// Note: This is a placeholder implementation. Steam's UGC upload API requires
-    /// more complex SteamKit2 integration with proper callback handling.
-    /// For production use, consider integrating with a reliable image hosting service.
+    /// Uploads an image to Steam UGC and returns a URL for sharing.
+    /// Uses Steam's official UGC (User Generated Content) API to host images on steamusercontent.com.
     /// </summary>
     /// <param name="imageData">The image data bytes</param>
     /// <param name="mimeType">The MIME type (e.g., image/png, image/jpeg)</param>
@@ -40,99 +38,119 @@ public class SteamImageService
             throw new InvalidOperationException("Must be logged on to Steam before uploading images");
         }
 
-        _logger.LogInformation("Processing image upload: {Filename}, {MimeType}, {Size} bytes", 
+        var unifiedMessages = _steamClientManager.SteamUnifiedMessages;
+        if (unifiedMessages == null)
+        {
+            throw new InvalidOperationException("SteamUnifiedMessages is not available");
+        }
+
+        _logger.LogInformation("Starting Steam UGC upload: {Filename}, {MimeType}, {Size} bytes", 
             filename, mimeType, imageData.Length);
 
         try
         {
-            // TODO: Implement Steam UGC upload when SteamKit2 callback system is integrated
-            // For now, we'll create a data URL that includes the image data
-            // This allows the system to work end-to-end while we work on the UGC integration
+            // Step 1: Begin UGC Upload
+            var beginRequest = new CCloud_BeginUGCUpload_Request
+            {
+                appid = 0, // Steam Community uploads
+                file_size = (uint)imageData.Length,
+                filename = filename,
+                file_sha = ComputeSHA1Hash(imageData),
+                content_type = mimeType
+            };
+
+            _logger.LogDebug("Sending BeginUGCUpload request: {Filename}, SHA1: {SHA1}", 
+                filename, beginRequest.file_sha);
+
+            var beginJob = unifiedMessages.SendMessage<CCloud_BeginUGCUpload_Request, CCloud_BeginUGCUpload_Response>("Cloud.BeginUGCUpload#1", beginRequest);
+            var beginResponse = await beginJob.ToTask().ConfigureAwait(false);
+
+            if (beginResponse?.Body == null)
+            {
+                throw new InvalidOperationException("BeginUGCUpload failed: No response received");
+            }
+
+            var beginResult = beginResponse.Body;
+            if (beginResult == null)
+            {
+                throw new InvalidOperationException("BeginUGCUpload failed: Invalid response type");
+            }
+
+            _logger.LogDebug("BeginUGCUpload successful. UGC ID: {UGCID}, Host: {Host}, Path: {Path}", 
+                beginResult.ugcid, beginResult.url_host, beginResult.url_path);
+
+            // Step 2: HTTP Upload to Steam servers
+            var uploadUrl = $"{(beginResult.use_https ? "https" : "http")}://{beginResult.url_host}{beginResult.url_path}";
             
-            var base64Data = Convert.ToBase64String(imageData);
-            var dataUrl = $"data:{mimeType};base64,{base64Data}";
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Put, uploadUrl);
+            httpRequest.Content = new ByteArrayContent(imageData);
+            httpRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(mimeType);
             
-            _logger.LogInformation("Image processed as data URL: {Filename}, {Size} bytes", filename, imageData.Length);
+            // Add required headers from Steam's response
+            foreach (var header in beginResult.request_headers)
+            {
+                if (header.name.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
+                    continue; // Already set above
+                    
+                httpRequest.Headers.TryAddWithoutValidation(header.name, header.value);
+            }
+
+            _logger.LogDebug("Uploading image data to Steam: {Url}", uploadUrl);
             
-            /* STEAM UGC UPLOAD IMPLEMENTATION NOTES FOR FUTURE DEVELOPMENT:
-             * 
-             * Steam provides a UGC (User Generated Content) upload API that can host images
-             * on steamusercontent.com. The process involves 3 steps:
-             * 
-             * STEP 1: BeginUGCUpload
-             * - Send CCloud_BeginUGCUpload_Request via ServiceMethodCallFromClient
-             * - Required fields:
-             *   - appid: 0 (for general Steam Community uploads)
-             *   - file_size: size of image in bytes
-             *   - filename: original filename
-             *   - file_sha: SHA1 hash of file content (lowercase hex)
-             *   - content_type: MIME type (e.g., "image/png")
-             * - Response: CCloud_BeginUGCUpload_Response contains:
-             *   - ugcid: unique identifier for the upload
-             *   - url_host: hostname for upload (e.g., "steamcloud-ugc.akamaized.net")
-             *   - url_path: path for upload (e.g., "/ugc-upload/...")
-             *   - use_https: whether to use HTTPS
-             *   - request_headers: additional headers required for upload
-             * 
-             * STEP 2: HTTP Upload
-             * - Upload file data via HTTP PUT to: {protocol}://{url_host}{url_path}
-             * - Content-Type: set to the image MIME type
-             * - Include all headers from request_headers in the HTTP request
-             * - Body: raw image data bytes
-             * 
-             * STEP 3: CommitUGCUpload
-             * - Send CCloud_CommitUGCUpload_Request via ServiceMethodCallFromClient
-             * - Required fields:
-             *   - transfer_succeeded: true if HTTP upload succeeded
-             *   - appid: 0 (same as BeginUGCUpload)
-             *   - ugcid: the ugcid from BeginUGCUpload response
-             * - Response: CCloud_CommitUGCUpload_Response confirms completion
-             * 
-             * FINAL URL CONSTRUCTION:
-             * The resulting image URL follows the pattern:
-             * https://images.steamusercontent.com/ugc/{ugcid}/{hash}/
-             * 
-             * Where:
-             * - ugcid: the unique ID from Steam's response
-             * - hash: appears to be related to file content or timestamp
-             * 
-             * STEAMKIT2 INTEGRATION REQUIREMENTS:
-             * 1. Implement proper callback handling for ServiceMethodCallFromClient
-             * 2. Add message handlers for CCloud_BeginUGCUpload_Response
-             * 3. Add message handlers for CCloud_CommitUGCUpload_Response
-             * 4. Handle async response correlation using JobIDs
-             * 5. Add proper error handling for upload failures
-             * 
-             * EXAMPLE USAGE IN STEAMKIT2:
-             * var request = new ClientMsgProtobuf<CCloud_BeginUGCUpload_Request>(EMsg.ServiceMethodCallFromClient);
-             * request.Header.realm = 1;  // Steam realm
-             * request.Header.target_job_name = "Cloud.BeginUGCUpload#1";
-             * request.SourceJobID = client.GetNextJobID();
-             * request.Body.appid = 0;
-             * request.Body.file_size = (uint)imageData.Length;
-             * request.Body.filename = filename;
-             * request.Body.file_sha = ComputeSHA1Hash(imageData);
-             * request.Body.content_type = mimeType;
-             * client.Send(request);
-             * 
-             * REFERENCES:
-             * - Steam Web Client uploads to steamusercontent.com via this method
-             * - UGC messages defined in SteamKit2/Base/Generated/SteamMsgCloud.cs
-             * - mx-puppet-steam project showed evidence of similar upload capability
-             * 
-             * BENEFITS OF STEAM UGC APPROACH:
-             * - Images hosted on Steam's official CDN
-             * - Permanent URLs that don't expire
-             * - High availability and global distribution
-             * - Native integration with Steam ecosystem
-             * - No third-party dependencies
-             */
+            using var httpResponse = await _httpClient.SendAsync(httpRequest).ConfigureAwait(false);
+            var uploadSucceeded = httpResponse.IsSuccessStatusCode;
             
-            return dataUrl;
+            if (!uploadSucceeded)
+            {
+                _logger.LogWarning("HTTP upload failed: {StatusCode} {ReasonPhrase}", 
+                    httpResponse.StatusCode, httpResponse.ReasonPhrase);
+            }
+            else
+            {
+                _logger.LogDebug("HTTP upload successful: {StatusCode}", httpResponse.StatusCode);
+            }
+
+            // Step 3: Commit UGC Upload
+            var commitRequest = new CCloud_CommitUGCUpload_Request
+            {
+                transfer_succeeded = uploadSucceeded,
+                appid = 0,
+                ugcid = beginResult.ugcid
+            };
+
+            _logger.LogDebug("Sending CommitUGCUpload request: UGC ID {UGCID}, Success: {Success}", 
+                beginResult.ugcid, uploadSucceeded);
+
+            var commitJob = unifiedMessages.SendMessage<CCloud_CommitUGCUpload_Request, CCloud_CommitUGCUpload_Response>("Cloud.CommitUGCUpload#1", commitRequest);
+            var commitResponse = await commitJob.ToTask().ConfigureAwait(false);
+
+            if (commitResponse?.Body == null)
+            {
+                throw new InvalidOperationException("CommitUGCUpload failed: No response received");
+            }
+
+            var commitResult = commitResponse.Body;
+            if (commitResult == null)
+            {
+                throw new InvalidOperationException("CommitUGCUpload failed: Invalid response type");
+            }
+
+            if (!commitResult.file_committed)
+            {
+                throw new InvalidOperationException($"Steam UGC upload failed to commit: UGC ID {beginResult.ugcid}");
+            }
+
+            // Construct the final Steam UGC URL
+            var ugcUrl = $"https://images.steamusercontent.com/ugc/{beginResult.ugcid}/{beginResult.ugcid}/";
+            
+            _logger.LogInformation("Steam UGC upload completed successfully: {Filename} -> {URL}", 
+                filename, ugcUrl);
+
+            return ugcUrl;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to process image: {Filename}", filename);
+            _logger.LogError(ex, "Failed to upload image to Steam UGC: {Filename}", filename);
             throw;
         }
     }
@@ -272,6 +290,19 @@ public class SteamImageService
                            imageData[10] == 0x42 && imageData[11] == 0x50,
             _ => false
         };
+    }
+
+    /// <summary>
+    /// Computes SHA1 hash of image data for Steam UGC upload.
+    /// Steam requires a SHA1 hash of the file content for verification.
+    /// </summary>
+    /// <param name="data">The image data bytes</param>
+    /// <returns>SHA1 hash as lowercase hex string</returns>
+    private static string ComputeSHA1Hash(byte[] data)
+    {
+        using var sha1 = SHA1.Create();
+        var hash = sha1.ComputeHash(data);
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     private string GetFileExtension(string mimeType)
