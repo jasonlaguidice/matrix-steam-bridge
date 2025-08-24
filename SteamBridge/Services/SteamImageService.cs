@@ -1,9 +1,5 @@
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
-using System.Security.Cryptography;
-using System.Text;
-using SteamKit2;
-using SteamKit2.Internal;
 
 namespace SteamBridge.Services;
 
@@ -24,117 +20,28 @@ public class SteamImageService
     }
 
     /// <summary>
-    /// Uploads an image and returns a URL for sharing.
-    /// Note: This is a placeholder implementation. Steam's UGC upload API requires
-    /// more complex SteamKit2 integration with proper callback handling.
-    /// For production use, consider integrating with a reliable image hosting service.
+    /// Steam UGC upload is not supported for third-party clients.
+    /// Steam blocks UGC uploads from clients that are not the official Steam client, even with 
+    /// proper authentication and client masquerading. This is a server-side restriction by design.
+    /// 
+    /// For Matrix→Steam image sharing, use bridgev2's public media feature instead, which allows
+    /// the Matrix server to host images at public HTTP URLs that Steam users can access.
     /// </summary>
     /// <param name="imageData">The image data bytes</param>
     /// <param name="mimeType">The MIME type (e.g., image/png, image/jpeg)</param>
     /// <param name="filename">The filename for the image</param>
-    /// <returns>A URL for the uploaded image</returns>
-    public async Task<string> UploadImageAsync(byte[] imageData, string mimeType, string filename)
+    /// <returns>Always throws an exception explaining that UGC upload is blocked</returns>
+    [Obsolete("Steam blocks UGC uploads from third-party clients. Use bridgev2 public media instead.")]
+    public Task<string> UploadImageAsync(byte[] imageData, string mimeType, string filename)
     {
-        if (!_steamClientManager.IsLoggedOn)
-        {
-            throw new InvalidOperationException("Must be logged on to Steam before uploading images");
-        }
-
-        _logger.LogInformation("Processing image upload: {Filename}, {MimeType}, {Size} bytes", 
-            filename, mimeType, imageData.Length);
-
-        try
-        {
-            // TODO: Implement Steam UGC upload when SteamKit2 callback system is integrated
-            // For now, we'll create a data URL that includes the image data
-            // This allows the system to work end-to-end while we work on the UGC integration
-            
-            var base64Data = Convert.ToBase64String(imageData);
-            var dataUrl = $"data:{mimeType};base64,{base64Data}";
-            
-            _logger.LogInformation("Image processed as data URL: {Filename}, {Size} bytes", filename, imageData.Length);
-            
-            /* STEAM UGC UPLOAD IMPLEMENTATION NOTES FOR FUTURE DEVELOPMENT:
-             * 
-             * Steam provides a UGC (User Generated Content) upload API that can host images
-             * on steamusercontent.com. The process involves 3 steps:
-             * 
-             * STEP 1: BeginUGCUpload
-             * - Send CCloud_BeginUGCUpload_Request via ServiceMethodCallFromClient
-             * - Required fields:
-             *   - appid: 0 (for general Steam Community uploads)
-             *   - file_size: size of image in bytes
-             *   - filename: original filename
-             *   - file_sha: SHA1 hash of file content (lowercase hex)
-             *   - content_type: MIME type (e.g., "image/png")
-             * - Response: CCloud_BeginUGCUpload_Response contains:
-             *   - ugcid: unique identifier for the upload
-             *   - url_host: hostname for upload (e.g., "steamcloud-ugc.akamaized.net")
-             *   - url_path: path for upload (e.g., "/ugc-upload/...")
-             *   - use_https: whether to use HTTPS
-             *   - request_headers: additional headers required for upload
-             * 
-             * STEP 2: HTTP Upload
-             * - Upload file data via HTTP PUT to: {protocol}://{url_host}{url_path}
-             * - Content-Type: set to the image MIME type
-             * - Include all headers from request_headers in the HTTP request
-             * - Body: raw image data bytes
-             * 
-             * STEP 3: CommitUGCUpload
-             * - Send CCloud_CommitUGCUpload_Request via ServiceMethodCallFromClient
-             * - Required fields:
-             *   - transfer_succeeded: true if HTTP upload succeeded
-             *   - appid: 0 (same as BeginUGCUpload)
-             *   - ugcid: the ugcid from BeginUGCUpload response
-             * - Response: CCloud_CommitUGCUpload_Response confirms completion
-             * 
-             * FINAL URL CONSTRUCTION:
-             * The resulting image URL follows the pattern:
-             * https://images.steamusercontent.com/ugc/{ugcid}/{hash}/
-             * 
-             * Where:
-             * - ugcid: the unique ID from Steam's response
-             * - hash: appears to be related to file content or timestamp
-             * 
-             * STEAMKIT2 INTEGRATION REQUIREMENTS:
-             * 1. Implement proper callback handling for ServiceMethodCallFromClient
-             * 2. Add message handlers for CCloud_BeginUGCUpload_Response
-             * 3. Add message handlers for CCloud_CommitUGCUpload_Response
-             * 4. Handle async response correlation using JobIDs
-             * 5. Add proper error handling for upload failures
-             * 
-             * EXAMPLE USAGE IN STEAMKIT2:
-             * var request = new ClientMsgProtobuf<CCloud_BeginUGCUpload_Request>(EMsg.ServiceMethodCallFromClient);
-             * request.Header.realm = 1;  // Steam realm
-             * request.Header.target_job_name = "Cloud.BeginUGCUpload#1";
-             * request.SourceJobID = client.GetNextJobID();
-             * request.Body.appid = 0;
-             * request.Body.file_size = (uint)imageData.Length;
-             * request.Body.filename = filename;
-             * request.Body.file_sha = ComputeSHA1Hash(imageData);
-             * request.Body.content_type = mimeType;
-             * client.Send(request);
-             * 
-             * REFERENCES:
-             * - Steam Web Client uploads to steamusercontent.com via this method
-             * - UGC messages defined in SteamKit2/Base/Generated/SteamMsgCloud.cs
-             * - mx-puppet-steam project showed evidence of similar upload capability
-             * 
-             * BENEFITS OF STEAM UGC APPROACH:
-             * - Images hosted on Steam's official CDN
-             * - Permanent URLs that don't expire
-             * - High availability and global distribution
-             * - Native integration with Steam ecosystem
-             * - No third-party dependencies
-             */
-            
-            return dataUrl;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to process image: {Filename}", filename);
-            throw;
-        }
+        _logger.LogWarning("Steam UGC upload attempted but blocked: {Filename}, {MimeType}, {Size} bytes. " +
+                          "Steam restricts UGC uploads to official clients only.", filename, mimeType, imageData.Length);
+        
+        throw new NotSupportedException(
+            "Steam UGC upload is not supported from third-party clients. " +
+            "Steam blocks these uploads as a security measure. " +
+            "For Matrix→Steam image sharing, configure 'public_media' in the bridge to generate " +
+            "public HTTP URLs that Steam users can access directly.");
     }
 
     /// <summary>
@@ -273,6 +180,7 @@ public class SteamImageService
             _ => false
         };
     }
+
 
     private string GetFileExtension(string mimeType)
     {
