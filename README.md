@@ -72,13 +72,20 @@ Supported architectures: `linux/amd64`, `linux/arm64`
    ./steam -c config.yaml
    ```
 
-## Configuration w/ Beeper **
+## Configuration w/ Beeper
 
-**PENDING**: Please stand by! This bridge is built on the bridgev2 architecture so using the [Beeper Bridge Manager](https://github.com/beeper/bridge-manager) to generate a configuration (example `bbctl config --type bridgev2 sh-steam`) should™️ work just fine.
+1. Generate a bridgev2 configuration using `bbctl config --type bridgev2 [bridge name]` and save the resultant configuration file in the bridge main directory
+   ```bash
+   ./bbctl config --type bridgev2 sh-steam > ./config.yaml
+   ```
+2. Run the bridge with the standard run command
+   ```bash
+   ./steam -c config.yaml
+   ```
 
 ## Usage
 
-1. **Invite the bridge bot** to a new Matrix room - it will automatically mark the room as your management portam rool
+1. **Invite the bridge bot** to a new Matrix room - it will automatically mark the room as your management portal rool
 2. **Login to Steam** using one of these methods:
    - `login qr` - QR code authentication (recommended)
    - `login password` - Username/password login
