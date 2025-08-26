@@ -49,6 +49,7 @@ RUN apk add --no-cache \
     ca-certificates \
     tzdata \
     su-exec \
+    olm \
     && rm -rf /var/cache/apk/*
 
 # Create bridge user
