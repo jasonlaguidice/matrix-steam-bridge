@@ -85,11 +85,11 @@ Supported architectures: `linux/amd64`, `linux/arm64`
 
 ## Usage
 
-1. **Invite the bridge bot** to a new Matrix room - it will automatically mark the room as your management portal rool
+1. **Invite the bridge bot** to a new Matrix room - it will automatically mark the room as your management portal room
 2. **Login to Steam** using one of these methods:
    - `login qr` - QR code authentication (recommended)
    - `login password` - Username/password login
-3. **Start chatting** - The bridge will automatically create portals for your Steam friends
+3. **Start chatting** - The bridge will automatically create portals for your Steam friends as messages are received
 
 ## Development
 
