@@ -16,10 +16,10 @@ WORKDIR /src/SteamBridge
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
         export Protobuf_ProtocFullPath=$(which protoc); \
         dotnet restore --runtime linux-arm64; \
-        dotnet publish -c Release --runtime linux-arm64 --self-contained false -o /app/steambridge; \
+        dotnet publish -c Release --runtime linux-arm64 --self-contained false -o /app/SteamBridge/bin/Release/net8.0; \
     else \
         dotnet restore --runtime linux-x64; \
-        dotnet publish -c Release --runtime linux-x64 --self-contained false -o /app/steambridge; \
+        dotnet publish -c Release --runtime linux-x64 --self-contained false -o /app/SteamBridge/bin/Release/net8.0; \
     fi
 
 # Stage 2: Build Go bridge
@@ -57,12 +57,12 @@ RUN adduser -D -s /bin/sh -u 1000 bridge
 
 # Create application directories
 WORKDIR /app
-RUN mkdir -p /app/steambridge /app/logs /app/data && \
+RUN mkdir -p /app/SteamBridge/bin/Release/net8.0 /app/logs /app/data && \
     chown -R bridge:bridge /app
 
 # Copy built applications
 COPY --from=go-builder /src/steam /app/steam
-COPY --from=dotnet-builder /app/steambridge/ /app/steambridge/
+COPY --from=dotnet-builder /app/SteamBridge/bin/Release/net8.0/ /app/SteamBridge/bin/Release/net8.0/
 
 # Set proper permissions
 RUN chmod +x /app/steam && \
