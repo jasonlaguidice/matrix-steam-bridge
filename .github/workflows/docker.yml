@@ -69,30 +69,15 @@ jobs:
       with:
         context: .
         platforms: ${{ matrix.platform }}
+        push: ${{ github.event_name != 'pull_request' }}
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha,scope=${{ matrix.arch }}
         cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
-        outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ matrix.arch }}
         build-args: |
           BUILDTIME=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
           VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
           REVISION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
-
-    - name: Export digest
-      if: github.event_name != 'pull_request'
-      run: |
-        mkdir -p /tmp/digests
-        digest="${{ steps.build.outputs.digest }}"
-        touch "/tmp/digests/${digest#sha256:}"
-
-    - name: Upload digest
-      if: github.event_name != 'pull_request'
-      uses: actions/upload-artifact@v4
-      with:
-        name: digests-${{ matrix.arch }}
-        path: /tmp/digests/*
-        if-no-files-found: error
-        retention-days: 1
 
   create-manifest:
     if: github.event_name != 'pull_request'
@@ -103,13 +88,6 @@ jobs:
       packages: write
 
     steps:
-    - name: Download digests
-      uses: actions/download-artifact@v4
-      with:
-        path: /tmp/digests
-        pattern: digests-*
-        merge-multiple: true
-
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
@@ -132,11 +110,25 @@ jobs:
           type=semver,pattern={{major}}
           type=raw,value=latest,enable={{is_default_branch}}
 
-    - name: Create manifest list and push
-      working-directory: /tmp/digests
+    - name: Create manifest list from arch-specific tags
       run: |
+        set -e
+        echo "Creating manifest list from architecture-specific tags..."
+        
+        # Create manifest list using arch-specific tags
         docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-          $(printf '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@sha256:%s ' *)
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-amd64 \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-arm64
+        
+        echo "Manifest list created successfully"
+
+    - name: Inspect created manifest
+      run: |
+        echo "Inspecting created manifest..."
+        for tag in $(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON"); do
+          echo "Checking manifest for tag: $tag"
+          docker buildx imagetools inspect "$tag" || echo "Failed to inspect $tag"
+        done
 
   security-scan:
     runs-on: ubuntu-latest
