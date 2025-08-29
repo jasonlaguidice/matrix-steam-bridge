@@ -1,4 +1,4 @@
-steam_bridge_path: ./SteamBridge/bin/Release/net8.0
+steam_bridge_path: ./
 steam_bridge_address: localhost:50051
 steam_bridge_auto_start: true
 steam_bridge_startup_timeout: 30

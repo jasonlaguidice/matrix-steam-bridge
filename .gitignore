@@ -16,10 +16,13 @@ phase*
 # Test binary, built with `go test -c`
 *.test
 
-# Output of the go build
+# Output of the Go build
 /steam
 /build/
 steam-*
+
+# Output of C# build
+steamkit-service
 
 # Go workspace file
 go.work

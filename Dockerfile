@@ -16,11 +16,12 @@ WORKDIR /src/SteamBridge
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
         export Protobuf_ProtocFullPath=$(which protoc); \
         dotnet restore --runtime linux-arm64; \
-        dotnet publish -c Release --runtime linux-arm64 --self-contained false -o /app/SteamBridge/bin/Release/net8.0; \
+        dotnet publish -c Release --runtime linux-arm64 --self-contained true -o /app; \
     else \
         dotnet restore --runtime linux-x64; \
-        dotnet publish -c Release --runtime linux-x64 --self-contained false -o /app/SteamBridge/bin/Release/net8.0; \
-    fi
+        dotnet publish -c Release --runtime linux-x64 --self-contained true -o /app; \
+    fi && \
+    mv /app/SteamBridge /app/steamkit-service
 
 # Stage 2: Build Go bridge
 FROM golang:1.24.6-alpine AS go-builder
@@ -57,12 +58,12 @@ RUN adduser -D -s /bin/sh -u 1000 bridge
 
 # Create application directories
 WORKDIR /app
-RUN mkdir -p /app/SteamBridge/bin/Release/net8.0 /app/logs /app/data && \
+RUN mkdir -p /app/logs /app/data /app/config && \
     chown -R bridge:bridge /app
 
 # Copy built applications
 COPY --from=go-builder /src/steam /app/steam
-COPY --from=dotnet-builder /app/SteamBridge/bin/Release/net8.0/ /app/SteamBridge/bin/Release/net8.0/
+COPY --from=dotnet-builder /app/ /app/
 
 # Set proper permissions
 RUN chmod +x /app/steam && \
@@ -93,24 +94,18 @@ if [ ! -w /app/data ]; then
 fi
 
 # Check if config exists
-if [ ! -f /app/data/config.yaml ]; then
-    echo "No config file found at /app/data/config.yaml"
-    echo "Please mount your config file to /app/data/config.yaml"
+if [ ! -f /app/config/config.yaml ]; then
+    echo "No config file found at /app/config/config.yaml"
+    echo "Please mount your config file to /app/config/config.yaml"
     echo "You can use the example config as a starting point:"
-    echo "  docker run -v /path/to/config.yaml:/app/data/config.yaml ..."
+    echo "  docker run -v /path/to/config.yaml:/app/config/config.yaml ..."
     exit 1
 fi
 
 # Start the bridge
 echo "Starting Matrix Steam Bridge..."
 
-# Check if config needs steam_bridge_path fix for Docker
-if grep -q "steam_bridge_path: ./SteamBridge" /app/data/config.yaml 2>/dev/null; then
-    echo "Fixing steam_bridge_path for Docker environment..."
-    sed -i 's|steam_bridge_path: ./SteamBridge|steam_bridge_path: /app/SteamBridge|g' /app/data/config.yaml
-fi
-
-exec /app/steam -c /app/data/config.yaml "$@"
+exec /app/steam -c /app/config/config.yaml "$@"
 EOF
 
 RUN chmod +x /app/entrypoint.sh && chown bridge:bridge /app/entrypoint.sh
@@ -119,9 +114,9 @@ RUN chmod +x /app/entrypoint.sh && chown bridge:bridge /app/entrypoint.sh
 USER bridge
 
 # Set volumes
-VOLUME ["/app/data", "/app/logs"]
+VOLUME ["/app/config", "/app/data", "/app/logs"]
 
-# Default working directory for mounted configs
-WORKDIR /app/data
+# Default working directory
+WORKDIR /app
 
 ENTRYPOINT ["/app/entrypoint.sh"]

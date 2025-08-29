@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -395,7 +398,25 @@ func (sc *SteamConnector) startSteamBridgeService(ctx context.Context) error {
 	sc.steamProcessCancel = cancel
 
 	// Prepare the command to run the compiled executable
-	cmd := exec.CommandContext(processCtx, "dotnet", "SteamBridge.dll")
+	// Determine platform-specific executable name
+	execName := "steamkit-service"
+	if runtime.GOOS == "windows" {
+		execName += ".exe"
+	}
+	
+	// Ensure we have an absolute path or explicit relative path
+	var execPath string
+	if filepath.IsAbs(sc.Config.Path) {
+		execPath = filepath.Join(sc.Config.Path, execName)
+	} else {
+		// For relative paths, ensure we have an explicit "./" prefix
+		execPath = filepath.Join(sc.Config.Path, execName)
+		if !strings.HasPrefix(execPath, "./") && !strings.HasPrefix(execPath, "../") {
+			execPath = "./" + execPath
+		}
+	}
+	
+	cmd := exec.CommandContext(processCtx, execPath)
 	cmd.Dir = sc.Config.Path
 
 	// Set environment variables including parent PID for monitoring
