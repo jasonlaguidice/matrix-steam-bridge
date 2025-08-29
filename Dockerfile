@@ -69,9 +69,6 @@ COPY --from=dotnet-builder /app/ /app/
 RUN chmod +x /app/steam && \
     chown -R bridge:bridge /app
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD su-exec bridge /app/steam --health-check || exit 1
 
 # Expose ports
 EXPOSE 50051
