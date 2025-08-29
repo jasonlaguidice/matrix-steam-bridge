@@ -3,7 +3,7 @@
 * Matrix → Steam
   * [ ] Message content
     * [x] Text
-    * [ ] Formatting (strip)
+    * [x] Formatting (strip)
     * [ ] Media
       * [ ] Images
       * [ ] Files
@@ -22,18 +22,16 @@
     * [ ] Kick/Ban/Unban
   * [ ] Group permissions
   * [ ] Typing notifications
-  * [ ] Read receipts
 * Steam → Matrix
   * [ ] Message content
     * [x] Text
-    * [ ] Media
-      * [ ] Images
-      * [ ] Files
-      * [ ] Gifs
-      * [ ] Stickers
+    * [x] Media
+      * [x] Images
+      * [x] Gifs
+      * [x] Stickers
       * [ ] Steam Emoji
     * [ ] Game Invites
-      * [ ] Invite message
+      * [x] Invite message
       * [ ] Rich invite details
       * [ ] Invite acceptance
   * [ ] Network presence/status
@@ -76,7 +74,7 @@
   * [ ] Automatic Session Recovery
     * [x] On start
     * [ ] After token expiry
-  * [ ] Automatic portal creation
-    * [ ] After login
+  * [x] Automatic portal creation
+    * [x] After `start-chat`
     * [x] When receiving message
   * [ ] Private chat/group creation by inviting Matrix puppet of Steam user to new room
