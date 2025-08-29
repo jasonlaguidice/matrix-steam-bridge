@@ -382,6 +382,23 @@ func (sc *SteamClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 // Steam service process management functions
 
 // startSteamBridgeService launches the SteamBridge service using the compiled executable
+// bridgeLogWriter captures output from spawned processes and feeds it to the bridge logger
+type bridgeLogWriter struct {
+	logger zerolog.Logger
+	source string
+	level  zerolog.Level
+}
+
+func (w *bridgeLogWriter) Write(p []byte) (n int, err error) {
+	msg := strings.TrimRight(string(p), "\r\n")
+	if msg != "" {
+		w.logger.WithLevel(w.level).
+			Str("source", w.source).
+			Msg(msg)
+	}
+	return len(p), nil
+}
+
 func (sc *SteamConnector) startSteamBridgeService(ctx context.Context) error {
 	if sc.steamProcess != nil {
 		return fmt.Errorf("SteamBridge service is already running")
@@ -425,26 +442,23 @@ func (sc *SteamConnector) startSteamBridgeService(ctx context.Context) error {
 		fmt.Sprintf("STEAM_BRIDGE_ADDRESS=%s", sc.Config.Address),
 	)
 
-	// Ensure logs directory exists
-	if err := os.MkdirAll("./logs", 0755); err != nil {
-		cancel()
-		return fmt.Errorf("failed to create logs directory: %w", err)
+	// Create bridge log writers for the steamkit service
+	steamkitOut := &bridgeLogWriter{
+		logger: sc.log,
+		source: "steamkit",
+		level:  zerolog.InfoLevel,
+	}
+	steamkitErr := &bridgeLogWriter{
+		logger: sc.log,
+		source: "steamkit",
+		level:  zerolog.ErrorLevel,
 	}
 
-	// Create log file with current date and time in logs directory with SteamKit prefix
-	logFileName := fmt.Sprintf("./logs/SteamKit_%s.log", time.Now().Format("2006-01-02_15-04-05"))
-	logFile, err := os.Create(logFileName)
-	if err != nil {
-		cancel()
-		return fmt.Errorf("failed to create log file %s: %w", logFileName, err)
-	}
-
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
+	cmd.Stdout = steamkitOut
+	cmd.Stderr = steamkitErr
 
 	// Start the process
 	if err := cmd.Start(); err != nil {
-		logFile.Close()
 		cancel()
 		return fmt.Errorf("failed to start SteamBridge service: %w", err)
 	}
@@ -462,15 +476,12 @@ func (sc *SteamConnector) startSteamBridgeService(ctx context.Context) error {
 		pidFile.Close()
 	}
 
-	// SteamBridge logs are now written to ./logs directory with SteamKit prefix for better identification
 	sc.log.Info().
 		Int("pid", cmd.Process.Pid).
-		Str("log_file", logFileName).
-		Msg("SteamBridge compiled executable started successfully")
+		Msg("SteamBridge compiled executable started successfully with integrated logging")
 
 	// Start goroutine to monitor process
 	go func() {
-		defer logFile.Close()
 		if err := cmd.Wait(); err != nil {
 			if processCtx.Err() == nil {
 				sc.log.Error().Err(err).Msg("SteamBridge service exited unexpectedly")
