@@ -15,11 +15,11 @@ COPY SteamBridge/ ./SteamBridge/
 WORKDIR /src/SteamBridge
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
         export Protobuf_ProtocFullPath=$(which protoc); \
-        dotnet restore --runtime linux-arm64; \
-        dotnet publish -c Release --runtime linux-arm64 --self-contained true -o /app; \
+        dotnet restore --runtime linux-musl-arm64; \
+        dotnet publish -c Release --runtime linux-musl-arm64 --self-contained true -o /app; \
     else \
-        dotnet restore --runtime linux-x64; \
-        dotnet publish -c Release --runtime linux-x64 --self-contained true -o /app; \
+        dotnet restore --runtime linux-musl-x64; \
+        dotnet publish -c Release --runtime linux-musl-x64 --self-contained true -o /app; \
     fi && \
     mv /app/SteamBridge /app/steamkit-service
 
