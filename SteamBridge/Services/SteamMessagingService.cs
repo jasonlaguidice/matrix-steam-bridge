@@ -154,46 +154,21 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
         }
     }
 
-    public override async Task<UploadImageResponse> UploadImageToSteam(
+    public override Task<UploadImageResponse> UploadImageToSteam(
         UploadImageRequest request, 
         ServerCallContext context)
     {
-        _logger.LogInformation("Received image upload request: {Filename}, {MimeType}, {Size} bytes", 
+        _logger.LogWarning("Steam UGC upload request denied: {Filename}, {MimeType}, {Size} bytes. " +
+                          "Steam blocks UGC uploads from third-party clients.", 
             request.Filename, request.MimeType, request.ImageData.Length);
 
-        try
+        // Return consistent error explaining that Steam blocks UGC uploads from third-party clients
+        return Task.FromResult(new UploadImageResponse
         {
-            // Validate the image
-            if (!_imageService.ValidateImage(request.ImageData.ToByteArray(), request.MimeType))
-            {
-                return new UploadImageResponse
-                {
-                    Success = false,
-                    ErrorMessage = "Invalid image format or size"
-                };
-            }
-
-            // Upload the image to Steam
-            var imageUrl = await _imageService.UploadImageAsync(
-                request.ImageData.ToByteArray(), 
-                request.MimeType, 
-                request.Filename);
-
-            return new UploadImageResponse
-            {
-                Success = true,
-                ImageUrl = imageUrl
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error uploading image: {Filename}", request.Filename);
-            return new UploadImageResponse
-            {
-                Success = false,
-                ErrorMessage = $"Upload failed: {ex.Message}"
-            };
-        }
+            Success = false,
+            ErrorMessage = "Steam UGC upload not supported: Steam blocks image uploads from third-party clients. " +
+                          "Configure 'public_media' in bridge settings to enable Matrix→Steam image sharing via public URLs."
+        });
     }
 
     public override async Task<DownloadImageResponse> DownloadImageFromSteam(

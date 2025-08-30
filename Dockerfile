@@ -102,6 +102,12 @@ fi
 # Start the bridge
 echo "Starting Matrix Steam Bridge..."
 
+# Check if config needs steam_bridge_path fix for Docker
+if grep -q "steam_bridge_path: ./SteamBridge" /app/config/config.yaml 2>/dev/null; then
+    echo "Fixing steam_bridge_path for Docker environment..."
+    sed -i 's|steam_bridge_path: ./SteamBridge|steam_bridge_path: /app/steamkit-service|g' /app/config/config.yaml
+fi
+
 exec /app/steam -c /app/config/config.yaml "$@"
 EOF
 
