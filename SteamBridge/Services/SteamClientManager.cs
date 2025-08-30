@@ -21,6 +21,8 @@ public class SteamClientManager : IDisposable
     private bool _isLoggedOn;
     private string? _currentAccessToken;
     private string? _currentRefreshToken;
+    private bool _friendsListReceived;
+    private readonly object _stateLock = new object();
 
     public event EventHandler<SteamUser.LoggedOnCallback>? LoggedOn;
     public event EventHandler<SteamUser.LoggedOffCallback>? LoggedOff;
@@ -33,6 +35,16 @@ public class SteamClientManager : IDisposable
 
     public bool IsConnected => _isConnected;
     public bool IsLoggedOn => _isLoggedOn;
+    public bool IsFriendsListLoaded
+    {
+        get
+        {
+            lock (_stateLock)
+            {
+                return _friendsListReceived && _isLoggedOn;
+            }
+        }
+    }
     public SteamUser SteamUser => _steamUser;
     public SteamFriends SteamFriends => _steamFriends;
     public SteamClient SteamClient => _steamClient;
@@ -219,6 +231,10 @@ public class SteamClientManager : IDisposable
         if (callback.Result == EResult.OK)
         {
             _isLoggedOn = true;
+            lock (_stateLock)
+            {
+                _friendsListReceived = false; // Reset on new login
+            }
             _logger.LogInformation("Successfully logged on to Steam. SteamID: {SteamID}", callback.ClientSteamID);
             
             // Set persona state to online
@@ -241,6 +257,10 @@ public class SteamClientManager : IDisposable
 
     private void OnFriendsListReceived(SteamFriends.FriendsListCallback callback)
     {
+        lock (_stateLock)
+        {
+            _friendsListReceived = true;
+        }
         _logger.LogInformation("Friends list received");
         FriendsListReceived?.Invoke(this, callback);
     }

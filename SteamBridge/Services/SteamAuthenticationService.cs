@@ -574,47 +574,13 @@ public class SteamAuthenticationService
         var timeout = TimeSpan.FromSeconds(30);
         var startTime = DateTime.UtcNow;
         
-        // First wait for basic logon
-        while (!_steamClientManager.IsLoggedOn && DateTime.UtcNow - startTime < timeout)
+        // Wait for both login AND friends list to be ready
+        while (!_steamClientManager.IsFriendsListLoaded && DateTime.UtcNow - startTime < timeout)
         {
             await Task.Delay(100);
         }
         
-        if (!_steamClientManager.IsLoggedOn)
-        {
-            return false;
-        }
-        
-        // Now wait for friends list to be received, which indicates Steam is fully initialized
-        // This is crucial because GetUserInfo calls fail until the friends list is loaded
-        var friendsListReceived = false;
-        
-        void OnFriendsListReceived(object? sender, SteamFriends.FriendsListCallback e)
-        {
-            friendsListReceived = true;
-        }
-        
-        // Subscribe to friends list callback
-        _steamClientManager.FriendsListReceived += OnFriendsListReceived;
-        
-        try
-        {
-            // Wait for friends list with remaining timeout
-            var remainingTimeout = timeout - (DateTime.UtcNow - startTime);
-            var friendsStartTime = DateTime.UtcNow;
-            
-            while (!friendsListReceived && DateTime.UtcNow - friendsStartTime < remainingTimeout)
-            {
-                await Task.Delay(100);
-            }
-            
-            return friendsListReceived && _steamClientManager.IsLoggedOn;
-        }
-        finally
-        {
-            // Always clean up event handler
-            _steamClientManager.FriendsListReceived -= OnFriendsListReceived;
-        }
+        return _steamClientManager.IsFriendsListLoaded;
     }
 
     private async Task<UserInfo?> GetCurrentUserInfoAsync()
