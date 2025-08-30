@@ -442,15 +442,22 @@ func (sc *SteamClient) verifysteamAuthentication(ctx context.Context) (bool, err
 	// Verify the returned user info matches our stored metadata
 	if resp.UserInfo.SteamId != meta.SteamID {
 		sc.br.Log.Warn().
-			Uint64("expected_steam_id", meta.SteamID).
-			Uint64("actual_steam_id", resp.UserInfo.SteamId).
-			Msg("Steam ID mismatch during verification")
-		return false, nil
+			Str("expected", fmt.Sprintf("%d", meta.SteamID)).
+			Str("received", fmt.Sprintf("%d", resp.UserInfo.SteamId)).
+			Msg("Steam ID mismatch in verification response")
+		return false, fmt.Errorf("Steam ID mismatch: expected %d, got %d", meta.SteamID, resp.UserInfo.SteamId)
 	}
 
+	// Success - update metadata with latest info
+	meta.PersonaName = resp.UserInfo.PersonaName
+	meta.ProfileURL = resp.UserInfo.ProfileUrl
+	meta.AvatarHash = resp.UserInfo.AvatarHash
+	meta.LastValidated = time.Now()
+	sc.UserLogin.Save(ctx)
+
 	sc.br.Log.Info().
-		Uint64("steam_id", resp.UserInfo.SteamId).
 		Str("persona_name", resp.UserInfo.PersonaName).
+		Str("steam_id", fmt.Sprintf("%d", resp.UserInfo.SteamId)).
 		Msg("Steam authentication verification successful")
 
 	return true, nil
