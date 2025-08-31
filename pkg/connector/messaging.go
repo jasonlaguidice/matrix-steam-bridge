@@ -314,7 +314,17 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 
 	// Try to use public media if available (preferred approach)
 	if matrixConn, ok := sc.br.Matrix.(bridgev2.MatrixConnectorWithPublicMedia); ok {
+		sc.br.Log.Debug().
+			Str("content_url", string(content.URL)).
+			Msg("Matrix connector supports public media interface, attempting to get public URL")
+		
 		publicURL := matrixConn.GetPublicMediaAddress(content.URL)
+		
+		sc.br.Log.Debug().
+			Str("public_url", publicURL).
+			Bool("has_public_url", publicURL != "").
+			Msg("GetPublicMediaAddress result")
+		
 		if publicURL != "" {
 			sc.br.Log.Info().
 				Str("public_url", publicURL).
@@ -363,7 +373,13 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 			}, nil
 		}
 
-		sc.br.Log.Warn().Msg("Public media interface available but returned empty URL")
+		sc.br.Log.Warn().
+			Str("content_url", string(content.URL)).
+			Msg("Public media interface available but GetPublicMediaAddress returned empty URL")
+	} else {
+		sc.br.Log.Error().
+			Str("matrix_connector_type", fmt.Sprintf("%T", sc.br.Matrix)).
+			Msg("Matrix connector does not implement MatrixConnectorWithPublicMedia interface")
 	}
 
 	// No public media available - Matrix→Steam image sharing not supported
