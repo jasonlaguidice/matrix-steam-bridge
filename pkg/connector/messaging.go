@@ -16,6 +16,7 @@ import (
 	"maunium.net/go/mautrix/bridgev2/simplevent"
 	"maunium.net/go/mautrix/bridgev2/status"
 	"maunium.net/go/mautrix/event"
+	"maunium.net/go/mautrix/id"
 
 	"go.shadowdrake.org/steam/pkg/steamapi"
 )
@@ -327,22 +328,41 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 		return nil, fmt.Errorf("failed to parse image content")
 	}
 
+	// Extract the media URL - handle both regular and encrypted formats
+	var mediaURL id.ContentURIString
+	if content.URL != "" {
+		// Regular format: url field directly
+		mediaURL = content.URL
+	} else if content.File != nil && content.File.URL != "" {
+		// Encrypted format: file.url field
+		mediaURL = content.File.URL
+	}
+
 	sc.br.Log.Info().
 		Str("image_url", string(content.URL)).
+		Str("file_url", string(content.File.URL)).
+		Str("resolved_media_url", string(mediaURL)).
 		Str("mime_type", content.Info.MimeType).
 		Int("size", content.Info.Size).
 		Str("caption", content.Body).
 		Str("msgtype", string(content.MsgType)).
 		Interface("info_object", content.Info).
+		Bool("is_encrypted", content.File != nil).
 		Msg("Processing image message from Matrix")
+
+	// Check if we have a valid media URL
+	if mediaURL == "" {
+		return nil, fmt.Errorf("no media URL found in image message (neither url nor file.url present)")
+	}
 
 	// Try to use public media if available (preferred approach)
 	if matrixConn, ok := sc.br.Matrix.(bridgev2.MatrixConnectorWithPublicMedia); ok {
 		sc.br.Log.Debug().
-			Str("content_url", string(content.URL)).
+			Str("media_url", string(mediaURL)).
+			Bool("is_encrypted", content.File != nil).
 			Msg("Matrix connector supports public media interface, attempting to get public URL")
 		
-		publicURL := matrixConn.GetPublicMediaAddress(content.URL)
+		publicURL := matrixConn.GetPublicMediaAddress(mediaURL)
 		
 		sc.br.Log.Debug().
 			Str("public_url", publicURL).
@@ -398,7 +418,8 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 		}
 
 		sc.br.Log.Warn().
-			Str("content_url", string(content.URL)).
+			Str("media_url", string(mediaURL)).
+			Bool("is_encrypted", content.File != nil).
 			Msg("Public media interface available but GetPublicMediaAddress returned empty URL")
 	} else {
 		sc.br.Log.Error().
