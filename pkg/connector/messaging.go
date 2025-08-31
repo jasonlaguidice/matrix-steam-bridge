@@ -374,26 +374,40 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 				Str("public_url", publicURL).
 				Msg("Using Matrix public media URL for Steam")
 
-			// Create message with caption and public URL
-			messageText := content.Body // Image caption
-			if messageText == "" {
-				messageText = "Image" // Fallback if no caption
+			// Send caption as separate message if present and not just the filename
+			var captionResp *steamapi.SendMessageResponse
+			var err error
+			if content.Body != "" && content.Body != content.FileName {
+				sc.br.Log.Debug().
+					Str("caption", content.Body).
+					Str("filename", content.FileName).
+					Msg("Sending image caption as separate message")
+				
+				captionResp, err = sc.msgClient.SendMessage(ctx, &steamapi.SendMessageRequest{
+					TargetSteamId: targetSteamID,
+					Message:       content.Body,
+					MessageType:   steamapi.MessageType_CHAT_MESSAGE,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("failed to send image caption to Steam: %w", err)
+				}
+				if !captionResp.Success {
+					return nil, fmt.Errorf("steam caption message send failed: %s", captionResp.ErrorMessage)
+				}
 			}
-			messageText += "\n" + publicURL
 
-			// Send to Steam as regular message with HTTP URL
+			// Send image URL as separate message
 			resp, err := sc.msgClient.SendMessage(ctx, &steamapi.SendMessageRequest{
 				TargetSteamId: targetSteamID,
-				Message:       messageText,
+				Message:       publicURL,
 				MessageType:   steamapi.MessageType_CHAT_MESSAGE,
-				// No ImageUrl field - Steam will receive the URL as clickable text
 			})
 			if err != nil {
-				return nil, fmt.Errorf("failed to send image message to Steam: %w", err)
+				return nil, fmt.Errorf("failed to send image URL to Steam: %w", err)
 			}
 
 			if !resp.Success {
-				return nil, fmt.Errorf("steam image message send failed: %s", resp.ErrorMessage)
+				return nil, fmt.Errorf("steam image URL send failed: %s", resp.ErrorMessage)
 			}
 
 			msgMeta := &MessageMetadata{
