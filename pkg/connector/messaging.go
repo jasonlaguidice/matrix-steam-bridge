@@ -174,6 +174,13 @@ func (sc *SteamClient) isPermanentError(err error) bool {
 // HandleMatrixMessage implements bridgev2.NetworkAPI.
 func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.MatrixMessage) (message *bridgev2.MatrixMessageResponse, err error) {
 	sc.br.Log.Info().Str("event_type", msg.Event.Type.String()).Msg("HandleMatrixMessage() - Processing Matrix message")
+	
+	sc.br.Log.Debug().
+		Str("event_type", msg.Event.Type.String()).
+		Str("event_id", string(msg.Event.ID)).
+		Str("sender", string(msg.Event.Sender)).
+		Interface("raw_content", msg.Event.Content.Raw).
+		Msg("HandleMatrixMessage - Raw event details")
 
 	// Parse target Steam ID from portal ID
 	targetSteamID, err := parseSteamIDFromPortalID(msg.Portal.ID)
@@ -184,7 +191,16 @@ func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	switch msg.Event.Type {
 	case event.EventMessage:
 		content := msg.Event.Content.AsMessage()
+		sc.br.Log.Debug().
+			Interface("parsed_content", content).
+			Bool("content_is_nil", content == nil).
+			Msg("HandleMatrixMessage - Parsed message content")
+		
 		if content != nil && content.MsgType == event.MsgImage {
+			sc.br.Log.Debug().
+				Str("msgtype", string(content.MsgType)).
+				Str("url", string(content.URL)).
+				Msg("HandleMatrixMessage - Detected image message, routing to handleImageMessage")
 			return sc.handleImageMessage(ctx, msg, targetSteamID)
 		}
 		return sc.handleTextMessage(ctx, msg, targetSteamID)
@@ -300,6 +316,12 @@ func (sc *SteamClient) handleStickerMessage(ctx context.Context, msg *bridgev2.M
 
 // handleImageMessage processes image messages from Matrix and sends them to Steam
 func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.MatrixMessage, targetSteamID uint64) (*bridgev2.MatrixMessageResponse, error) {
+	sc.br.Log.Debug().
+		Str("event_type", msg.Event.Type.String()).
+		Str("event_id", string(msg.Event.ID)).
+		Interface("raw_content", msg.Event.Content.Raw).
+		Msg("Raw Matrix event for image message")
+
 	content := msg.Event.Content.AsMessage()
 	if content == nil {
 		return nil, fmt.Errorf("failed to parse image content")
@@ -310,6 +332,8 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 		Str("mime_type", content.Info.MimeType).
 		Int("size", content.Info.Size).
 		Str("caption", content.Body).
+		Str("msgtype", string(content.MsgType)).
+		Interface("info_object", content.Info).
 		Msg("Processing image message from Matrix")
 
 	// Try to use public media if available (preferred approach)
