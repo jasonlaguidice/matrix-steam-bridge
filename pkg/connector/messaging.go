@@ -355,6 +355,25 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 		return nil, fmt.Errorf("no media URL found in image message (neither url nor file.url present)")
 	}
 
+	// Parse MXC URL for logging
+	var serverName, mediaID string
+	mxcStr := string(mediaURL)
+	if strings.HasPrefix(mxcStr, "mxc://") {
+		parts := strings.SplitN(mxcStr[6:], "/", 2) // Remove "mxc://" and split
+		if len(parts) == 2 {
+			serverName = parts[0]
+			mediaID = parts[1]
+		}
+	}
+
+	// Log the exact MXC URL that will be passed to GetPublicMediaAddress
+	sc.br.Log.Info().
+		Str("input_mxc_url", string(mediaURL)).
+		Bool("is_encrypted_media", content.File != nil).
+		Str("server_name", serverName).
+		Str("media_id", mediaID).
+		Msg("MXC URL → GetPublicMediaAddress INPUT")
+
 	// Try to use public media if available (preferred approach)
 	if matrixConn, ok := sc.br.Matrix.(bridgev2.MatrixConnectorWithPublicMedia); ok {
 		sc.br.Log.Debug().
@@ -364,15 +383,20 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 		
 		publicURL := matrixConn.GetPublicMediaAddress(mediaURL)
 		
-		sc.br.Log.Debug().
-			Str("public_url", publicURL).
+		sc.br.Log.Info().
+			Str("input_mxc_url", string(mediaURL)).
+			Str("output_public_url", publicURL).
 			Bool("has_public_url", publicURL != "").
-			Msg("GetPublicMediaAddress result")
+			Bool("is_encrypted_media", content.File != nil).
+			Int("url_length", len(publicURL)).
+			Msg("MXC URL → GetPublicMediaAddress OUTPUT")
 		
 		if publicURL != "" {
+			// Log the exact URL that will be sent to Steam
 			sc.br.Log.Info().
 				Str("public_url", publicURL).
-				Msg("Using Matrix public media URL for Steam")
+				Str("original_mxc", string(mediaURL)).
+				Msg("Final URL that will be sent to Steam")
 
 			// Send caption as separate message if present and not just the filename
 			var captionResp *steamapi.SendMessageResponse
@@ -417,9 +441,11 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 			}
 
 			sc.br.Log.Info().
-				Str("public_url", publicURL).
+				Str("sent_public_url", publicURL).
+				Str("source_mxc_url", string(mediaURL)).
 				Int64("timestamp", resp.Timestamp).
-				Msg("Image message sent to Steam successfully using public media URL")
+				Bool("was_encrypted", content.File != nil).
+				Msg("Image message sent to Steam successfully")
 
 			return &bridgev2.MatrixMessageResponse{
 				DB: &database.Message{
@@ -431,10 +457,13 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 			}, nil
 		}
 
-		sc.br.Log.Warn().
-			Str("media_url", string(mediaURL)).
+		sc.br.Log.Error().
+			Str("input_mxc_url", string(mediaURL)).
+			Str("empty_public_url", publicURL).
 			Bool("is_encrypted", content.File != nil).
-			Msg("Public media interface available but GetPublicMediaAddress returned empty URL")
+			Str("server_name", serverName).
+			Str("media_id", mediaID).
+			Msg("GetPublicMediaAddress returned empty URL")
 	} else {
 		sc.br.Log.Error().
 			Str("matrix_connector_type", fmt.Sprintf("%T", sc.br.Matrix)).
@@ -445,7 +474,9 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 	// Steam blocks UGC uploads from third-party clients, so we cannot upload images to Steam
 	sc.br.Log.Error().
 		Str("reason", "public_media_unavailable").
-		Msg("Cannot send image to Steam: public media not configured and Steam blocks UGC uploads from third-party clients")
+		Str("failed_mxc_url", string(mediaURL)).
+		Bool("was_encrypted", content.File != nil).
+		Msg("Cannot send image to Steam: public media not configured or GetPublicMediaAddress failed")
 
 	return nil, fmt.Errorf("image sharing to Steam requires public media configuration. Please enable 'public_media.enabled: true' and set 'appservice.public_address' in bridge config")
 }
