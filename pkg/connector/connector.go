@@ -245,7 +245,7 @@ func (sc *SteamConnector) GetName() bridgev2.BridgeName {
 	return bridgev2.BridgeName{
 		DisplayName:      "Steam",
 		NetworkURL:       "https://store.steampowered.com",
-		NetworkIcon:      "mxc://shadowdrake.org/EeNKAcrmByNubPwoyceQsBaN",
+		NetworkIcon:      "mxc://shadowdrake.org/PirBCYFmUOEXPmasDPmJqVJY",
 		NetworkID:        "steam",
 		BeeperBridgeType: "go.shadowdrake.org/steam",
 		DefaultPort:      50051,
@@ -420,7 +420,7 @@ func (sc *SteamConnector) startSteamBridgeService(ctx context.Context) error {
 	if runtime.GOOS == "windows" {
 		execName += ".exe"
 	}
-	
+
 	// Ensure we have an absolute path or explicit relative path
 	var execPath string
 	if filepath.IsAbs(sc.Config.Path) {
@@ -432,7 +432,7 @@ func (sc *SteamConnector) startSteamBridgeService(ctx context.Context) error {
 			execPath = "./" + execPath
 		}
 	}
-	
+
 	cmd := exec.CommandContext(processCtx, execPath)
 	cmd.Dir = sc.Config.Path
 
