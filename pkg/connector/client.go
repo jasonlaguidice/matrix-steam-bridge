@@ -199,7 +199,7 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 	if sc.authClient == nil {
 		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateBadCredentials, "You're not logged into Steam",
 			withUserAction(status.UserActionRelogin)))
-		return
+	return
 	}
 
 	meta := sc.getUserMetadata()
@@ -209,24 +209,11 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		return
 	}
 
-	// Attempt re-authentication with stored credentials
-	if !meta.IsValid || time.Since(meta.LastValidated) > 5*time.Minute {
+	// Always attempt re-authentication when stored credentials exist
+	// This ensures proper coordination with C# service initialization and friends list waiting
+	if meta.AccessToken != "" && meta.RefreshToken != "" && (meta.AccountName != "" || meta.Username != "") {
 		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnecting, "Re-authenticating with stored credentials"))
 
-		// Check if we have stored credentials to attempt re-authentication
-		if meta.AccessToken == "" || meta.RefreshToken == "" || (meta.AccountName == "" && meta.Username == "") {
-			sc.br.Log.Warn().Msg("No stored credentials found for re-authentication")
-			sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateBadCredentials,
-				"No stored credentials - please log in",
-				withUserAction(status.UserActionRelogin),
-				withInfo(map[string]interface{}{
-					"reason":       "missing_credentials",
-					"session_type": meta.SessionType,
-				})))
-			return
-		}
-
-		// Attempt re-authentication using stored tokens
 		// Use AccountName for authentication, fallback to Username for backward compatibility
 		authUsername := meta.AccountName
 		if authUsername == "" {
@@ -297,6 +284,17 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		meta.IsValid = true
 		meta.LastValidated = time.Now()
 		sc.UserLogin.Save(ctx)
+	} else {
+		// No stored credentials found
+		sc.br.Log.Warn().Msg("No stored credentials found for re-authentication")
+		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateBadCredentials,
+			"No stored credentials - please log in",
+			withUserAction(status.UserActionRelogin),
+			withInfo(map[string]interface{}{
+				"reason":       "missing_credentials",
+				"session_type": meta.SessionType,
+			})))
+		return
 	}
 
 	// Verify Steam is actually logged in before reporting connected
