@@ -11,6 +11,7 @@ import (
 
 	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/event"
 
@@ -309,6 +310,12 @@ func (sc *SteamClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 	}
 
 	return &bridgev2.ChatInfo{
+		// CRITICAL: Mark as DM room type - enables both m.direct support AND automatic name/avatar updates
+		Type: ptr.Ptr(database.RoomTypeDM),
+		// Enable backfill as Steam supports message history
+		CanBackfill: true,
+		// Note: Name and Avatar are handled automatically by bridgev2 framework
+		// via UpdateInfoFromGhost() when private_chat_portal_meta=true and Type=RoomTypeDM
 		Members: &bridgev2.ChatMemberList{
 			IsFull: true,
 			Members: []bridgev2.ChatMember{
