@@ -248,7 +248,7 @@ func (sc *SteamConnector) GetName() bridgev2.BridgeName {
 		NetworkIcon:      "mxc://shadowdrake.org/HqkqOxBknisPvpVfuAafUcrK",
 		NetworkID:        "steam",
 		BeeperBridgeType: "go.shadowdrake.org/steam",
-		DefaultPort:      50051,
+		DefaultPort:      8080,
 	}
 }
 
