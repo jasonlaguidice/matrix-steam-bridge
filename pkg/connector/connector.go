@@ -372,7 +372,7 @@ func (sc *SteamClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 					"image/webp": event.CapLevelFullySupported, // Steam uploads to steamusercontent.com
 				},
 				MaxSize: 50 * 1024 * 1024, // Steam's actual image upload limit
-				Caption: event.CapLevelFullySupported,
+				Caption: event.CapLevelPartialSupport, // Captions not directly supported but can be split to discrete message
 			},
 		},
 		TypingNotifications: true,
