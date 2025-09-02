@@ -19,6 +19,7 @@ Please see [ROADMAP.md](ROADMAP.md)
 ### Prerequisites
 
 - Go 1.24.6 or later
+- libolm
 - .NET 8.0 SDK
 
 ### Building from Source
@@ -43,7 +44,7 @@ Docker images are available for multiple architectures:
 docker pull ghcr.io/jasonlaguidice/matrix-steam-bridge:latest
 
 # Run with your config
-docker run -v /path/to/your/config:/data ghcr.io/jasonlaguidice/matrix-steam-bridge:latest
+docker run -v /path/to/your/config:/app/config ghcr.io/jasonlaguidice/matrix-steam-bridge:latest
 ```
 
 Supported architectures: `linux/amd64`, `linux/arm64`
@@ -62,14 +63,14 @@ Supported architectures: `linux/amd64`, `linux/arm64`
 
 3. **Generate the appservice registration**
    ```bash
-   ./steam -g -c config.yaml -r registration.yaml
+   ./steam -g -c ./config.yaml -r ./registration.yaml
    ```
 
 4. **Register the bridge** with your Matrix homeserver by adding the registration file to your homeserver configuration
 
 5. **Start the bridge**
    ```bash
-   ./steam -c config.yaml
+   ./steam -c ./config.yaml
    ```
 
 ## Configuration w/ Beeper
@@ -80,7 +81,7 @@ Supported architectures: `linux/amd64`, `linux/arm64`
    ```
 2. Run the bridge with the standard run command
    ```bash
-   ./steam -c config.yaml
+   ./steam -c ./config.yaml
    ```
 
 ## Usage

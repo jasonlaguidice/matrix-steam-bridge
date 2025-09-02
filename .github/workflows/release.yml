@@ -60,25 +60,29 @@ jobs:
         # Force use of system protoc on ARM64 to avoid segfault
         if [ "${{ matrix.goarch }}" = "arm64" ]; then
           export Protobuf_ProtocFullPath=$(which protoc)
+          RUNTIME="linux-arm64"
+        else
+          RUNTIME="linux-x64"
         fi
         
-        # Build SteamBridge (matching build.sh approach)
-        dotnet build --configuration Release
+        # Build SteamBridge with self-contained publish (matching build.sh approach)
+        dotnet publish --configuration Release --self-contained true --runtime "$RUNTIME"
         
-        # Copy built files to distribution directory
+        # Copy built executable and rename to steamkit-service
         mkdir -p ../steambridge-dist
-        cp -r bin/Release/net8.0/* ../steambridge-dist/
+        cp "bin/Release/net8.0/$RUNTIME/publish/SteamBridge" "../steambridge-dist/steamkit-service"
 
     - name: Build .NET SteamBridge (Windows)
       if: runner.os == 'Windows'
       working-directory: SteamBridge
       run: |
-        # Build SteamBridge (matching build.sh approach)
-        dotnet build --configuration Release
+        # Build SteamBridge with self-contained publish (matching build.sh approach)
+        $RUNTIME = "win-x64"
+        dotnet publish --configuration Release --self-contained true --runtime $RUNTIME
         
-        # Copy built files to distribution directory
+        # Copy built executable and rename to steamkit-service.exe
         mkdir -p ../steambridge-dist
-        cp -r bin/Release/net8.0/* ../steambridge-dist/
+        Copy-Item "bin/Release/net8.0/$RUNTIME/publish/SteamBridge.exe" "../steambridge-dist/steamkit-service.exe"
 
     - name: Build Go binary (Linux)
       if: runner.os == 'Linux'
