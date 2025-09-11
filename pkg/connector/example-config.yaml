@@ -2,3 +2,8 @@ steam_bridge_path: ./
 steam_bridge_address: localhost:50051
 steam_bridge_auto_start: true
 steam_bridge_startup_timeout: 30
+
+# Automatic reconnection configuration
+auto_reconnect: true
+reconnect_delay: 5s  # Fixed delay per retry (optional, defaults to exponential backoff)
+max_reconnect_tries: 6

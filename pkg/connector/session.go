@@ -2,6 +2,8 @@ package connector
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"maunium.net/go/mautrix/bridgev2/status"
 
@@ -62,10 +64,8 @@ func (sc *SteamClient) handleSessionEvent(ctx context.Context, event *steamapi.S
 	switch event.EventType {
 	case steamapi.SessionEventType_SESSION_REPLACED:
 		// Session replacement can happen during relogin or multiple connections
-		// Treat as transient disconnect to allow reconnection instead of permanent failure
-		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateTransientDisconnect,
-			"Steam session replaced by another login",
-			withReason(event.Reason)))
+		// Treat as transient disconnect and attempt automatic reconnection
+		go sc.handleTransientDisconnect(ctx, "Steam session replaced by another login", event.Reason)
 
 	case steamapi.SessionEventType_TOKEN_EXPIRED:
 		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateBadCredentials,
@@ -80,12 +80,8 @@ func (sc *SteamClient) handleSessionEvent(ctx context.Context, event *steamapi.S
 			withUserAction(status.UserActionRelogin)))
 
 	case steamapi.SessionEventType_CONNECTION_LOST:
-		// For connection loss, use transient disconnect with potential for reconnection
-		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateTransientDisconnect,
-			"Steam connection lost",
-			withReason(event.Reason)))
-
-		// TODO: Implement automatic reconnection logic if desired
+		// For connection loss, implement automatic reconnection with debounce
+		go sc.handleTransientDisconnect(ctx, "Steam connection lost", event.Reason)
 
 	case steamapi.SessionEventType_LOGGED_OFF:
 	default:
@@ -95,7 +91,7 @@ func (sc *SteamClient) handleSessionEvent(ctx context.Context, event *steamapi.S
 	}
 
 	// Invalidate user metadata if the session is permanently invalid
-	// Note: SESSION_REPLACED is now treated as transient, so don't invalidate metadata
+	// Note: SESSION_REPLACED and CONNECTION_LOST are now treated as transient, so don't invalidate metadata
 	if event.EventType == steamapi.SessionEventType_TOKEN_EXPIRED ||
 		event.EventType == steamapi.SessionEventType_ACCOUNT_DISABLED {
 
@@ -104,5 +100,100 @@ func (sc *SteamClient) handleSessionEvent(ctx context.Context, event *steamapi.S
 			sc.UserLogin.Save(ctx)
 			sc.br.Log.Info().Msg("Invalidated user metadata due to session event")
 		}
+	}
+}
+
+// handleTransientDisconnect manages automatic reconnection for transient disconnects
+func (sc *SteamClient) handleTransientDisconnect(ctx context.Context, message, reason string) {
+	// Wait briefly to see if connection recovers naturally (debounce)
+	time.Sleep(5 * time.Second)
+	
+	// Check if we're already reconnected
+	sc.stateMutex.Lock()
+	if sc.isConnected {
+		sc.stateMutex.Unlock()
+		sc.br.Log.Debug().Msg("Connection recovered during debounce period, skipping reconnection")
+		return
+	}
+	sc.stateMutex.Unlock()
+	
+	// Send transient disconnect state
+	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateTransientDisconnect,
+		message, withReason(reason)))
+	
+	// Attempt automatic reconnection with exponential backoff
+	go sc.attemptReconnection(ctx, 0)
+}
+
+// attemptReconnection implements automatic reconnection with exponential backoff
+func (sc *SteamClient) attemptReconnection(ctx context.Context, retryCount int) {
+	// Get Steam connector config
+	steamConnector := sc.br.Network.(*SteamConnector)
+	config := steamConnector.Config
+	
+	// Check if auto-reconnect is disabled
+	if !config.AutoReconnect {
+		sc.br.Log.Debug().Msg("Auto-reconnect disabled in configuration, skipping reconnection")
+		return
+	}
+	
+	maxRetries := config.MaxReconnectTries
+	if maxRetries <= 0 {
+		maxRetries = 6 // Default fallback
+	}
+	
+	if retryCount >= maxRetries {
+		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,
+			"Failed to reconnect after multiple attempts",
+			withUserAction(status.UserActionRestart)))
+		return
+	}
+	
+	// Use configured delay or exponential backoff
+	var backoffDelay time.Duration
+	if config.ReconnectDelay > 0 {
+		backoffDelay = config.ReconnectDelay * time.Duration(retryCount+1)
+	} else {
+		// Exponential backoff: 2, 4, 8, 16, 32, 64 seconds
+		backoffDelay = time.Duration(2<<retryCount) * time.Second
+	}
+	
+	sc.br.Log.Info().
+		Int("retry_count", retryCount).
+		Dur("retry_in", backoffDelay).
+		Msg("Attempting automatic reconnection")
+	
+	time.Sleep(backoffDelay)
+	
+	// Check if we're already connected (maybe user manually reconnected)
+	sc.stateMutex.Lock()
+	if sc.isConnected {
+		sc.stateMutex.Unlock()
+		sc.br.Log.Debug().Msg("Already connected, skipping reconnection attempt")
+		return
+	}
+	sc.stateMutex.Unlock()
+	
+	// Update bridge state to show reconnection attempt
+	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnecting,
+		fmt.Sprintf("Reconnecting to Steam (attempt %d/%d)", retryCount+1, maxRetries)))
+	
+	// Attempt to reconnect
+	sc.Connect(ctx)
+	
+	// Wait a moment to see if connection succeeded
+	time.Sleep(3 * time.Second)
+	
+	sc.stateMutex.Lock()
+	isConnected := sc.isConnected
+	sc.stateMutex.Unlock()
+	
+	if !isConnected {
+		// Connection failed, schedule next retry
+		go sc.attemptReconnection(ctx, retryCount+1)
+	} else {
+		sc.br.Log.Info().
+			Int("retry_count", retryCount).
+			Msg("Automatic reconnection successful")
 	}
 }

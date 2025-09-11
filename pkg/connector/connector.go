@@ -34,10 +34,15 @@ var ExampleConfig string
 
 // Config contains the configuration for the Steam connector
 type Config struct {
-	Path           string `yaml:"steam_bridge_path"`
-	Address        string `yaml:"steam_bridge_address"`
-	AutoStart      bool   `yaml:"steam_bridge_auto_start"`
-	StartupTimeout int    `yaml:"steam_bridge_startup_timeout"`
+	Path           string        `yaml:"steam_bridge_path"`
+	Address        string        `yaml:"steam_bridge_address"`
+	AutoStart      bool          `yaml:"steam_bridge_auto_start"`
+	StartupTimeout int           `yaml:"steam_bridge_startup_timeout"`
+	
+	// Reconnection configuration
+	AutoReconnect      bool          `yaml:"auto_reconnect"`
+	ReconnectDelay     time.Duration `yaml:"reconnect_delay"`
+	MaxReconnectTries  int           `yaml:"max_reconnect_tries"`
 }
 
 // SteamConnector implements the NetworkConnector interface for Steam
