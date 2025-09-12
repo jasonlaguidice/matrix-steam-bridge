@@ -188,10 +188,7 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 
 	sc.br.Log.Info().Msg("Connect() - Connecting to Steam")
 
-	// Report service initialization
-	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnecting, "Initializing Steam services"))
-
-	// Report connecting status
+	// Consolidate initial connection state messages
 	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnecting, "Connecting to Steam"))
 
 	// Steam requires a persistent connection - setup that connection here
@@ -323,7 +320,7 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 
 	sc.br.Log.Info().Msg("Steam authentication verified successfully")
 
-	// Cancel any pending disconnect debounce and report connected state
+	// Cancel any pending disconnect debounce
 	sc.cancelDisconnectDebounce()
 
 	// Mark as connected in state tracking
@@ -331,16 +328,106 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 	sc.isConnected = true
 	sc.stateMutex.Unlock()
 
-	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnected, "Connected to Steam"))
-
 	// Start connection monitoring
 	sc.startConnectionMonitoring(ctx)
 
-	// Start gRPC message subscription for real-time messages
-	go sc.startMessageSubscription(ctx)
+	// Initialize message stream BEFORE reporting final connected state
+	// This prevents the race condition where stream setup overwrites the connected state
+	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnecting, "Establishing Steam message stream"))
+	
+	// Start message subscription synchronously to ensure it's established
+	messageStreamReady := make(chan bool, 1)
+	go func() {
+		if err := sc.initializeMessageStream(ctx); err != nil {
+			sc.br.Log.Error().Err(err).Msg("Failed to initialize message stream")
+			sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,
+				"Failed to establish message stream",
+				withReason(err.Error()),
+				withUserAction(status.UserActionRestart)))
+			messageStreamReady <- false
+			return
+		}
+		messageStreamReady <- true
+	}()
+
+	// Wait for message stream initialization
+	select {
+	case success := <-messageStreamReady:
+		if !success {
+			return
+		}
+	case <-time.After(10 * time.Second):
+		sc.br.Log.Warn().Msg("Message stream initialization timed out")
+		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,
+			"Message stream setup timed out",
+			withUserAction(status.UserActionRestart)))
+		return
+	}
+
+	// Now report final connected state - this won't be overwritten
+	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnected, "Connected to Steam"))
 
 	// Start session event subscription for logout notifications
 	go sc.startSessionEventSubscription(ctx)
+}
+
+// initializeMessageStream establishes the message stream without sending bridge state updates
+// This prevents race conditions with the main connection state reporting
+func (sc *SteamClient) initializeMessageStream(ctx context.Context) error {
+	if sc.msgClient == nil {
+		return fmt.Errorf("message client not available")
+	}
+
+	stream, err := sc.msgClient.SubscribeToMessages(ctx, &steamapi.MessageSubscriptionRequest{})
+	if err != nil {
+		return fmt.Errorf("failed to start message subscription: %w", err)
+	}
+
+	sc.br.Log.Info().Msg("Steam message stream established successfully")
+
+	// Start the message processing goroutine
+	go sc.processMessageStream(ctx, stream)
+	
+	return nil
+}
+
+// processMessageStream handles the actual message processing without state updates
+func (sc *SteamClient) processMessageStream(ctx context.Context, stream steamapi.SteamMessagingService_SubscribeToMessagesClient) {
+	defer func() {
+		if r := recover(); r != nil {
+			sc.br.Log.Error().Interface("panic", r).Msg("Panic in message stream processing")
+		}
+	}()
+
+	messageCount := 0
+	for {
+		select {
+		case <-ctx.Done():
+			sc.br.Log.Info().Msg("Message stream context cancelled")
+			return
+		default:
+			msgEvent, err := stream.Recv()
+			if err != nil {
+				sc.br.Log.Error().Err(err).Msg("Error receiving message from stream")
+				// Report disconnection and attempt reconnection
+				sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateTransientDisconnect, 
+					"Steam message stream disconnected", withReason(err.Error())))
+				
+				// Trigger reconnection logic
+				go sc.handleTransientDisconnect(ctx, "Steam message stream disconnected", err.Error())
+				return
+			}
+
+			// Process incoming message
+			sc.handleIncomingMessage(ctx, msgEvent)
+			messageCount++
+
+			// Periodically log message processing (but don't spam bridge state)
+			if messageCount%100 == 0 {
+				sc.br.Log.Debug().Int("message_count", messageCount).Msg("Message stream processing active")
+			}
+		}
+	}
 }
 
 // Disconnect cleanly disconnects from Steam
@@ -380,11 +467,8 @@ func (sc *SteamClient) LogoutRemote(ctx context.Context) {
 	// Stop connection monitoring
 	sc.stopConnectionMonitoring()
 
-	// Report service shutdown initiation
-	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnecting, "Shutting down Steam services"))
-
-	// Report logout state
-	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateLoggedOut, "Logging out from Steam"))
+	// Report logout initiation with correct state (not StateConnecting during shutdown)
+	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateLoggedOut, "Shutting down Steam services"))
 
 	// Invalidate credentials with remote network and logout
 	if sc.authClient != nil {

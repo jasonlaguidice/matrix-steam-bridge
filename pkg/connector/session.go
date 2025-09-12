@@ -17,14 +17,23 @@ func (sc *SteamClient) startSessionEventSubscription(ctx context.Context) {
 	// Check if sessionClient is nil before using it
 	if sc.sessionClient == nil {
 		sc.br.Log.Error().Msg("Session client is nil, cannot start session event subscription")
+		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,
+			"Session monitoring unavailable - session client not initialized",
+			withUserAction(status.UserActionRestart)))
 		return
 	}
 
 	stream, err := sc.sessionClient.SubscribeToSessionEvents(ctx, &steamapi.SessionSubscriptionRequest{})
 	if err != nil {
 		sc.br.Log.Error().Err(err).Msg("Failed to start session event subscription")
+		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,
+			"Failed to establish session monitoring",
+			withReason(err.Error()),
+			withUserAction(status.UserActionRestart)))
 		return
 	}
+
+	sc.br.Log.Info().Msg("Session event subscription established successfully")
 
 	for {
 		select {
@@ -35,6 +44,9 @@ func (sc *SteamClient) startSessionEventSubscription(ctx context.Context) {
 			sessionEvent, err := stream.Recv()
 			if err != nil {
 				sc.br.Log.Error().Err(err).Msg("Error receiving session event from stream")
+				// Session event stream failure is not critical enough to disconnect entirely
+				// Just log the error and exit this goroutine
+				// The main message stream will handle connection issues
 				return
 			}
 
@@ -195,5 +207,10 @@ func (sc *SteamClient) attemptReconnection(ctx context.Context, retryCount int) 
 		sc.br.Log.Info().
 			Int("retry_count", retryCount).
 			Msg("Automatic reconnection successful")
+		
+		// Ensure user sees final reconnection success state
+		// This is critical as Connect() might not have sent the final state due to stream setup
+		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnected, 
+			"Successfully reconnected to Steam"))
 	}
 }
