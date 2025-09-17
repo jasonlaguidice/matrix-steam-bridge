@@ -2,7 +2,7 @@
 # Supports both linux/amd64 and linux/arm64
 
 # Stage 1: Build C# SteamBridge service  
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS dotnet-builder
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS dotnet-builder
 
 # Install system protoc to avoid ARM64 protoc segfault
 RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
