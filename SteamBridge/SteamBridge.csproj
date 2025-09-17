@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.NET.ILLink.Tasks" Version="8.0.20" />
     <Protobuf Include="Proto\steam_bridge.proto" GrpcServices="Server" />
   </ItemGroup>
 
