@@ -73,7 +73,7 @@ jobs:
         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         tags: |
           type=ref,event=branch,suffix=-${{ matrix.arch }}
-          type=ref,event=pr,suffix=-${{ matrix.arch }}
+          type=ref,event=pr,prefix=pr-,suffix=-${{ matrix.arch }}
           type=semver,pattern={{version}},suffix=-${{ matrix.arch }}
           type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.arch }}
           type=semver,pattern={{major}},suffix=-${{ matrix.arch }}
@@ -95,7 +95,7 @@ jobs:
         labels: ${{ steps.meta.outputs.labels }}
         cache-from: type=gha,scope=${{ matrix.arch }}
         cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
-        tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-${{ matrix.arch }}
+        tags: ${{ steps.meta.outputs.tags }}
         build-args: |
           BUILDTIME=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
           VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
@@ -136,13 +136,16 @@ jobs:
       run: |
         set -e
         echo "Creating manifest list from architecture-specific tags..."
-        
+
+        # Extract base tag (without architecture suffix) from metadata
+        BASE_TAG=$(echo '${{ steps.meta.outputs.tags }}' | head -n1 | sed 's/.*://')
+
         # Create manifest list using arch-specific tags
         docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-amd64 \
-          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-arm64
-        
-        echo "Manifest list created successfully"
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${BASE_TAG}-amd64 \
+          ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${BASE_TAG}-arm64
+
+        echo "Manifest list created successfully for base tag: ${BASE_TAG}"
 
     - name: Inspect created manifest
       run: |
