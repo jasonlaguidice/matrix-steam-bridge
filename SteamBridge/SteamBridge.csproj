@@ -14,7 +14,7 @@
     <PackageReference Include="Grpc.AspNetCore.HealthChecks" Version="2.71.0" />
     <PackageReference Include="Grpc.HealthCheck" Version="2.71.0" />
     <PackageReference Include="SteamKit2" Version="3.3.1" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.9" />
   </ItemGroup>
 
   <ItemGroup>
