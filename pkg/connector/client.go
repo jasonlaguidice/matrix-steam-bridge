@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"maunium.net/go/mautrix/bridgev2/status"
@@ -228,6 +229,16 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		resp, err := sc.authClient.ReAuthenticateWithTokens(ctx, reAuthReq)
 		if err != nil {
 			sc.br.Log.Err(err).Msg("Failed to re-authenticate with stored tokens")
+			
+			// Check if this is a network connectivity issue
+			if strings.Contains(err.Error(), "connect") || strings.Contains(err.Error(), "connection") || 
+			   strings.Contains(err.Error(), "network") || strings.Contains(err.Error(), "timeout") {
+				// Network issue - trigger transient disconnect handling instead of credential failure
+				sc.br.Log.Warn().Msg("Network connectivity issue during re-authentication, treating as transient disconnect")
+				go sc.handleTransientDisconnect(ctx, "Steam network connectivity issue during login", err.Error())
+				return
+			}
+			
 			sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,
 				"Re-authentication failed - please check Steam service connection",
 				withReason(err.Error()),
@@ -237,6 +248,18 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 
 		if !resp.Success || resp.State != steamapi.AuthStatusResponse_AUTHENTICATED {
 			sc.br.Log.Warn().Str("auth_state", resp.State.String()).Str("error", resp.ErrorMessage).Msg("Token re-authentication failed")
+
+			// Check if the failure is due to network connectivity rather than bad credentials
+			if strings.Contains(resp.ErrorMessage, "Failed to connect to Steam network") ||
+			   strings.Contains(resp.ErrorMessage, "Failed to connect to Steam within timeout") ||
+			   strings.Contains(resp.ErrorMessage, "network") ||
+			   strings.Contains(resp.ErrorMessage, "timeout") ||
+			   strings.Contains(resp.ErrorMessage, "connection") {
+				// Network connectivity issue - treat as transient disconnect
+				sc.br.Log.Warn().Msg("Network connectivity issue in auth response, treating as transient disconnect")
+				go sc.handleTransientDisconnect(ctx, "Steam network connectivity issue", resp.ErrorMessage)
+				return
+			}
 
 			var userAction status.BridgeStateUserAction = status.UserActionRelogin
 			var message string
