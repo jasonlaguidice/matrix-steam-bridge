@@ -43,7 +43,7 @@ COPY pkg/ ./pkg/
 RUN CGO_ENABLED=1 GOOS=linux go build -a -ldflags="-s -w" -o steam ./cmd/steam
 
 # Stage 3: Runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:8.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine
 
 # Install runtime dependencies
 RUN apk add --no-cache \
