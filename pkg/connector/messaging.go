@@ -623,6 +623,7 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 				Timestamp: time.Unix(msgEvent.Timestamp, 0),
 			},
 			Timeout: 5 * time.Second,
+			Type:    bridgev2.TypingTypeText,
 		}
 		sc.br.QueueRemoteEvent(sc.UserLogin, typingEvent)
 
@@ -803,4 +804,35 @@ func (sc *SteamClient) convertImageMessage(ctx context.Context, portal *bridgev2
 			Content: content,
 		}},
 	}, nil
+}
+
+// HandleMatrixTyping implements bridgev2.TypingHandlingNetworkAPI.
+// This method handles typing notifications from Matrix and sends them to Steam.
+func (sc *SteamClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.MatrixTyping) error {
+	if !msg.IsTyping {
+		// Steam doesn't support explicit "stop typing" notifications
+		// Steam typing notifications automatically timeout
+		return nil
+	}
+
+	// Parse the Steam ID from the portal ID
+	steamID, err := parseSteamIDFromPortalID(msg.Portal.ID)
+	if err != nil {
+		return fmt.Errorf("failed to parse Steam ID from portal ID %q: %w", msg.Portal.ID, err)
+	}
+
+	// Send typing notification to Steam via gRPC
+	resp, err := sc.msgClient.SendTypingNotification(ctx, &steamapi.TypingNotificationRequest{
+		TargetSteamId: steamID,
+		IsTyping:      true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to send typing notification to Steam: %w", err)
+	}
+
+	if !resp.Success {
+		return fmt.Errorf("Steam typing notification failed")
+	}
+
+	return nil
 }
