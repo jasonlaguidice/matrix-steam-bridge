@@ -49,7 +49,7 @@ func (sc *SteamClient) buildBridgeState(state status.BridgeStateEvent, message s
 
 	// Add remote profile information if available
 	if meta := sc.getUserMetadata(); meta != nil {
-		bridgeState.RemoteID = string(meta.RemoteID)
+		bridgeState.RemoteID = meta.RemoteID
 		bridgeState.RemoteName = meta.PersonaName
 		bridgeState.RemoteProfile = &status.RemoteProfile{
 			Name: meta.PersonaName,
