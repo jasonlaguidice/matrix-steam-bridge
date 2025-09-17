@@ -7,14 +7,13 @@ require (
 	go.mau.fi/util v0.9.1
 	google.golang.org/grpc v1.75.1
 	google.golang.org/protobuf v1.36.9
-	maunium.net/go/mautrix v0.24.2
+	maunium.net/go/mautrix v0.25.1
 )
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/coder/websocket v1.8.14 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
-	github.com/gorilla/mux v1.8.0 // indirect
-	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
@@ -26,8 +25,8 @@ require (
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/tidwall/sjson v1.2.5 // indirect
-	github.com/yuin/goldmark v1.7.12 // indirect
-	go.mau.fi/zeroconfig v0.1.3 // indirect
+	github.com/yuin/goldmark v1.7.13 // indirect
+	go.mau.fi/zeroconfig v0.2.0 // indirect
 	golang.org/x/crypto v0.42.0 // indirect
 	golang.org/x/exp v0.0.0-20250911091902-df9299821621 // indirect
 	golang.org/x/net v0.44.0 // indirect
