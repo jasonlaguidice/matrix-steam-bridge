@@ -4,8 +4,30 @@ on:
   push:
     branches: [ main ]
     tags: [ 'v*' ]
+    paths:
+      - 'cmd/**'
+      - 'pkg/**'
+      - 'SteamBridge/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'build.sh'
+      - 'generate-protos.sh'
+      - '.github/workflows/docker.yml'
   pull_request:
     branches: [ main ]
+    paths:
+      - 'cmd/**'
+      - 'pkg/**'
+      - 'SteamBridge/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - 'docker-compose.yml'
+      - 'build.sh'
+      - 'generate-protos.sh'
+      - '.github/workflows/docker.yml'
   workflow_dispatch:
 
 env:
