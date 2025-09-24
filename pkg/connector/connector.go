@@ -95,6 +95,13 @@ type SteamClient struct {
 	// Message subscription tracking
 	messageCount    uint64
 	messageCountMux sync.RWMutex
+
+	// Centralized reconnection management
+	reconnectionMutex    sync.Mutex
+	isReconnecting       bool
+	reconnectionCancel   context.CancelFunc
+	reconnectionAttempts int
+	lastReconnectTime    time.Time
 }
 
 // SteamLoginPassword implements password-based login flow

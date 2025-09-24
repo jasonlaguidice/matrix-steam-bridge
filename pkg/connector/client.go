@@ -351,6 +351,18 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 	sc.isConnected = true
 	sc.stateMutex.Unlock()
 
+	// Clean up any ongoing reconnection process
+	sc.reconnectionMutex.Lock()
+	if sc.isReconnecting {
+		if sc.reconnectionCancel != nil {
+			sc.reconnectionCancel()
+		}
+		sc.isReconnecting = false
+		sc.reconnectionCancel = nil
+		sc.reconnectionAttempts = 0
+	}
+	sc.reconnectionMutex.Unlock()
+
 	// Start connection monitoring
 	sc.startConnectionMonitoring(ctx)
 

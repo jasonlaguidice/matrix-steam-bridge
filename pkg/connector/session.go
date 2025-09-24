@@ -75,9 +75,10 @@ func (sc *SteamClient) handleSessionEvent(ctx context.Context, event *steamapi.S
 	// Send appropriate bridge state based on event type
 	switch event.EventType {
 	case steamapi.SessionEventType_SESSION_REPLACED:
-		// Session replacement can happen during relogin or multiple connections
-		// Treat as transient disconnect and attempt automatic reconnection
-		go sc.handleTransientDisconnect(ctx, "Steam session replaced by another login", event.Reason)
+		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateBadCredentials,
+			"Steam session replaced by another login",
+			withReason(event.Reason),
+			withUserAction(status.UserActionRelogin)))
 
 	case steamapi.SessionEventType_TOKEN_EXPIRED:
 		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateBadCredentials,
@@ -117,100 +118,129 @@ func (sc *SteamClient) handleSessionEvent(ctx context.Context, event *steamapi.S
 
 // handleTransientDisconnect manages automatic reconnection for transient disconnects
 func (sc *SteamClient) handleTransientDisconnect(ctx context.Context, message, reason string) {
-	// Wait briefly to see if connection recovers naturally (debounce)
-	time.Sleep(5 * time.Second)
-	
-	// Check if we're already reconnected
-	sc.stateMutex.Lock()
-	if sc.isConnected {
-		sc.stateMutex.Unlock()
-		sc.br.Log.Debug().Msg("Connection recovered during debounce period, skipping reconnection")
+	sc.reconnectionMutex.Lock()
+	defer sc.reconnectionMutex.Unlock()
+
+	// If already reconnecting, just log and return
+	if sc.isReconnecting {
+		sc.br.Log.Debug().
+			Str("message", message).
+			Str("reason", reason).
+			Msg("Reconnection already in progress, ignoring duplicate disconnect event")
 		return
 	}
-	sc.stateMutex.Unlock()
-	
+
+	// Cancel any previous reconnection context
+	if sc.reconnectionCancel != nil {
+		sc.reconnectionCancel()
+	}
+
+	// Create new reconnection context
+	reconnectCtx, cancel := context.WithCancel(ctx)
+	sc.reconnectionCancel = cancel
+	sc.isReconnecting = true
+	sc.reconnectionAttempts = 0
+	sc.lastReconnectTime = time.Now()
+
 	// Send transient disconnect state
 	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateTransientDisconnect,
 		message, withReason(reason)))
-	
-	// Attempt automatic reconnection with exponential backoff
-	go sc.attemptReconnection(ctx, 0)
+
+	// Start single managed reconnection process
+	go sc.managedReconnectionLoop(reconnectCtx, message)
 }
 
-// attemptReconnection implements automatic reconnection with exponential backoff
-func (sc *SteamClient) attemptReconnection(ctx context.Context, retryCount int) {
+// managedReconnectionLoop implements centralized reconnection with iterative backoff
+func (sc *SteamClient) managedReconnectionLoop(ctx context.Context, initialMessage string) {
+	defer func() {
+		sc.reconnectionMutex.Lock()
+		sc.isReconnecting = false
+		sc.reconnectionCancel = nil
+		sc.reconnectionMutex.Unlock()
+	}()
+
 	// Get Steam connector config
 	steamConnector := sc.br.Network.(*SteamConnector)
 	config := steamConnector.Config
-	
+
 	// Check if auto-reconnect is disabled
 	if !config.AutoReconnect {
 		sc.br.Log.Debug().Msg("Auto-reconnect disabled in configuration, skipping reconnection")
 		return
 	}
-	
+
 	maxRetries := config.MaxReconnectTries
 	if maxRetries <= 0 {
 		maxRetries = 6 // Default fallback
 	}
-	
-	if retryCount >= maxRetries {
-		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,
-			"Failed to reconnect after multiple attempts",
-			withUserAction(status.UserActionRestart)))
-		return
-	}
-	
-	// Use configured delay or exponential backoff
-	var backoffDelay time.Duration
-	if config.ReconnectDelay > 0 {
-		backoffDelay = config.ReconnectDelay * time.Duration(retryCount+1)
-	} else {
-		// Exponential backoff: 2, 4, 8, 16, 32, 64 seconds
-		backoffDelay = time.Duration(2<<retryCount) * time.Second
-	}
-	
-	sc.br.Log.Info().
-		Int("retry_count", retryCount).
-		Dur("retry_in", backoffDelay).
-		Msg("Attempting automatic reconnection")
-	
-	time.Sleep(backoffDelay)
-	
-	// Check if we're already connected (maybe user manually reconnected)
-	sc.stateMutex.Lock()
-	if sc.isConnected {
-		sc.stateMutex.Unlock()
-		sc.br.Log.Debug().Msg("Already connected, skipping reconnection attempt")
-		return
-	}
-	sc.stateMutex.Unlock()
-	
-	// Update bridge state to show reconnection attempt
-	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnecting,
-		fmt.Sprintf("Reconnecting to Steam (attempt %d/%d)", retryCount+1, maxRetries)))
-	
-	// Attempt to reconnect
-	sc.Connect(ctx)
-	
-	// Wait a moment to see if connection succeeded
-	time.Sleep(3 * time.Second)
-	
-	sc.stateMutex.Lock()
-	isConnected := sc.isConnected
-	sc.stateMutex.Unlock()
-	
-	if !isConnected {
-		// Connection failed, schedule next retry
-		go sc.attemptReconnection(ctx, retryCount+1)
-	} else {
+
+	// Iterative reconnection loop - continues indefinitely until success or cancellation
+	for {
+		select {
+		case <-ctx.Done():
+			sc.br.Log.Debug().Msg("Reconnection cancelled")
+			return
+		default:
+		}
+
+		// Calculate backoff delay
+		var backoffDelay time.Duration
+		if config.ReconnectDelay > 0 {
+			backoffDelay = config.ReconnectDelay * time.Duration(sc.reconnectionAttempts+1)
+		} else {
+			// Exponential backoff: 5, 10, 20, 40, 60, 60 seconds (capped)
+			backoffSeconds := min(60, 5*(1<<sc.reconnectionAttempts))
+			backoffDelay = time.Duration(backoffSeconds) * time.Second
+		}
+
 		sc.br.Log.Info().
-			Int("retry_count", retryCount).
-			Msg("Automatic reconnection successful")
-		
-		// Ensure user sees final reconnection success state
-		// This is critical as Connect() might not have sent the final state due to stream setup
-		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnected, 
-			"Successfully reconnected to Steam"))
+			Int("retry_count", sc.reconnectionAttempts).
+			Dur("retry_in", backoffDelay).
+			Msg("Attempting automatic reconnection")
+
+		// Wait for backoff delay
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoffDelay):
+		}
+
+		// Check if already connected before attempting
+		sc.stateMutex.RLock()
+		if sc.isConnected {
+			sc.stateMutex.RUnlock()
+			sc.br.Log.Info().Msg("Already connected during reconnection wait")
+			return
+		}
+		sc.stateMutex.RUnlock()
+
+		// Update bridge state
+		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnecting,
+			fmt.Sprintf("Reconnecting to Steam (attempt %d)", sc.reconnectionAttempts+1)))
+
+		// Attempt connection
+		sc.Connect(ctx)
+
+		// Wait briefly and check result
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(3 * time.Second):
+		}
+
+		sc.stateMutex.RLock()
+		isConnected := sc.isConnected
+		sc.stateMutex.RUnlock()
+
+		if isConnected {
+			sc.br.Log.Info().
+				Int("retry_count", sc.reconnectionAttempts).
+				Msg("Automatic reconnection successful")
+			sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnected,
+				"Successfully reconnected to Steam"))
+			return
+		}
+
+		sc.reconnectionAttempts++
 	}
 }
