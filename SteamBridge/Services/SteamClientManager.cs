@@ -286,16 +286,15 @@ public class SteamClientManager : IDisposable
     public void Dispose()
     {
         _logger.LogInformation("Disposing SteamClientManager");
-        
+
         _cancellationTokenSource.Cancel();
-        
-        if (_isLoggedOn)
-        {
-            _steamUser.LogOff();
-        }
-        
+
+        // During shutdown, only disconnect without logging off
+        // This preserves the Steam session for reconnection
+        // LogOff() should only be called via LogoutAsync() for user-initiated logout
         if (_isConnected)
         {
+            _logger.LogInformation("Disconnecting from Steam");
             _steamClient.Disconnect();
         }
         
@@ -312,10 +311,6 @@ public class SteamClientManager : IDisposable
         _logger.LogInformation("SteamClientManager disposed");
     }
     
-    /// <summary>
-    /// Generates a stable LoginID based on machine characteristics.
-    /// This makes multiple sessions from the same machine appear consistent to Steam.
-    /// </summary>
     private uint GenerateStableLoginID()
     {
         // Generate a stable LoginID based on machine name and process ID

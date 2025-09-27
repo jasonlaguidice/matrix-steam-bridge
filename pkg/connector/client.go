@@ -496,14 +496,15 @@ func (sc *SteamClient) IsLoggedIn() bool {
 }
 
 // LogoutRemote implements bridgev2.NetworkAPI.
+// This performs a full logout that invalidates the session server-side.
 func (sc *SteamClient) LogoutRemote(ctx context.Context) {
 	sc.br.Log.Info().Msg("Logging out from Steam network")
 
 	// Stop connection monitoring
 	sc.stopConnectionMonitoring()
 
-	// Report logout initiation with correct state (not StateConnecting during shutdown)
-	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateLoggedOut, "Shutting down Steam services"))
+	// Report logout initiation
+	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateLoggedOut, "Logging out of Steam"))
 
 	// Invalidate credentials with remote network and logout
 	if sc.authClient != nil {
