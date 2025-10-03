@@ -218,8 +218,8 @@ func (sc *SteamClient) managedReconnectionLoop(ctx context.Context, initialMessa
 		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnecting,
 			fmt.Sprintf("Reconnecting to Steam (attempt %d)", sc.reconnectionAttempts+1)))
 
-		// Attempt connection
-		sc.Connect(ctx)
+		// Attempt connection with fresh context to avoid using cancelled contexts from previous sessions
+		sc.Connect(context.Background())
 
 		// Wait briefly and check result
 		select {
