@@ -7,3 +7,17 @@ steam_bridge_startup_timeout: 30
 auto_reconnect: true
 reconnect_delay: 5s  # Fixed delay per retry (optional, defaults to exponential backoff)
 max_reconnect_tries: 6
+
+# Presence synchronization settings
+presence:
+  # Enable presence tracking from Matrix to Steam
+  # When enabled, your Steam status will automatically change based on
+  # your Matrix presence and activity
+  enabled: true
+
+  # Inactivity timeout in minutes before setting Steam to SNOOZE
+  # This is used as a fallback when your Matrix server doesn't support
+  # presence tracking. After this many minutes without Matrix activity,
+  # your Steam status will change to SNOOZE (idle)
+  # Set to 0 to disable automatic away
+  inactivity_timeout: 15

@@ -39,6 +39,11 @@ service SteamSessionService {
   rpc SubscribeToSessionEvents(SessionSubscriptionRequest) returns (stream SessionEvent);
 }
 
+// Presence Management Service
+service SteamPresenceService {
+  rpc SetPersonaState(SetPersonaStateRequest) returns (SetPersonaStateResponse);
+}
+
 // Authentication Messages
 message CredentialsLoginRequest {
   string username = 1;
@@ -324,4 +329,14 @@ enum SessionEventType {
   TOKEN_EXPIRED = 3;
   ACCOUNT_DISABLED = 4;
   KICKED = 5;
+}
+
+// Presence Management Messages
+message SetPersonaStateRequest {
+  PersonaState state = 1;
+}
+
+message SetPersonaStateResponse {
+  bool success = 1;
+  string error_message = 2;
 }

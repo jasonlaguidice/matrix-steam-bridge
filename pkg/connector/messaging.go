@@ -173,7 +173,12 @@ func (sc *SteamClient) isPermanentError(err error) bool {
 // HandleMatrixMessage implements bridgev2.NetworkAPI.
 func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.MatrixMessage) (message *bridgev2.MatrixMessageResponse, err error) {
 	sc.br.Log.Info().Str("event_type", msg.Event.Type.String()).Msg("HandleMatrixMessage() - Processing Matrix message")
-	
+
+	// Track activity for presence management (any Matrix message counts as activity)
+	if sc.presenceManager != nil {
+		sc.presenceManager.HandleActivity(ctx)
+	}
+
 	sc.br.Log.Debug().
 		Str("event_type", msg.Event.Type.String()).
 		Str("event_id", string(msg.Event.ID)).
