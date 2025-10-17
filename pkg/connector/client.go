@@ -402,6 +402,14 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 	// Now report final connected state - this won't be overwritten
 	sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateConnected, "Connected to Steam"))
 
+	// Initialize and start presence manager
+	if sc.presenceManager == nil && sc.connector != nil {
+		sc.presenceManager = NewPresenceManager(sc, &sc.connector.Config.Presence)
+	}
+	if sc.presenceManager != nil {
+		sc.presenceManager.Start(ctx)
+	}
+
 	// Start session event subscription for logout notifications
 	go sc.startSessionEventSubscription(ctx)
 }
@@ -474,6 +482,11 @@ func (sc *SteamClient) Disconnect() {
 	sc.isConnected = false
 	sc.isConnecting = false
 	sc.stateMutex.Unlock()
+
+	// Stop presence manager
+	if sc.presenceManager != nil {
+		sc.presenceManager.Stop()
+	}
 
 	// Stop connection monitoring
 	sc.stopConnectionMonitoring()

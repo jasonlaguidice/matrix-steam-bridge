@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/commands"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/event"
@@ -38,11 +39,25 @@ type Config struct {
 	Address        string        `yaml:"steam_bridge_address"`
 	AutoStart      bool          `yaml:"steam_bridge_auto_start"`
 	StartupTimeout int           `yaml:"steam_bridge_startup_timeout"`
-	
+
 	// Reconnection configuration
 	AutoReconnect      bool          `yaml:"auto_reconnect"`
 	ReconnectDelay     time.Duration `yaml:"reconnect_delay"`
 	MaxReconnectTries  int           `yaml:"max_reconnect_tries"`
+
+	// Presence tracking configuration
+	Presence PresenceConfig `yaml:"presence"`
+}
+
+// PresenceConfig contains configuration for Matrix→Steam presence synchronization
+type PresenceConfig struct {
+	// Enable presence synchronization from Matrix to Steam
+	Enabled bool `yaml:"enabled"`
+
+	// Inactivity timeout in minutes before setting Steam to SNOOZE
+	// Only used when Matrix server doesn't support presence tracking
+	// Set to 0 to disable activity-based presence
+	InactivityTimeout int `yaml:"inactivity_timeout"`
 }
 
 // SteamConnector implements the NetworkConnector interface for Steam
@@ -54,11 +69,12 @@ type SteamConnector struct {
 	// gRPC connection to Steam service
 	steamConn *grpc.ClientConn
 	// gRPC clients for Steam services
-	authClient    steamapi.SteamAuthServiceClient
-	userClient    steamapi.SteamUserServiceClient
-	msgClient     steamapi.SteamMessagingServiceClient
-	sessionClient steamapi.SteamSessionServiceClient
-	healthClient  grpc_health_v1.HealthClient
+	authClient     steamapi.SteamAuthServiceClient
+	userClient     steamapi.SteamUserServiceClient
+	msgClient      steamapi.SteamMessagingServiceClient
+	sessionClient  steamapi.SteamSessionServiceClient
+	presenceClient steamapi.SteamPresenceServiceClient
+	healthClient   grpc_health_v1.HealthClient
 
 	// Steam service process management
 	steamProcess       *exec.Cmd
@@ -70,11 +86,13 @@ type SteamConnector struct {
 
 // SteamClient implements the NetworkAPI for Steam
 type SteamClient struct {
-	UserLogin     *bridgev2.UserLogin
-	authClient    steamapi.SteamAuthServiceClient
-	userClient    steamapi.SteamUserServiceClient
-	msgClient     steamapi.SteamMessagingServiceClient
-	sessionClient steamapi.SteamSessionServiceClient
+	UserLogin      *bridgev2.UserLogin
+	connector      *SteamConnector
+	authClient     steamapi.SteamAuthServiceClient
+	userClient     steamapi.SteamUserServiceClient
+	msgClient      steamapi.SteamMessagingServiceClient
+	sessionClient  steamapi.SteamSessionServiceClient
+	presenceClient steamapi.SteamPresenceServiceClient
 
 	br *bridgev2.Bridge
 
@@ -102,6 +120,9 @@ type SteamClient struct {
 	reconnectionCancel   context.CancelFunc
 	reconnectionAttempts int
 	lastReconnectTime    time.Time
+
+	// Presence management
+	presenceManager *PresenceManager
 }
 
 // SteamLoginPassword implements password-based login flow
@@ -150,6 +171,8 @@ func upgradeConfig(helper configupgrade.Helper) {
 	helper.Copy(configupgrade.Str, "steam_bridge_address")
 	helper.Copy(configupgrade.Bool, "steam_bridge_auto_start")
 	helper.Copy(configupgrade.Int, "steam_bridge_startup_timeout")
+	helper.Copy(configupgrade.Bool, "presence", "enabled")
+	helper.Copy(configupgrade.Int, "presence", "inactivity_timeout")
 }
 
 // Init implements bridgev2.NetworkConnector.
@@ -157,6 +180,12 @@ func (sc *SteamConnector) Init(bridge *bridgev2.Bridge) {
 	sc.br = bridge
 	sc.log = log.With().Str("component", "steam_connector").Logger()
 	sc.log.Info().Msg("Initializing Steam connector")
+
+	// Register presence commands
+	if proc, ok := bridge.Commands.(*commands.Processor); ok {
+		RegisterPresenceCommands(proc)
+		sc.log.Info().Msg("Registered presence commands (invisible, visible)")
+	}
 }
 
 // Start implements bridgev2.NetworkConnector.
@@ -205,6 +234,7 @@ func (sc *SteamConnector) Start(ctx context.Context) error {
 	sc.userClient = steamapi.NewSteamUserServiceClient(conn)
 	sc.msgClient = steamapi.NewSteamMessagingServiceClient(conn)
 	sc.sessionClient = steamapi.NewSteamSessionServiceClient(conn)
+	sc.presenceClient = steamapi.NewSteamPresenceServiceClient(conn)
 	sc.healthClient = grpc_health_v1.NewHealthClient(conn)
 
 	sc.log.Info().Str("address", address).Msg("Successfully connected to SteamBridge service")
@@ -227,6 +257,7 @@ func (sc *SteamConnector) Stop() error {
 		sc.userClient = nil
 		sc.msgClient = nil
 		sc.sessionClient = nil
+		sc.presenceClient = nil
 		sc.healthClient = nil
 	}
 
@@ -341,12 +372,14 @@ func (sc *SteamConnector) LoadUserLogin(ctx context.Context, login *bridgev2.Use
 
 	// Create Steam client with the loaded session data
 	login.Client = &SteamClient{
-		UserLogin:     login,
-		authClient:    sc.authClient,
-		userClient:    sc.userClient,
-		msgClient:     sc.msgClient,
-		sessionClient: sc.sessionClient,
-		br:            sc.br,
+		UserLogin:      login,
+		connector:      sc,
+		authClient:     sc.authClient,
+		userClient:     sc.userClient,
+		msgClient:      sc.msgClient,
+		sessionClient:  sc.sessionClient,
+		presenceClient: sc.presenceClient,
+		br:             sc.br,
 	}
 
 	// Auto-connect the login - mautrix-go bridgev2 doesn't automatically call Connect()

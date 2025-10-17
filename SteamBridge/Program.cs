@@ -42,6 +42,7 @@ app.MapGrpcService<SteamAuthService>();
 app.MapGrpcService<SteamUserService>();
 app.MapGrpcService<SteamMessagingService>();
 app.MapGrpcService<SteamSessionService>();
+app.MapGrpcService<SteamPresenceService>();
 
 // Map standard gRPC health service
 app.MapGrpcHealthChecksService();

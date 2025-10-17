@@ -2620,6 +2620,103 @@ func (x *SessionEvent) GetTimestamp() int64 {
 	return 0
 }
 
+// Presence Management Messages
+type SetPersonaStateRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         PersonaState           `protobuf:"varint,1,opt,name=state,proto3,enum=steambridge.PersonaState" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetPersonaStateRequest) Reset() {
+	*x = SetPersonaStateRequest{}
+	mi := &file_Proto_steam_bridge_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetPersonaStateRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetPersonaStateRequest) ProtoMessage() {}
+
+func (x *SetPersonaStateRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_Proto_steam_bridge_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetPersonaStateRequest.ProtoReflect.Descriptor instead.
+func (*SetPersonaStateRequest) Descriptor() ([]byte, []int) {
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *SetPersonaStateRequest) GetState() PersonaState {
+	if x != nil {
+		return x.State
+	}
+	return PersonaState_OFFLINE
+}
+
+type SetPersonaStateResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetPersonaStateResponse) Reset() {
+	*x = SetPersonaStateResponse{}
+	mi := &file_Proto_steam_bridge_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetPersonaStateResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetPersonaStateResponse) ProtoMessage() {}
+
+func (x *SetPersonaStateResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_Proto_steam_bridge_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetPersonaStateResponse.ProtoReflect.Descriptor instead.
+func (*SetPersonaStateResponse) Descriptor() ([]byte, []int) {
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *SetPersonaStateResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *SetPersonaStateResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
 var File_Proto_steam_bridge_proto protoreflect.FileDescriptor
 
 const file_Proto_steam_bridge_proto_rawDesc = "" +
@@ -2806,7 +2903,12 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\n" +
 	"event_type\x18\x01 \x01(\x0e2\x1d.steambridge.SessionEventTypeR\teventType\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x1c\n" +
-	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp*\x81\x01\n" +
+	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"I\n" +
+	"\x16SetPersonaStateRequest\x12/\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x19.steambridge.PersonaStateR\x05state\"X\n" +
+	"\x17SetPersonaStateResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage*\x81\x01\n" +
 	"\fPersonaState\x12\v\n" +
 	"\aOFFLINE\x10\x00\x12\n" +
 	"\n" +
@@ -2863,7 +2965,9 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\x11GetUserAvatarData\x12%.steambridge.GetUserAvatarDataRequest\x1a&.steambridge.GetUserAvatarDataResponse\x12h\n" +
 	"\x15GetChatMessageHistory\x12&.steambridge.ChatMessageHistoryRequest\x1a'.steambridge.ChatMessageHistoryResponse2w\n" +
 	"\x13SteamSessionService\x12`\n" +
-	"\x18SubscribeToSessionEvents\x12'.steambridge.SessionSubscriptionRequest\x1a\x19.steambridge.SessionEvent0\x01B;Z%go.shadowdrake.org/steam/pkg/steamapi\xaa\x02\x11SteamBridge.Protob\x06proto3"
+	"\x18SubscribeToSessionEvents\x12'.steambridge.SessionSubscriptionRequest\x1a\x19.steambridge.SessionEvent0\x012t\n" +
+	"\x14SteamPresenceService\x12\\\n" +
+	"\x0fSetPersonaState\x12#.steambridge.SetPersonaStateRequest\x1a$.steambridge.SetPersonaStateResponseB;Z%go.shadowdrake.org/steam/pkg/steamapi\xaa\x02\x11SteamBridge.Protob\x06proto3"
 
 var (
 	file_Proto_steam_bridge_proto_rawDescOnce sync.Once
@@ -2878,7 +2982,7 @@ func file_Proto_steam_bridge_proto_rawDescGZIP() []byte {
 }
 
 var file_Proto_steam_bridge_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_Proto_steam_bridge_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
+var file_Proto_steam_bridge_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_Proto_steam_bridge_proto_goTypes = []any{
 	(PersonaState)(0),                  // 0: steambridge.PersonaState
 	(FriendRelationship)(0),            // 1: steambridge.FriendRelationship
@@ -2923,6 +3027,8 @@ var file_Proto_steam_bridge_proto_goTypes = []any{
 	(*ChatHistoryMessage)(nil),         // 40: steambridge.ChatHistoryMessage
 	(*SessionSubscriptionRequest)(nil), // 41: steambridge.SessionSubscriptionRequest
 	(*SessionEvent)(nil),               // 42: steambridge.SessionEvent
+	(*SetPersonaStateRequest)(nil),     // 43: steambridge.SetPersonaStateRequest
+	(*SetPersonaStateResponse)(nil),    // 44: steambridge.SetPersonaStateResponse
 }
 var file_Proto_steam_bridge_proto_depIdxs = []int32{
 	18, // 0: steambridge.LoginResponse.user_info:type_name -> steambridge.UserInfo
@@ -2941,47 +3047,50 @@ var file_Proto_steam_bridge_proto_depIdxs = []int32{
 	40, // 13: steambridge.ChatMessageHistoryResponse.messages:type_name -> steambridge.ChatHistoryMessage
 	2,  // 14: steambridge.ChatHistoryMessage.message_type:type_name -> steambridge.MessageType
 	3,  // 15: steambridge.SessionEvent.event_type:type_name -> steambridge.SessionEventType
-	5,  // 16: steambridge.SteamAuthService.LoginWithCredentials:input_type -> steambridge.CredentialsLoginRequest
-	9,  // 17: steambridge.SteamAuthService.ContinueAuthSession:input_type -> steambridge.ContinueAuthRequest
-	6,  // 18: steambridge.SteamAuthService.LoginWithQR:input_type -> steambridge.QRLoginRequest
-	10, // 19: steambridge.SteamAuthService.GetAuthStatus:input_type -> steambridge.AuthStatusRequest
-	13, // 20: steambridge.SteamAuthService.ReAuthenticateWithTokens:input_type -> steambridge.TokenReAuthRequest
-	12, // 21: steambridge.SteamAuthService.Logout:input_type -> steambridge.LogoutRequest
-	16, // 22: steambridge.SteamUserService.GetUserInfo:input_type -> steambridge.UserInfoRequest
-	19, // 23: steambridge.SteamUserService.GetFriendsList:input_type -> steambridge.FriendsListRequest
-	22, // 24: steambridge.SteamUserService.GetUserStatus:input_type -> steambridge.UserStatusRequest
-	24, // 25: steambridge.SteamUserService.ResolveVanityURL:input_type -> steambridge.ResolveVanityURLRequest
-	26, // 26: steambridge.SteamMessagingService.SendMessage:input_type -> steambridge.SendMessageRequest
-	28, // 27: steambridge.SteamMessagingService.SubscribeToMessages:input_type -> steambridge.MessageSubscriptionRequest
-	30, // 28: steambridge.SteamMessagingService.SendTypingNotification:input_type -> steambridge.TypingNotificationRequest
-	32, // 29: steambridge.SteamMessagingService.UploadImageToSteam:input_type -> steambridge.UploadImageRequest
-	34, // 30: steambridge.SteamMessagingService.DownloadImageFromSteam:input_type -> steambridge.DownloadImageRequest
-	36, // 31: steambridge.SteamMessagingService.GetUserAvatarData:input_type -> steambridge.GetUserAvatarDataRequest
-	38, // 32: steambridge.SteamMessagingService.GetChatMessageHistory:input_type -> steambridge.ChatMessageHistoryRequest
-	41, // 33: steambridge.SteamSessionService.SubscribeToSessionEvents:input_type -> steambridge.SessionSubscriptionRequest
-	8,  // 34: steambridge.SteamAuthService.LoginWithCredentials:output_type -> steambridge.LoginResponse
-	8,  // 35: steambridge.SteamAuthService.ContinueAuthSession:output_type -> steambridge.LoginResponse
-	7,  // 36: steambridge.SteamAuthService.LoginWithQR:output_type -> steambridge.QRLoginResponse
-	11, // 37: steambridge.SteamAuthService.GetAuthStatus:output_type -> steambridge.AuthStatusResponse
-	14, // 38: steambridge.SteamAuthService.ReAuthenticateWithTokens:output_type -> steambridge.TokenReAuthResponse
-	15, // 39: steambridge.SteamAuthService.Logout:output_type -> steambridge.LogoutResponse
-	17, // 40: steambridge.SteamUserService.GetUserInfo:output_type -> steambridge.UserInfoResponse
-	20, // 41: steambridge.SteamUserService.GetFriendsList:output_type -> steambridge.FriendsListResponse
-	23, // 42: steambridge.SteamUserService.GetUserStatus:output_type -> steambridge.UserStatusResponse
-	25, // 43: steambridge.SteamUserService.ResolveVanityURL:output_type -> steambridge.ResolveVanityURLResponse
-	27, // 44: steambridge.SteamMessagingService.SendMessage:output_type -> steambridge.SendMessageResponse
-	29, // 45: steambridge.SteamMessagingService.SubscribeToMessages:output_type -> steambridge.MessageEvent
-	31, // 46: steambridge.SteamMessagingService.SendTypingNotification:output_type -> steambridge.TypingNotificationResponse
-	33, // 47: steambridge.SteamMessagingService.UploadImageToSteam:output_type -> steambridge.UploadImageResponse
-	35, // 48: steambridge.SteamMessagingService.DownloadImageFromSteam:output_type -> steambridge.DownloadImageResponse
-	37, // 49: steambridge.SteamMessagingService.GetUserAvatarData:output_type -> steambridge.GetUserAvatarDataResponse
-	39, // 50: steambridge.SteamMessagingService.GetChatMessageHistory:output_type -> steambridge.ChatMessageHistoryResponse
-	42, // 51: steambridge.SteamSessionService.SubscribeToSessionEvents:output_type -> steambridge.SessionEvent
-	34, // [34:52] is the sub-list for method output_type
-	16, // [16:34] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	0,  // 16: steambridge.SetPersonaStateRequest.state:type_name -> steambridge.PersonaState
+	5,  // 17: steambridge.SteamAuthService.LoginWithCredentials:input_type -> steambridge.CredentialsLoginRequest
+	9,  // 18: steambridge.SteamAuthService.ContinueAuthSession:input_type -> steambridge.ContinueAuthRequest
+	6,  // 19: steambridge.SteamAuthService.LoginWithQR:input_type -> steambridge.QRLoginRequest
+	10, // 20: steambridge.SteamAuthService.GetAuthStatus:input_type -> steambridge.AuthStatusRequest
+	13, // 21: steambridge.SteamAuthService.ReAuthenticateWithTokens:input_type -> steambridge.TokenReAuthRequest
+	12, // 22: steambridge.SteamAuthService.Logout:input_type -> steambridge.LogoutRequest
+	16, // 23: steambridge.SteamUserService.GetUserInfo:input_type -> steambridge.UserInfoRequest
+	19, // 24: steambridge.SteamUserService.GetFriendsList:input_type -> steambridge.FriendsListRequest
+	22, // 25: steambridge.SteamUserService.GetUserStatus:input_type -> steambridge.UserStatusRequest
+	24, // 26: steambridge.SteamUserService.ResolveVanityURL:input_type -> steambridge.ResolveVanityURLRequest
+	26, // 27: steambridge.SteamMessagingService.SendMessage:input_type -> steambridge.SendMessageRequest
+	28, // 28: steambridge.SteamMessagingService.SubscribeToMessages:input_type -> steambridge.MessageSubscriptionRequest
+	30, // 29: steambridge.SteamMessagingService.SendTypingNotification:input_type -> steambridge.TypingNotificationRequest
+	32, // 30: steambridge.SteamMessagingService.UploadImageToSteam:input_type -> steambridge.UploadImageRequest
+	34, // 31: steambridge.SteamMessagingService.DownloadImageFromSteam:input_type -> steambridge.DownloadImageRequest
+	36, // 32: steambridge.SteamMessagingService.GetUserAvatarData:input_type -> steambridge.GetUserAvatarDataRequest
+	38, // 33: steambridge.SteamMessagingService.GetChatMessageHistory:input_type -> steambridge.ChatMessageHistoryRequest
+	41, // 34: steambridge.SteamSessionService.SubscribeToSessionEvents:input_type -> steambridge.SessionSubscriptionRequest
+	43, // 35: steambridge.SteamPresenceService.SetPersonaState:input_type -> steambridge.SetPersonaStateRequest
+	8,  // 36: steambridge.SteamAuthService.LoginWithCredentials:output_type -> steambridge.LoginResponse
+	8,  // 37: steambridge.SteamAuthService.ContinueAuthSession:output_type -> steambridge.LoginResponse
+	7,  // 38: steambridge.SteamAuthService.LoginWithQR:output_type -> steambridge.QRLoginResponse
+	11, // 39: steambridge.SteamAuthService.GetAuthStatus:output_type -> steambridge.AuthStatusResponse
+	14, // 40: steambridge.SteamAuthService.ReAuthenticateWithTokens:output_type -> steambridge.TokenReAuthResponse
+	15, // 41: steambridge.SteamAuthService.Logout:output_type -> steambridge.LogoutResponse
+	17, // 42: steambridge.SteamUserService.GetUserInfo:output_type -> steambridge.UserInfoResponse
+	20, // 43: steambridge.SteamUserService.GetFriendsList:output_type -> steambridge.FriendsListResponse
+	23, // 44: steambridge.SteamUserService.GetUserStatus:output_type -> steambridge.UserStatusResponse
+	25, // 45: steambridge.SteamUserService.ResolveVanityURL:output_type -> steambridge.ResolveVanityURLResponse
+	27, // 46: steambridge.SteamMessagingService.SendMessage:output_type -> steambridge.SendMessageResponse
+	29, // 47: steambridge.SteamMessagingService.SubscribeToMessages:output_type -> steambridge.MessageEvent
+	31, // 48: steambridge.SteamMessagingService.SendTypingNotification:output_type -> steambridge.TypingNotificationResponse
+	33, // 49: steambridge.SteamMessagingService.UploadImageToSteam:output_type -> steambridge.UploadImageResponse
+	35, // 50: steambridge.SteamMessagingService.DownloadImageFromSteam:output_type -> steambridge.DownloadImageResponse
+	37, // 51: steambridge.SteamMessagingService.GetUserAvatarData:output_type -> steambridge.GetUserAvatarDataResponse
+	39, // 52: steambridge.SteamMessagingService.GetChatMessageHistory:output_type -> steambridge.ChatMessageHistoryResponse
+	42, // 53: steambridge.SteamSessionService.SubscribeToSessionEvents:output_type -> steambridge.SessionEvent
+	44, // 54: steambridge.SteamPresenceService.SetPersonaState:output_type -> steambridge.SetPersonaStateResponse
+	36, // [36:55] is the sub-list for method output_type
+	17, // [17:36] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_Proto_steam_bridge_proto_init() }
@@ -2995,9 +3104,9 @@ func file_Proto_steam_bridge_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_Proto_steam_bridge_proto_rawDesc), len(file_Proto_steam_bridge_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   38,
+			NumMessages:   40,
 			NumExtensions: 0,
-			NumServices:   4,
+			NumServices:   5,
 		},
 		GoTypes:           file_Proto_steam_bridge_proto_goTypes,
 		DependencyIndexes: file_Proto_steam_bridge_proto_depIdxs,

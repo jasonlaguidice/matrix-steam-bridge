@@ -980,3 +980,109 @@ var SteamSessionService_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "Proto/steam_bridge.proto",
 }
+
+const (
+	SteamPresenceService_SetPersonaState_FullMethodName = "/steambridge.SteamPresenceService/SetPersonaState"
+)
+
+// SteamPresenceServiceClient is the client API for SteamPresenceService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// Presence Management Service
+type SteamPresenceServiceClient interface {
+	SetPersonaState(ctx context.Context, in *SetPersonaStateRequest, opts ...grpc.CallOption) (*SetPersonaStateResponse, error)
+}
+
+type steamPresenceServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewSteamPresenceServiceClient(cc grpc.ClientConnInterface) SteamPresenceServiceClient {
+	return &steamPresenceServiceClient{cc}
+}
+
+func (c *steamPresenceServiceClient) SetPersonaState(ctx context.Context, in *SetPersonaStateRequest, opts ...grpc.CallOption) (*SetPersonaStateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetPersonaStateResponse)
+	err := c.cc.Invoke(ctx, SteamPresenceService_SetPersonaState_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SteamPresenceServiceServer is the server API for SteamPresenceService service.
+// All implementations must embed UnimplementedSteamPresenceServiceServer
+// for forward compatibility.
+//
+// Presence Management Service
+type SteamPresenceServiceServer interface {
+	SetPersonaState(context.Context, *SetPersonaStateRequest) (*SetPersonaStateResponse, error)
+	mustEmbedUnimplementedSteamPresenceServiceServer()
+}
+
+// UnimplementedSteamPresenceServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedSteamPresenceServiceServer struct{}
+
+func (UnimplementedSteamPresenceServiceServer) SetPersonaState(context.Context, *SetPersonaStateRequest) (*SetPersonaStateResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SetPersonaState not implemented")
+}
+func (UnimplementedSteamPresenceServiceServer) mustEmbedUnimplementedSteamPresenceServiceServer() {}
+func (UnimplementedSteamPresenceServiceServer) testEmbeddedByValue()                              {}
+
+// UnsafeSteamPresenceServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to SteamPresenceServiceServer will
+// result in compilation errors.
+type UnsafeSteamPresenceServiceServer interface {
+	mustEmbedUnimplementedSteamPresenceServiceServer()
+}
+
+func RegisterSteamPresenceServiceServer(s grpc.ServiceRegistrar, srv SteamPresenceServiceServer) {
+	// If the following call pancis, it indicates UnimplementedSteamPresenceServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&SteamPresenceService_ServiceDesc, srv)
+}
+
+func _SteamPresenceService_SetPersonaState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetPersonaStateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SteamPresenceServiceServer).SetPersonaState(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SteamPresenceService_SetPersonaState_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SteamPresenceServiceServer).SetPersonaState(ctx, req.(*SetPersonaStateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// SteamPresenceService_ServiceDesc is the grpc.ServiceDesc for SteamPresenceService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var SteamPresenceService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "steambridge.SteamPresenceService",
+	HandlerType: (*SteamPresenceServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "SetPersonaState",
+			Handler:    _SteamPresenceService_SetPersonaState_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "Proto/steam_bridge.proto",
+}

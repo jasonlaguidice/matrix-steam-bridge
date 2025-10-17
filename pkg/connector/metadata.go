@@ -3,6 +3,7 @@ package connector
 import (
 	"time"
 
+	"go.shadowdrake.org/steam/pkg/steamapi"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 )
 
@@ -90,4 +91,8 @@ type UserLoginMetadata struct {
 	IsValid         bool      `json:"is_valid,omitempty"`          // Cache validity state
 	MachineAuthHash string    `json:"machine_auth_hash,omitempty"` // SHA-1 hash for machine authentication
 	RecentlyCreated time.Time `json:"recently_created"`            // Track fresh sessions to avoid immediate validation
+
+	// Presence tracking state
+	CurrentPersonaState steamapi.PersonaState `json:"current_persona_state,omitempty"` // Current Steam PersonaState
+	ManualInvisible     bool                  `json:"manual_invisible,omitempty"`      // Whether user set manual invisible mode
 }

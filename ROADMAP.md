@@ -10,7 +10,7 @@
       * [ ] Gifs
       * [ ] Stickers
   * [ ] Message reactions
-  * [ ] Network presence/status
+  * [x] Network presence/status
   * [ ] Group info changes
     * [ ] Name
     * [ ] Avatar
