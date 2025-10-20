@@ -215,12 +215,14 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 		DeleteOnConflict: true,
 		LoadUserLogin: func(ctx context.Context, login *bridgev2.UserLogin) error {
 			login.Client = &SteamClient{
-				UserLogin:     login,
-				authClient:    slp.Main.authClient,
-				userClient:    slp.Main.userClient,
-				msgClient:     slp.Main.msgClient,
-				sessionClient: slp.Main.sessionClient,
-				br:            slp.Main.br,
+				UserLogin:      login,
+				connector:      slp.Main,
+				authClient:     slp.Main.authClient,
+				userClient:     slp.Main.userClient,
+				msgClient:      slp.Main.msgClient,
+				sessionClient:  slp.Main.sessionClient,
+				presenceClient: slp.Main.presenceClient,
+				br:             slp.Main.br,
 			}
 			return nil
 		},
@@ -254,6 +256,14 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 
 		// Start session event subscription for logout notifications
 		go steamClient.startSessionEventSubscription(ctx)
+
+		// Initialize and start presence manager
+		if steamClient.presenceManager == nil && steamClient.connector != nil {
+			steamClient.presenceManager = NewPresenceManager(steamClient, &steamClient.connector.Config.Presence)
+		}
+		if steamClient.presenceManager != nil {
+			steamClient.presenceManager.Start(ctx)
+		}
 
 		// Save the user login with updated metadata
 		steamClient.UserLogin.Save(ctx)
@@ -395,12 +405,14 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		DeleteOnConflict: true,
 		LoadUserLogin: func(ctx context.Context, login *bridgev2.UserLogin) error {
 			login.Client = &SteamClient{
-				UserLogin:     login,
-				authClient:    slq.Main.authClient,
-				userClient:    slq.Main.userClient,
-				msgClient:     slq.Main.msgClient,
-				sessionClient: slq.Main.sessionClient,
-				br:            slq.Main.br,
+				UserLogin:      login,
+				connector:      slq.Main,
+				authClient:     slq.Main.authClient,
+				userClient:     slq.Main.userClient,
+				msgClient:      slq.Main.msgClient,
+				sessionClient:  slq.Main.sessionClient,
+				presenceClient: slq.Main.presenceClient,
+				br:             slq.Main.br,
 			}
 			return nil
 		},
@@ -434,6 +446,14 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 
 		// Start session event subscription for logout notifications
 		go steamClient.startSessionEventSubscription(ctx)
+
+		// Initialize and start presence manager
+		if steamClient.presenceManager == nil && steamClient.connector != nil {
+			steamClient.presenceManager = NewPresenceManager(steamClient, &steamClient.connector.Config.Presence)
+		}
+		if steamClient.presenceManager != nil {
+			steamClient.presenceManager.Start(ctx)
+		}
 
 		// Save the user login with updated metadata
 		steamClient.UserLogin.Save(ctx)
