@@ -415,20 +415,30 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
             count = Math.Min(request.MaxCount, 100)
         };
 
-        // Set pagination cursor for backward pagination
-        if (!request.Forward && request.LastTime > 0)
+        // Set pagination cursor based on direction
+        if (request.LastTime > 0 || request.LastOrdinal > 0)
         {
-            friendMsgRequest.time_last = request.LastTime;
-            friendMsgRequest.ordinal_last = request.LastOrdinal;
+            if (request.Forward)
+            {
+                // Forward pagination: fetch messages AFTER the anchor point (for catchup)
+                friendMsgRequest.rtime32_start_time = request.LastTime;
+                friendMsgRequest.start_ordinal = request.LastOrdinal;
+            }
+            else
+            {
+                // Backward pagination: fetch messages BEFORE the anchor point (for history)
+                friendMsgRequest.time_last = request.LastTime;
+                friendMsgRequest.ordinal_last = request.LastOrdinal;
+            }
         }
 
         _logger.LogDebug("Sending FriendMessages.GetRecentMessages: SteamId1={SteamId1}, SteamId2={SteamId2}, Count={Count}, TimeLast={TimeLast}",
             friendMsgRequest.steamid1, friendMsgRequest.steamid2, friendMsgRequest.count, friendMsgRequest.time_last);
 
-        // Call Steam FriendMessages API
+        // Call Steam FriendMessages API using the registered service (enables proper callback handling)
         _logger.LogDebug("Starting Steam API call for FriendMessages.GetRecentMessages");
-        var job = steamUnified.SendMessage<CFriendMessages_GetRecentMessages_Request, CFriendMessages_GetRecentMessages_Response>(
-            "FriendMessages.GetRecentMessages#1", friendMsgRequest);
+        var friendMessagesService = _steamClientManager.FriendMessagesService;
+        var job = friendMessagesService.GetRecentMessages(friendMsgRequest);
 
         _logger.LogDebug("Awaiting Steam API response for FriendMessages.GetRecentMessages");
         var result = await job.ToTask();
@@ -456,11 +466,18 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
 
         if (response.messages != null)
         {
+            // Get the universe from our own Steam ID for constructing sender IDs
+            var myUniverse = _steamClientManager.SteamClient.SteamID?.AccountUniverse ?? EUniverse.Public;
+
             foreach (var msg in response.messages)
             {
+                // Convert 32-bit account ID to full 64-bit Steam ID using SteamKit's constructor
+                // FriendMessages API returns account IDs only, following SteamKit's own pattern from Callbacks.cs
+                var senderSteamId = new SteamID(msg.accountid, myUniverse, EAccountType.Individual);
+
                 var historyMessage = new ChatHistoryMessage
                 {
-                    SenderSteamId = msg.accountid,
+                    SenderSteamId = senderSteamId.ConvertToUInt64(),
                     Timestamp = msg.timestamp,
                     Ordinal = msg.ordinal,
                     MessageContent = msg.message ?? string.Empty,
