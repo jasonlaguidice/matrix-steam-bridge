@@ -7,7 +7,7 @@ require (
 	go.mau.fi/util v0.9.2
 	google.golang.org/grpc v1.76.0
 	google.golang.org/protobuf v1.36.10
-	maunium.net/go/mautrix v0.25.1
+	maunium.net/go/mautrix v0.25.2
 )
 
 require (
