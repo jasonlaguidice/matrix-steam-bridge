@@ -339,12 +339,12 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
     }
 
     public override async Task<ChatMessageHistoryResponse> GetChatMessageHistory(
-        ChatMessageHistoryRequest request, 
+        ChatMessageHistoryRequest request,
         ServerCallContext context)
     {
         try
         {
-            _logger.LogDebug("Getting chat message history for chat group {ChatGroupId}, chat {ChatId}", 
+            _logger.LogDebug("Getting chat message history for chat group {ChatGroupId}, chat {ChatId}",
                 request.ChatGroupId, request.ChatId);
 
             var steamUnified = _steamClientManager.SteamUnifiedMessages;
@@ -358,97 +358,19 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                 };
             }
 
-            // Create the Steam API request
-            var historyRequest = new CChatRoom_GetMessageHistory_Request
-            {
-                chat_group_id = request.ChatGroupId,
-                chat_id = request.ChatId,
-                max_count = Math.Min(request.MaxCount, 100) // Limit to reasonable batch size
-            };
+            // Detect conversation type: DM (chat_group_id == 0) vs Group Chat (chat_group_id != 0)
+            bool isDM = request.ChatGroupId == 0;
 
-            // Set pagination cursor if provided
-            if (request.LastTime > 0 && request.LastOrdinal > 0)
+            if (isDM)
             {
-                if (request.Forward)
-                {
-                    historyRequest.start_time = request.LastTime;
-                    historyRequest.start_ordinal = request.LastOrdinal;
-                }
-                else
-                {
-                    historyRequest.last_time = request.LastTime;
-                    historyRequest.last_ordinal = request.LastOrdinal;
-                }
+                // Use FriendMessages API for 1-to-1 DM conversations
+                return await GetFriendMessageHistory(request, steamUnified);
             }
-
-            _logger.LogDebug("Sending GetMessageHistory request: GroupId={GroupId}, ChatId={ChatId}, MaxCount={MaxCount}, Forward={Forward}", 
-                historyRequest.chat_group_id, historyRequest.chat_id, historyRequest.max_count, request.Forward);
-
-            // Call Steam API
-            _logger.LogDebug("Starting Steam API call for ChatRoom.GetMessageHistory");
-            var job = steamUnified.SendMessage<CChatRoom_GetMessageHistory_Request, CChatRoom_GetMessageHistory_Response>(
-                "ChatRoom.GetMessageHistory#1", historyRequest);
-
-            _logger.LogDebug("Awaiting Steam API response for ChatRoom.GetMessageHistory");
-            var result = await job.ToTask();
-            _logger.LogDebug("Received Steam API response for ChatRoom.GetMessageHistory");
-            if (result == null || result.Result != EResult.OK)
+            else
             {
-                _logger.LogWarning("Failed to get message history: result={Result}", result?.Result);
-                return new ChatMessageHistoryResponse
-                {
-                    Success = false,
-                    ErrorMessage = $"Steam API returned error: {result?.Result}"
-                };
+                // Use ChatRoom API for group chats
+                return await GetChatRoomMessageHistory(request, steamUnified);
             }
-
-            var response = result.Body;
-            _logger.LogDebug("Received {MessageCount} messages from Steam API", response.messages?.Count ?? 0);
-
-            var historyResponse = new ChatMessageHistoryResponse
-            {
-                Success = true,
-                HasMore = response.more_available,
-                Messages = { }
-            };
-
-            if (response.messages != null)
-            {
-                foreach (var msg in response.messages)
-                {
-                    var historyMessage = new ChatHistoryMessage
-                    {
-                        SenderSteamId = msg.sender,
-                        Timestamp = msg.server_timestamp,
-                        Ordinal = msg.ordinal,
-                        MessageContent = msg.message ?? string.Empty,
-                        MessageType = Proto.MessageType.ChatMessage // Default to chat message for now
-                    };
-
-                    // Parse image messages if present
-                    var (imageUrl, caption) = ParseImageMessage(historyMessage.MessageContent);
-                    if (!string.IsNullOrEmpty(imageUrl))
-                    {
-                        historyMessage.ImageUrl = imageUrl;
-                        historyMessage.MessageContent = caption;
-                    }
-
-                    historyResponse.Messages.Add(historyMessage);
-                }
-
-                // Set next cursor for pagination
-                if (response.messages.Count > 0)
-                {
-                    var lastMessage = response.messages.Last();
-                    historyResponse.NextTime = lastMessage.server_timestamp;
-                    historyResponse.NextOrdinal = lastMessage.ordinal;
-                }
-            }
-
-            _logger.LogDebug("Returning {MessageCount} processed messages, HasMore={HasMore}", 
-                historyResponse.Messages.Count, historyResponse.HasMore);
-
-            return historyResponse;
         }
         catch (TaskCanceledException ex)
         {
@@ -468,6 +390,205 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                 ErrorMessage = $"Failed to retrieve message history: {ex.Message}"
             };
         }
+    }
+
+    private async Task<ChatMessageHistoryResponse> GetFriendMessageHistory(
+        ChatMessageHistoryRequest request,
+        SteamUnifiedMessages steamUnified)
+    {
+        // Get our own Steam ID for the friend messages request
+        var mySteamId = _steamClientManager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
+        if (mySteamId == 0)
+        {
+            return new ChatMessageHistoryResponse
+            {
+                Success = false,
+                ErrorMessage = "Cannot get own Steam ID"
+            };
+        }
+
+        // Build FriendMessages.GetRecentMessages request
+        var friendMsgRequest = new CFriendMessages_GetRecentMessages_Request
+        {
+            steamid1 = mySteamId,
+            steamid2 = request.ChatId, // ChatId contains the friend's Steam ID for DMs
+            count = Math.Min(request.MaxCount, 100)
+        };
+
+        // Set pagination cursor for backward pagination
+        if (!request.Forward && request.LastTime > 0)
+        {
+            friendMsgRequest.time_last = request.LastTime;
+            friendMsgRequest.ordinal_last = request.LastOrdinal;
+        }
+
+        _logger.LogDebug("Sending FriendMessages.GetRecentMessages: SteamId1={SteamId1}, SteamId2={SteamId2}, Count={Count}, TimeLast={TimeLast}",
+            friendMsgRequest.steamid1, friendMsgRequest.steamid2, friendMsgRequest.count, friendMsgRequest.time_last);
+
+        // Call Steam FriendMessages API
+        _logger.LogDebug("Starting Steam API call for FriendMessages.GetRecentMessages");
+        var job = steamUnified.SendMessage<CFriendMessages_GetRecentMessages_Request, CFriendMessages_GetRecentMessages_Response>(
+            "FriendMessages.GetRecentMessages#1", friendMsgRequest);
+
+        _logger.LogDebug("Awaiting Steam API response for FriendMessages.GetRecentMessages");
+        var result = await job.ToTask();
+        _logger.LogDebug("Received Steam API response for FriendMessages.GetRecentMessages");
+
+        if (result == null || result.Result != EResult.OK)
+        {
+            _logger.LogWarning("Failed to get friend message history: result={Result}", result?.Result);
+            return new ChatMessageHistoryResponse
+            {
+                Success = false,
+                ErrorMessage = $"Steam API returned error: {result?.Result}"
+            };
+        }
+
+        var response = result.Body;
+        _logger.LogDebug("Received {MessageCount} friend messages from Steam API", response.messages?.Count ?? 0);
+
+        var historyResponse = new ChatMessageHistoryResponse
+        {
+            Success = true,
+            HasMore = response.more_available,
+            Messages = { }
+        };
+
+        if (response.messages != null)
+        {
+            foreach (var msg in response.messages)
+            {
+                var historyMessage = new ChatHistoryMessage
+                {
+                    SenderSteamId = msg.accountid,
+                    Timestamp = msg.timestamp,
+                    Ordinal = msg.ordinal,
+                    MessageContent = msg.message ?? string.Empty,
+                    MessageType = Proto.MessageType.ChatMessage // FriendMessages API doesn't include message type
+                };
+
+                // Parse image messages if present
+                var (imageUrl, caption) = ParseImageMessage(historyMessage.MessageContent);
+                if (!string.IsNullOrEmpty(imageUrl))
+                {
+                    historyMessage.ImageUrl = imageUrl;
+                    historyMessage.MessageContent = caption;
+                }
+
+                historyResponse.Messages.Add(historyMessage);
+            }
+
+            // Set next cursor for pagination (use the oldest message for backward pagination)
+            if (response.messages.Count > 0)
+            {
+                var lastMessage = response.messages.Last();
+                historyResponse.NextTime = lastMessage.timestamp;
+                historyResponse.NextOrdinal = lastMessage.ordinal;
+            }
+        }
+
+        _logger.LogDebug("Returning {MessageCount} processed friend messages, HasMore={HasMore}",
+            historyResponse.Messages.Count, historyResponse.HasMore);
+
+        return historyResponse;
+    }
+
+    private async Task<ChatMessageHistoryResponse> GetChatRoomMessageHistory(
+        ChatMessageHistoryRequest request,
+        SteamUnifiedMessages steamUnified)
+    {
+        // Create the Steam API request for group chats
+        var historyRequest = new CChatRoom_GetMessageHistory_Request
+        {
+            chat_group_id = request.ChatGroupId,
+            chat_id = request.ChatId,
+            max_count = Math.Min(request.MaxCount, 100) // Limit to reasonable batch size
+        };
+
+        // Set pagination cursor if provided
+        if (request.LastTime > 0 && request.LastOrdinal > 0)
+        {
+            if (request.Forward)
+            {
+                historyRequest.start_time = request.LastTime;
+                historyRequest.start_ordinal = request.LastOrdinal;
+            }
+            else
+            {
+                historyRequest.last_time = request.LastTime;
+                historyRequest.last_ordinal = request.LastOrdinal;
+            }
+        }
+
+        _logger.LogDebug("Sending ChatRoom.GetMessageHistory request: GroupId={GroupId}, ChatId={ChatId}, MaxCount={MaxCount}, Forward={Forward}",
+            historyRequest.chat_group_id, historyRequest.chat_id, historyRequest.max_count, request.Forward);
+
+        // Call Steam API
+        _logger.LogDebug("Starting Steam API call for ChatRoom.GetMessageHistory");
+        var job = steamUnified.SendMessage<CChatRoom_GetMessageHistory_Request, CChatRoom_GetMessageHistory_Response>(
+            "ChatRoom.GetMessageHistory#1", historyRequest);
+
+        _logger.LogDebug("Awaiting Steam API response for ChatRoom.GetMessageHistory");
+        var result = await job.ToTask();
+        _logger.LogDebug("Received Steam API response for ChatRoom.GetMessageHistory");
+
+        if (result == null || result.Result != EResult.OK)
+        {
+            _logger.LogWarning("Failed to get chat room history: result={Result}", result?.Result);
+            return new ChatMessageHistoryResponse
+            {
+                Success = false,
+                ErrorMessage = $"Steam API returned error: {result?.Result}"
+            };
+        }
+
+        var response = result.Body;
+        _logger.LogDebug("Received {MessageCount} chat room messages from Steam API", response.messages?.Count ?? 0);
+
+        var historyResponse = new ChatMessageHistoryResponse
+        {
+            Success = true,
+            HasMore = response.more_available,
+            Messages = { }
+        };
+
+        if (response.messages != null)
+        {
+            foreach (var msg in response.messages)
+            {
+                var historyMessage = new ChatHistoryMessage
+                {
+                    SenderSteamId = msg.sender,
+                    Timestamp = msg.server_timestamp,
+                    Ordinal = msg.ordinal,
+                    MessageContent = msg.message ?? string.Empty,
+                    MessageType = Proto.MessageType.ChatMessage // Default to chat message for now
+                };
+
+                // Parse image messages if present
+                var (imageUrl, caption) = ParseImageMessage(historyMessage.MessageContent);
+                if (!string.IsNullOrEmpty(imageUrl))
+                {
+                    historyMessage.ImageUrl = imageUrl;
+                    historyMessage.MessageContent = caption;
+                }
+
+                historyResponse.Messages.Add(historyMessage);
+            }
+
+            // Set next cursor for pagination
+            if (response.messages.Count > 0)
+            {
+                var lastMessage = response.messages.Last();
+                historyResponse.NextTime = lastMessage.server_timestamp;
+                historyResponse.NextOrdinal = lastMessage.ordinal;
+            }
+        }
+
+        _logger.LogDebug("Returning {MessageCount} processed chat room messages, HasMore={HasMore}",
+            historyResponse.Messages.Count, historyResponse.HasMore);
+
+        return historyResponse;
     }
 
     private static Proto.MessageType ConvertSteamMessageType(uint steamMessageType)
