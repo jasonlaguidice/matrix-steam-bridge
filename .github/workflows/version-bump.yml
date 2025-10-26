@@ -31,11 +31,11 @@ jobs:
         VERSION="${{ steps.version.outputs.version }}"
 
         # Update the Version field in cmd/steam/main.go
-        sed -i "s/Version:     \"[^\"]*\"/Version:     \"$VERSION\"/" /root/steam/cmd/steam/main.go
+        sed -i "s/Version:     \"[^\"]*\"/Version:     \"$VERSION\"/" cmd/steam/main.go
 
         # Verify the change
         echo "Updated version line:"
-        grep "Version:" /root/steam/cmd/steam/main.go
+        grep "Version:" cmd/steam/main.go
 
     - name: Commit and push version bump
       run: |
