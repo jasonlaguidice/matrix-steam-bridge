@@ -13,7 +13,8 @@ public class SteamClientManager : IDisposable
     private readonly SteamUser _steamUser;
     private readonly SteamFriends _steamFriends;
     private readonly SteamUnifiedMessages _steamUnifiedMessages;
-    
+    private readonly SteamKit2.Internal.FriendMessages _friendMessagesService;
+
     private readonly CancellationTokenSource _cancellationTokenSource;
     private readonly Task _callbackTask;
     
@@ -49,6 +50,7 @@ public class SteamClientManager : IDisposable
     public SteamFriends SteamFriends => _steamFriends;
     public SteamClient SteamClient => _steamClient;
     public SteamUnifiedMessages SteamUnifiedMessages => _steamUnifiedMessages;
+    public SteamKit2.Internal.FriendMessages FriendMessagesService => _friendMessagesService;
 
     public SteamClientManager(ILogger<SteamClientManager> logger)
     {
@@ -59,7 +61,10 @@ public class SteamClientManager : IDisposable
         _steamUser = _steamClient.GetHandler<SteamUser>()!;
         _steamFriends = _steamClient.GetHandler<SteamFriends>()!;
         _steamUnifiedMessages = _steamClient.GetHandler<SteamUnifiedMessages>()!;
-        
+
+        // Create FriendMessages service to enable proper callback handling for DM message history
+        _friendMessagesService = _steamUnifiedMessages.CreateService<SteamKit2.Internal.FriendMessages>();
+
         _cancellationTokenSource = new CancellationTokenSource();
         
         // Subscribe to callbacks
