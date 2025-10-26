@@ -265,6 +265,9 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 			steamClient.presenceManager.Start(ctx)
 		}
 
+		// Sync existing portals for backfill after fresh login
+		go steamClient.syncExistingPortals(ctx)
+
 		// Save the user login with updated metadata
 		steamClient.UserLogin.Save(ctx)
 	}
@@ -454,6 +457,9 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		if steamClient.presenceManager != nil {
 			steamClient.presenceManager.Start(ctx)
 		}
+
+		// Sync existing portals for backfill after fresh login
+		go steamClient.syncExistingPortals(ctx)
 
 		// Save the user login with updated metadata
 		steamClient.UserLogin.Save(ctx)
