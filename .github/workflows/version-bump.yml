@@ -1,0 +1,57 @@
+name: Version Bump
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  update-version:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v5
+      with:
+        ref: main
+        fetch-depth: 0
+
+    - name: Extract version from tag
+      id: version
+      run: |
+        # Extract version from tag (e.g., v1.0.6 -> 1.0.6)
+        VERSION=${GITHUB_REF#refs/tags/v}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Extracted version: $VERSION"
+
+    - name: Update version in main.go
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+
+        # Update the Version field in cmd/steam/main.go
+        sed -i "s/Version:     \"[^\"]*\"/Version:     \"$VERSION\"/" /root/steam/cmd/steam/main.go
+
+        # Verify the change
+        echo "Updated version line:"
+        grep "Version:" /root/steam/cmd/steam/main.go
+
+    - name: Commit and push version bump
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+
+        # Configure git
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+        # Check if there are changes
+        if git diff --quiet cmd/steam/main.go; then
+          echo "No version change needed"
+          exit 0
+        fi
+
+        # Commit and push
+        git add cmd/steam/main.go
+        git commit -m "chore: bump version to $VERSION [skip ci]"
+        git push origin main
