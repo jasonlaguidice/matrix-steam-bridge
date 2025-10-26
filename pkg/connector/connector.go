@@ -163,6 +163,7 @@ var _ bridgev2.NetworkAPI = (*SteamClient)(nil)
 var _ bridgev2.IdentifierResolvingNetworkAPI = (*SteamClient)(nil)
 var _ bridgev2.UserSearchingNetworkAPI = (*SteamClient)(nil)
 var _ bridgev2.BackfillingNetworkAPI = (*SteamClient)(nil)
+var _ bridgev2.BackfillingNetworkAPIWithLimits = (*SteamClient)(nil)
 var _ bridgev2.TypingHandlingNetworkAPI = (*SteamClient)(nil)
 
 // upgradeConfig handles configuration upgrades

@@ -410,6 +410,9 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		sc.presenceManager.Start(ctx)
 	}
 
+	// Sync existing portals for backfill after re-authentication
+	go sc.syncExistingPortals(ctx)
+
 	// Start session event subscription for logout notifications
 	go sc.startSessionEventSubscription(ctx)
 }

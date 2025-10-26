@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"maunium.net/go/mautrix/bridgev2"
+	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -266,4 +267,30 @@ func (sc *SteamClient) convertImageMessageFromHistory(ctx context.Context, capti
 	return &bridgev2.ConvertedMessage{
 		Parts: parts,
 	}, nil
+}
+
+// GetBackfillMaxBatchCount implements bridgev2.BackfillingNetworkAPIWithLimits
+// This method allows the bridge to use the max_batches_override configuration
+// to control how many batches of message history to backfill per portal.
+func (sc *SteamClient) GetBackfillMaxBatchCount(ctx context.Context, portal *bridgev2.Portal, task *database.BackfillTask) int {
+	// Determine room type for configuration lookup
+	// Currently, Steam only supports 1-to-1 DM chats, so we use "dm" as the key
+	// Future: Add support for group chats with "channel" or custom keys
+	roomType := "dm"
+
+	// Check if this is a DM room (though all Steam rooms are currently DM type)
+	if portal.RoomType == database.RoomTypeDM {
+		roomType = "dm"
+	}
+
+	// Get the override from config (e.g., dm: -1 for unlimited, or dm: 20 for 20 batches)
+	maxBatches := sc.br.Config.Backfill.Queue.GetOverride(roomType)
+
+	sc.br.Log.Debug().
+		Str("portal_id", string(portal.PortalKey.ID)).
+		Str("room_type", roomType).
+		Int("max_batches", maxBatches).
+		Msg("Determined max backfill batches for portal")
+
+	return maxBatches
 }
