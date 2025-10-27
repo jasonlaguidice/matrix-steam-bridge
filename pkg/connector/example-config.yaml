@@ -15,9 +15,24 @@ presence:
   # your Matrix presence and activity
   enabled: true
 
-  # Inactivity timeout in minutes before setting Steam to SNOOZE
+  # Inactivity timeout in minutes before changing Steam status
   # This is used as a fallback when your Matrix server doesn't support
   # presence tracking. After this many minutes without Matrix activity,
-  # your Steam status will change to SNOOZE (idle)
+  # your Steam status will change (see inactivity_status below)
   # Set to 0 to disable automatic away
   inactivity_timeout: 15
+
+  # Status to set after inactivity timeout
+  # Valid values: "snooze" (appear away/idle) or "invisible" (appear offline)
+  # Default: "snooze"
+  inactivity_status: snooze
+
+  # Whether typing events in Matrix should reset the inactivity timer
+  # When true, typing will count as activity and keep you marked as online
+  # Default: true
+  typing_resets_presence: true
+
+  # Whether sending read receipts in Matrix should reset the inactivity timer
+  # When true, reading messages will count as activity and keep you marked as online
+  # Default: false (reading is passive, doesn't indicate active presence)
+  read_receipts_reset_presence: false
