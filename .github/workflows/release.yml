@@ -154,7 +154,7 @@ jobs:
         echo "ASSET_NAME=$PACKAGE_NAME.zip" >> $env:GITHUB_ENV
 
     - name: Upload binary artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: matrix-steam-bridge-${{ matrix.goos }}-${{ matrix.goarch }}
         path: ${{ env.ASSET_NAME }}
