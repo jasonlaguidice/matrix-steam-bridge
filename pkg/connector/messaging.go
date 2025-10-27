@@ -811,6 +811,20 @@ func (sc *SteamClient) convertImageMessage(ctx context.Context, portal *bridgev2
 	}, nil
 }
 
+// HandleMatrixReadReceipt implements bridgev2.ReadReceiptHandlingNetworkAPI.
+// This method handles read receipts from Matrix.
+// Steam doesn't have explicit read receipt sending, but we use this for presence tracking.
+func (sc *SteamClient) HandleMatrixReadReceipt(ctx context.Context, msg *bridgev2.MatrixReadReceipt) error {
+	// Track activity for presence management (if configured)
+	if sc.presenceManager != nil && sc.presenceManager.readReceiptsResetPresence {
+		sc.presenceManager.HandleActivity(ctx)
+	}
+
+	// Steam doesn't support sending read receipts back to the network
+	// We only use this for presence tracking
+	return nil
+}
+
 // HandleMatrixTyping implements bridgev2.TypingHandlingNetworkAPI.
 // This method handles typing notifications from Matrix and sends them to Steam.
 func (sc *SteamClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.MatrixTyping) error {
@@ -820,8 +834,8 @@ func (sc *SteamClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.Mat
 		return nil
 	}
 
-	// Track activity for presence management (typing counts as activity)
-	if sc.presenceManager != nil {
+	// Track activity for presence management (if configured)
+	if sc.presenceManager != nil && sc.presenceManager.typingResetsPresence {
 		sc.presenceManager.HandleActivity(ctx)
 	}
 

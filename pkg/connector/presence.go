@@ -23,9 +23,12 @@ type PresenceManager struct {
 	lastActivity      time.Time
 	inactivityTimer   *time.Timer
 	inactivityTimeout time.Duration
+	inactivityState   steamapi.PersonaState // State to set after timeout
 
 	// Configuration
-	enabled bool
+	enabled                   bool
+	typingResetsPresence      bool
+	readReceiptsResetPresence bool
 }
 
 // NewPresenceManager creates a new presence manager
@@ -35,12 +38,28 @@ func NewPresenceManager(client *SteamClient, config *PresenceConfig) *PresenceMa
 		timeout = 15 * time.Minute // Default
 	}
 
+	// Parse inactivity status (default to SNOOZE if not specified or invalid)
+	inactivityState := steamapi.PersonaState_SNOOZE
+	if config.InactivityStatus == "invisible" {
+		inactivityState = steamapi.PersonaState_INVISIBLE
+	}
+
+	// Set defaults for new boolean options if not explicitly set
+	typingResets := config.TypingResetsPresence
+	if config.TypingResetsPresence == false && config.InactivityTimeout > 0 {
+		// Default to true if inactivity tracking is enabled
+		typingResets = true
+	}
+
 	return &PresenceManager{
-		client:            client,
-		currentState:      steamapi.PersonaState_ONLINE,
-		inactivityTimeout: timeout,
-		enabled:           config.Enabled,
-		lastActivity:      time.Now(),
+		client:                    client,
+		currentState:              steamapi.PersonaState_ONLINE,
+		inactivityTimeout:         timeout,
+		inactivityState:           inactivityState,
+		enabled:                   config.Enabled,
+		typingResetsPresence:      typingResets,
+		readReceiptsResetPresence: config.ReadReceiptsResetPresence,
+		lastActivity:              time.Now(),
 	}
 }
 
@@ -128,8 +147,8 @@ func (pm *PresenceManager) HandleActivity(ctx context.Context) {
 
 	pm.lastActivity = time.Now()
 
-	// If we're snoozed due to inactivity, wake up
-	if pm.currentState == steamapi.PersonaState_SNOOZE {
+	// If we're in the inactivity state, wake up
+	if pm.currentState == pm.inactivityState {
 		pm.setPersonaStateLocked(ctx, steamapi.PersonaState_ONLINE)
 	}
 
@@ -258,8 +277,9 @@ func (pm *PresenceManager) onInactivityTimeout(ctx context.Context) {
 	if time.Since(pm.lastActivity) >= pm.inactivityTimeout {
 		pm.client.br.Log.Info().
 			Dur("inactive_duration", time.Since(pm.lastActivity)).
-			Msg("Inactivity timeout - setting Steam to SNOOZE")
+			Str("target_state", pm.inactivityState.String()).
+			Msg("Inactivity timeout - changing Steam status")
 
-		pm.setPersonaStateLocked(ctx, steamapi.PersonaState_SNOOZE)
+		pm.setPersonaStateLocked(ctx, pm.inactivityState)
 	}
 }

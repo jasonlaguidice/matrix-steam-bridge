@@ -54,10 +54,22 @@ type PresenceConfig struct {
 	// Enable presence synchronization from Matrix to Steam
 	Enabled bool `yaml:"enabled"`
 
-	// Inactivity timeout in minutes before setting Steam to SNOOZE
+	// Inactivity timeout in minutes before changing Steam status
 	// Only used when Matrix server doesn't support presence tracking
 	// Set to 0 to disable activity-based presence
 	InactivityTimeout int `yaml:"inactivity_timeout"`
+
+	// Status to set after inactivity timeout (snooze or invisible)
+	// Valid values: "snooze" (default), "invisible"
+	InactivityStatus string `yaml:"inactivity_status"`
+
+	// Track typing events as activity (default: true)
+	// When enabled, typing in Matrix will reset the inactivity timer
+	TypingResetsPresence bool `yaml:"typing_resets_presence"`
+
+	// Track read receipts as activity (default: false)
+	// When enabled, sending read receipts in Matrix will reset the inactivity timer
+	ReadReceiptsResetPresence bool `yaml:"read_receipts_reset_presence"`
 }
 
 // SteamConnector implements the NetworkConnector interface for Steam
@@ -165,6 +177,7 @@ var _ bridgev2.UserSearchingNetworkAPI = (*SteamClient)(nil)
 var _ bridgev2.BackfillingNetworkAPI = (*SteamClient)(nil)
 var _ bridgev2.BackfillingNetworkAPIWithLimits = (*SteamClient)(nil)
 var _ bridgev2.TypingHandlingNetworkAPI = (*SteamClient)(nil)
+var _ bridgev2.ReadReceiptHandlingNetworkAPI = (*SteamClient)(nil)
 
 // upgradeConfig handles configuration upgrades
 func upgradeConfig(helper configupgrade.Helper) {
@@ -174,6 +187,9 @@ func upgradeConfig(helper configupgrade.Helper) {
 	helper.Copy(configupgrade.Int, "steam_bridge_startup_timeout")
 	helper.Copy(configupgrade.Bool, "presence", "enabled")
 	helper.Copy(configupgrade.Int, "presence", "inactivity_timeout")
+	helper.Copy(configupgrade.Str, "presence", "inactivity_status")
+	helper.Copy(configupgrade.Bool, "presence", "typing_resets_presence")
+	helper.Copy(configupgrade.Bool, "presence", "read_receipts_reset_presence")
 }
 
 // Init implements bridgev2.NetworkConnector.
