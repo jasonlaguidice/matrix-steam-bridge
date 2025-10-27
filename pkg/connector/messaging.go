@@ -820,6 +820,11 @@ func (sc *SteamClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.Mat
 		return nil
 	}
 
+	// Track activity for presence management (typing counts as activity)
+	if sc.presenceManager != nil {
+		sc.presenceManager.HandleActivity(ctx)
+	}
+
 	// Parse the Steam ID from the portal ID
 	steamID, err := parseSteamIDFromPortalID(msg.Portal.ID)
 	if err != nil {
