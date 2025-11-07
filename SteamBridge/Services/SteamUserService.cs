@@ -161,7 +161,7 @@ public class SteamUserService : Proto.SteamUserService.SteamUserServiceBase
         return new Proto.Friend
         {
             SteamId = friend.SteamId,
-            PersonaName = friend.PersonaName,
+            PersonaName = friend.PersonaName ?? "Unknown User",
             AvatarUrl = friend.AvatarUrl,
             AvatarHash = ExtractAvatarHash(friend.AvatarUrl),
             Status = MapToProtoPersonaState(friend.Status),
