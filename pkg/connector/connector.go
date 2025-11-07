@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"text/template"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -20,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
+	"gopkg.in/yaml.v3"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/commands"
 	"maunium.net/go/mautrix/bridgev2/database"
@@ -45,8 +47,13 @@ type Config struct {
 	ReconnectDelay     time.Duration `yaml:"reconnect_delay"`
 	MaxReconnectTries  int           `yaml:"max_reconnect_tries"`
 
+	// Display name template configuration
+	DisplaynameTemplate string `yaml:"displayname_template"`
+
 	// Presence tracking configuration
 	Presence PresenceConfig `yaml:"presence"`
+
+	displaynameTemplate *template.Template `yaml:"-"`
 }
 
 // PresenceConfig contains configuration for Matrix→Steam presence synchronization
@@ -70,6 +77,45 @@ type PresenceConfig struct {
 	// Track read receipts as activity (default: false)
 	// When enabled, sending read receipts in Matrix will reset the inactivity timer
 	ReadReceiptsResetPresence bool `yaml:"read_receipts_reset_presence"`
+}
+
+// DisplaynameParams contains the template parameters for formatting Steam ghost display names
+type DisplaynameParams struct {
+	PersonaName string // Steam display name
+	AccountName string // Steam account/login name
+	SteamID     uint64 // Steam ID
+	ProfileURL  string // Steam profile URL
+}
+
+// umConfig is used for YAML unmarshaling to avoid infinite recursion
+type umConfig Config
+
+// UnmarshalYAML implements yaml.Unmarshaler to handle post-processing after config load
+func (c *Config) UnmarshalYAML(node *yaml.Node) error {
+	err := node.Decode((*umConfig)(c))
+	if err != nil {
+		return err
+	}
+	return c.PostProcess()
+}
+
+// PostProcess parses the display name template after configuration is loaded
+func (c *Config) PostProcess() error {
+	var err error
+	c.displaynameTemplate, err = template.New("displayname").Parse(c.DisplaynameTemplate)
+	return err
+}
+
+// FormatDisplayname executes the display name template with the given parameters
+func (c *Config) FormatDisplayname(params *DisplaynameParams) string {
+	var nameBuf strings.Builder
+	err := c.displaynameTemplate.Execute(&nameBuf, params)
+	if err != nil {
+		// If template execution fails, fall back to PersonaName
+		log.Warn().Err(err).Msg("Failed to execute displayname template, falling back to PersonaName")
+		return params.PersonaName
+	}
+	return nameBuf.String()
 }
 
 // SteamConnector implements the NetworkConnector interface for Steam
@@ -185,6 +231,7 @@ func upgradeConfig(helper configupgrade.Helper) {
 	helper.Copy(configupgrade.Str, "steam_bridge_address")
 	helper.Copy(configupgrade.Bool, "steam_bridge_auto_start")
 	helper.Copy(configupgrade.Int, "steam_bridge_startup_timeout")
+	helper.Copy(configupgrade.Str, "displayname_template")
 	helper.Copy(configupgrade.Bool, "presence", "enabled")
 	helper.Copy(configupgrade.Int, "presence", "inactivity_timeout")
 	helper.Copy(configupgrade.Str, "presence", "inactivity_status")

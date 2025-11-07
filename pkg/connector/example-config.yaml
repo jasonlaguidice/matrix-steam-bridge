@@ -8,6 +8,15 @@ auto_reconnect: true
 reconnect_delay: 5s  # Fixed delay per retry (optional, defaults to exponential backoff)
 max_reconnect_tries: 6
 
+# Display name template for Steam users.
+# Available template variables:
+# {{.PersonaName}} - The Steam display name/persona name (most commonly used)
+# {{.AccountName}} - The Steam account/login name
+# {{.SteamID}}     - The numeric Steam ID
+# {{.ProfileURL}}  - The Steam profile URL
+# You can use template functions like {{or}} to provide fallbacks.
+displayname_template: '{{.PersonaName}}'
+
 # Presence synchronization settings
 presence:
   # Enable presence tracking from Matrix to Steam

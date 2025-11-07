@@ -369,9 +369,18 @@ func (sc *SteamClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 		// On API error, fall back to cached data if available
 		if ghostMeta.PersonaName != "" {
 			sc.br.Log.Warn().Err(err).Msg("Failed to fetch fresh user info, using cached data")
+
+			// Format display name using template
+			name := sc.connector.Config.FormatDisplayname(&DisplaynameParams{
+				PersonaName: ghostMeta.PersonaName,
+				AccountName: ghostMeta.AccountName,
+				SteamID:     ghostMeta.SteamID,
+				ProfileURL:  ghostMeta.ProfileURL,
+			})
+
 			userInfo := &bridgev2.UserInfo{
 				Identifiers: []string{fmt.Sprintf("%d", ghostMeta.SteamID)},
-				Name:        ptr.Ptr(ghostMeta.PersonaName),
+				Name:        ptr.Ptr(name),
 				IsBot:       ptr.Ptr(false),
 			}
 
@@ -416,10 +425,18 @@ func (sc *SteamClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 		}
 	}
 
+	// Format display name using template
+	name := sc.connector.Config.FormatDisplayname(&DisplaynameParams{
+		PersonaName: userInfo.PersonaName,
+		AccountName: userInfo.AccountName,
+		SteamID:     userInfo.SteamId,
+		ProfileURL:  userInfo.ProfileUrl,
+	})
+
 	// Create UserInfo with current data (NOT cached status/game data)
 	userInfoResult := &bridgev2.UserInfo{
 		Identifiers: []string{fmt.Sprintf("%d", userInfo.SteamId)},
-		Name:        ptr.Ptr(userInfo.PersonaName),
+		Name:        ptr.Ptr(name),
 		IsBot:       ptr.Ptr(false),
 	}
 
