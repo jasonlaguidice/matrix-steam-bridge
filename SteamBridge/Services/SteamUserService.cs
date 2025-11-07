@@ -147,7 +147,7 @@ public class SteamUserService : Proto.SteamUserService.SteamUserServiceBase
         {
             SteamId = userInfo.SteamId,
             AccountName = userInfo.AccountName,
-            PersonaName = userInfo.PersonaName,
+            PersonaName = userInfo.PersonaName ?? userInfo.AccountName,
             ProfileUrl = userInfo.ProfileUrl,
             AvatarUrl = userInfo.AvatarUrl,
             AvatarHash = ExtractAvatarHash(userInfo.AvatarUrl),
