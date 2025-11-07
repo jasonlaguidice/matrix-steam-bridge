@@ -6,6 +6,8 @@ import (
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/simplevent"
+
+	"go.shadowdrake.org/steam/pkg/steamapi"
 )
 
 // SteamChatResync represents a chat resync event for existing Steam portals.
@@ -91,4 +93,80 @@ func (sc *SteamClient) syncExistingPortals(ctx context.Context) {
 	sc.br.Log.Info().
 		Int("synced_count", len(userPortals)).
 		Msg("Completed portal sync")
+}
+
+// syncFriendsOnStartup refreshes profile information for all Steam friends on startup.
+// This ensures that ghost user profiles are immediately updated with the current
+// displayname template, rather than waiting for the friends to send messages.
+func (sc *SteamClient) syncFriendsOnStartup(ctx context.Context) {
+	sc.br.Log.Info().Msg("Syncing friends profiles on startup")
+
+	// Ensure we have a user client
+	if sc.userClient == nil {
+		sc.br.Log.Warn().Msg("User client not initialized, skipping friends sync")
+		return
+	}
+
+	// Get the user's friends list from Steam
+	resp, err := sc.userClient.GetFriendsList(ctx, &steamapi.FriendsListRequest{})
+	if err != nil {
+		sc.br.Log.Err(err).Msg("Failed to get friends list for startup sync")
+		return
+	}
+
+	if resp.Friends == nil || len(resp.Friends) == 0 {
+		sc.br.Log.Info().Msg("No friends found to sync")
+		return
+	}
+
+	sc.br.Log.Info().
+		Int("friend_count", len(resp.Friends)).
+		Msg("Starting profile refresh for all friends")
+
+	// Track sync statistics
+	successCount := 0
+	errorCount := 0
+
+	// Refresh profile for each friend
+	for _, friend := range resp.Friends {
+		// Convert to network user ID
+		userID := makeUserID(friend.SteamId)
+
+		// Get or create ghost object
+		ghost, err := sc.UserLogin.Bridge.GetGhostByID(ctx, userID)
+		if err != nil {
+			sc.br.Log.Warn().
+				Err(err).
+				Uint64("steam_id", friend.SteamId).
+				Str("persona_name", friend.PersonaName).
+				Msg("Failed to get ghost for friend, skipping")
+			errorCount++
+			continue
+		}
+
+		// Call GetUserInfo to refresh the profile
+		// This will automatically update the ghost in the database due to AggressiveUpdateInfo
+		_, err = sc.GetUserInfo(ctx, ghost)
+		if err != nil {
+			sc.br.Log.Warn().
+				Err(err).
+				Uint64("steam_id", friend.SteamId).
+				Str("persona_name", friend.PersonaName).
+				Msg("Failed to refresh profile for friend")
+			errorCount++
+			continue
+		}
+
+		successCount++
+		sc.br.Log.Debug().
+			Uint64("steam_id", friend.SteamId).
+			Str("persona_name", friend.PersonaName).
+			Msg("Refreshed friend profile")
+	}
+
+	sc.br.Log.Info().
+		Int("total_friends", len(resp.Friends)).
+		Int("success_count", successCount).
+		Int("error_count", errorCount).
+		Msg("Completed friends profile sync on startup")
 }

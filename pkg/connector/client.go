@@ -413,6 +413,11 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 	// Sync existing portals for backfill after re-authentication
 	go sc.syncExistingPortals(ctx)
 
+	// Sync all friends on startup if configured
+	if sc.connector != nil && sc.connector.Config.SyncFriendsOnStartup {
+		go sc.syncFriendsOnStartup(ctx)
+	}
+
 	// Start session event subscription for logout notifications
 	go sc.startSessionEventSubscription(ctx)
 }

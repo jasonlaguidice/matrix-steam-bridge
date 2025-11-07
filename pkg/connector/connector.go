@@ -50,6 +50,9 @@ type Config struct {
 	// Display name template configuration
 	DisplaynameTemplate string `yaml:"displayname_template"`
 
+	// Friend sync configuration
+	SyncFriendsOnStartup bool `yaml:"sync_friends_on_startup"`
+
 	// Presence tracking configuration
 	Presence PresenceConfig `yaml:"presence"`
 
@@ -232,6 +235,7 @@ func upgradeConfig(helper configupgrade.Helper) {
 	helper.Copy(configupgrade.Bool, "steam_bridge_auto_start")
 	helper.Copy(configupgrade.Int, "steam_bridge_startup_timeout")
 	helper.Copy(configupgrade.Str, "displayname_template")
+	helper.Copy(configupgrade.Bool, "sync_friends_on_startup")
 	helper.Copy(configupgrade.Bool, "presence", "enabled")
 	helper.Copy(configupgrade.Int, "presence", "inactivity_timeout")
 	helper.Copy(configupgrade.Str, "presence", "inactivity_status")
