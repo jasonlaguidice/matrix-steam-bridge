@@ -341,17 +341,23 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 		mediaURL = content.File.URL
 	}
 
-	sc.br.Log.Info().
+	// Build log entry with nil-safe field access
+	logEntry := sc.br.Log.Info().
 		Str("image_url", string(content.URL)).
-		Str("file_url", string(content.File.URL)).
 		Str("resolved_media_url", string(mediaURL)).
 		Str("mime_type", content.Info.MimeType).
 		Int("size", content.Info.Size).
 		Str("caption", content.Body).
 		Str("msgtype", string(content.MsgType)).
 		Interface("info_object", content.Info).
-		Bool("is_encrypted", content.File != nil).
-		Msg("Processing image message from Matrix")
+		Bool("is_encrypted", content.File != nil)
+
+	// Only add file_url if File is not nil
+	if content.File != nil {
+		logEntry = logEntry.Str("file_url", string(content.File.URL))
+	}
+
+	logEntry.Msg("Processing image message from Matrix")
 
 	// Check if we have a valid media URL
 	if mediaURL == "" {
