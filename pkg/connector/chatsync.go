@@ -114,7 +114,7 @@ func (sc *SteamClient) syncFriendsOnStartup(ctx context.Context) {
 		return
 	}
 
-	if resp.Friends == nil || len(resp.Friends) == 0 {
+	if len(resp.Friends) == 0 {
 		sc.br.Log.Info().Msg("No friends found to sync")
 		return
 	}
