@@ -1,9 +1,12 @@
 name: Build and Push Docker Images
 
 on:
+  workflow_run:
+    workflows: ["Version Bump"]
+    types:
+      - completed
   push:
     branches: [ main ]
-    tags: [ 'v*' ]
     paths:
       - 'cmd/**'
       - 'pkg/**'
@@ -54,6 +57,10 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v5
+      with:
+        # For tag builds (via workflow_run), checkout main branch with updated version
+        # For other triggers (push to main, PR, manual), use default checkout
+        ref: ${{ github.event_name == 'workflow_run' && 'main' || '' }}
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3

@@ -1,9 +1,10 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_run:
+    workflows: ["Version Bump"]
+    types:
+      - completed
 
 jobs:
   build-binaries:
@@ -25,6 +26,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
+      with:
+        ref: main
 
     - name: Set up Go
       uses: actions/setup-go@v6
@@ -168,6 +171,8 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
+      with:
+        ref: main
 
     - name: Download all artifacts
       uses: actions/download-artifact@v6
