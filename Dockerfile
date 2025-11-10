@@ -35,12 +35,15 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
+# Copy source code and .git directory for version information
 COPY cmd/ ./cmd/
 COPY pkg/ ./pkg/
+COPY .git .git
 
-# Build the Go bridge with CGO enabled for sqlite3
-RUN CGO_ENABLED=1 GOOS=linux go build -a -ldflags="-s -w" -o steam ./cmd/steam
+# Build the Go bridge with proper version ldflags (matching build.sh)
+RUN MAUTRIX_VERSION=$(grep 'maunium.net/go/mautrix ' go.mod | awk '{print $2}' | head -n1) && \
+    GO_LDFLAGS="-s -w -X main.Tag=$(git describe --exact-match --tags 2>/dev/null) -X main.Commit=$(git rev-parse HEAD) -X 'main.BuildTime=$(date -Iseconds)' -X 'maunium.net/go/mautrix.GoModVersion=$MAUTRIX_VERSION'" && \
+    go build -ldflags="$GO_LDFLAGS" -o steam ./cmd/steam
 
 # Stage 3: Runtime image
 FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine
