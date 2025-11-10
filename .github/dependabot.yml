@@ -58,5 +58,4 @@ updates:
       prefix: "docker"
       include: "scope"
     labels:
-      - "docker"
       - "automated"
