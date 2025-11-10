@@ -24,7 +24,7 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then \
     mv /app/SteamBridge /app/steamkit-service
 
 # Stage 2: Build Go bridge
-FROM golang:1.25.3-alpine AS go-builder
+FROM golang:1.25.4-alpine AS go-builder
 
 # Install build dependencies including gcc/g++ for CGO and olm for encryption
 RUN apk add --no-cache git ca-certificates gcc g++ musl-dev sqlite-dev olm-dev
