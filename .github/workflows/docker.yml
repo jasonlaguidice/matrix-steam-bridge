@@ -56,7 +56,7 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v6
       with:
         # For tag builds (via workflow_run), checkout main branch with updated version
         # For other triggers (push to main, PR, manual), use default checkout
