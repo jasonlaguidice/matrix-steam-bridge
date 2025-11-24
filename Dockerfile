@@ -46,7 +46,7 @@ RUN MAUTRIX_VERSION=$(grep 'maunium.net/go/mautrix ' go.mod | awk '{print $2}' |
     go build -ldflags="$GO_LDFLAGS" -o steam ./cmd/steam
 
 # Stage 3: Runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 
 # Install runtime dependencies
 RUN apk add --no-cache \
