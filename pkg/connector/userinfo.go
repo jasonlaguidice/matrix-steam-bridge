@@ -211,6 +211,12 @@ func (sc *SteamClient) createAvatarDownloader(steamID uint64) func(ctx context.C
 			return nil, fmt.Errorf("no avatar hash available for Steam ID %d", steamID)
 		}
 
+		// Steam accounts with the default "?" avatar have a hash of all zeros
+		// Use the default "?" avatar instead
+		if ghostMeta.AvatarHash == "0000000000000000000000000000000000000000" {
+			ghostMeta.AvatarHash = "fef49e7fa7e1997310d705b2a6158ff8dc1cdfeb"
+		}
+
 		// Build Steam CDN URL from hash: https://avatars.steamstatic.com/{hash}_full.jpg
 		avatarURL := fmt.Sprintf("https://avatars.steamstatic.com/%s_full.jpg", ghostMeta.AvatarHash)
 
