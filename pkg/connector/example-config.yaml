@@ -28,7 +28,7 @@ sync_friends_on_startup: true
 presence:
   # Enable presence tracking from Matrix to Steam
   # When enabled, your Steam status will automatically change based on
-  # your Matrix presence and activity
+  # your Matrix presence and activity. Otherwise, inactivity_status is used.
   enabled: true
 
   # Inactivity timeout in minutes before changing Steam status
@@ -38,8 +38,8 @@ presence:
   # Set to 0 to disable automatic away
   inactivity_timeout: 15
 
-  # Status to set after inactivity timeout
-  # Valid values: "snooze" (appear away/idle) or "invisible" (appear offline)
+  # Status to set after inactivity timeout, or when presence tracking is disabled
+  # Valid values: "online",  "snooze" (appear away/idle) or "invisible" (appear offline)
   # Default: "snooze"
   inactivity_status: snooze
 
