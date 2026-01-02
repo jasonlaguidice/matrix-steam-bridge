@@ -54,7 +54,7 @@ fi
 cd ..
 
 echo "Moving SteamBridge binary to root level..."
-mv "SteamBridge/bin/Release/net8.0/$RUNTIME/publish/$SOURCE_BINARY" "./$EXEC_NAME"
+mv "SteamBridge/bin/Release/net10.0/$RUNTIME/publish/$SOURCE_BINARY" "./$EXEC_NAME"
 
 echo "Build completed successfully!"
 echo "  - Go bridge: steam"

@@ -1,8 +1,8 @@
 # Multi-stage Dockerfile for Matrix Steam Bridge
 # Supports both linux/amd64 and linux/arm64
 
-# Stage 1: Build C# SteamBridge service  
-FROM mcr.microsoft.com/dotnet/sdk:9.0 AS dotnet-builder
+# Stage 1: Build C# SteamBridge service
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS dotnet-builder
 
 # Install system protoc to avoid ARM64 protoc segfault
 RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
@@ -46,7 +46,7 @@ RUN MAUTRIX_VERSION=$(grep 'maunium.net/go/mautrix ' go.mod | awk '{print $2}' |
     go build -ldflags="$GO_LDFLAGS" -o steam ./cmd/steam
 
 # Stage 3: Runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:9.0-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 
 # Install runtime dependencies
 RUN apk add --no-cache \

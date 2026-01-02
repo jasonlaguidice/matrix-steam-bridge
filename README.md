@@ -20,7 +20,7 @@ Please see [ROADMAP.md](ROADMAP.md)
 
 - Go 1.24.6 or later
 - libolm
-- .NET 8.0 SDK
+- .NET 10.0 SDK
 
 ### Building from Source
 
