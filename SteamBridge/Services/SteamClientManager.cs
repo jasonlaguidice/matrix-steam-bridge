@@ -241,9 +241,6 @@ public class SteamClientManager : IDisposable
                 _friendsListReceived = false; // Reset on new login
             }
             _logger.LogInformation("Successfully logged on to Steam. SteamID: {SteamID}", callback.ClientSteamID);
-            
-            // Set persona state to online
-            _steamFriends.SetPersonaState(EPersonaState.Online);
         }
         else
         {
