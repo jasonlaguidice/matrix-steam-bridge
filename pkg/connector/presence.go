@@ -40,8 +40,11 @@ func NewPresenceManager(client *SteamClient, config *PresenceConfig) *PresenceMa
 
 	// Parse inactivity status (default to SNOOZE if not specified or invalid)
 	inactivityState := steamapi.PersonaState_SNOOZE
-	if config.InactivityStatus == "invisible" {
+	switch config.InactivityStatus {
+	case "invisible":
 		inactivityState = steamapi.PersonaState_INVISIBLE
+	case "online":
+		inactivityState = steamapi.PersonaState_ONLINE
 	}
 
 	// Set defaults for new boolean options if not explicitly set
@@ -66,7 +69,8 @@ func NewPresenceManager(client *SteamClient, config *PresenceConfig) *PresenceMa
 // Start begins presence tracking
 func (pm *PresenceManager) Start(ctx context.Context) {
 	if !pm.enabled {
-		pm.client.br.Log.Info().Msg("Presence tracking disabled")
+		pm.client.br.Log.Info().Msg("Presence tracking disabled, setting status to inactivityState")
+		pm.setPersonaState(ctx, pm.inactivityState)
 		return
 	}
 
