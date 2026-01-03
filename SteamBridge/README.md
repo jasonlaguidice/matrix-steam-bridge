@@ -33,7 +33,7 @@ This service provides three main gRPC services:
 ## Quick Start
 
 ### Prerequisites
-- .NET 8.0 Runtime
+- .NET 10.0 Runtime
 - Steam account credentials
 
 ### Running the Service
@@ -168,4 +168,4 @@ Comprehensive structured logging using Microsoft.Extensions.Logging:
 
 ---
 
-Built with SteamKit2 3.3.0, gRPC for .NET, and ASP.NET Core 8.0
+Built with SteamKit2 3.3.0, gRPC for .NET, and ASP.NET Core 10.0
