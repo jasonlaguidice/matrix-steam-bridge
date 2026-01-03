@@ -56,7 +56,7 @@ func NewPresenceManager(client *SteamClient, config *PresenceConfig) *PresenceMa
 
 	return &PresenceManager{
 		client:                    client,
-		currentState:              steamapi.PersonaState_ONLINE,
+		currentState:              steamapi.PersonaState_OFFLINE, // Start as OFFLINE so first state change is sent
 		inactivityTimeout:         timeout,
 		inactivityState:           inactivityState,
 		enabled:                   config.Enabled,
