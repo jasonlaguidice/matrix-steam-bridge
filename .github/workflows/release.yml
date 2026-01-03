@@ -37,7 +37,7 @@ jobs:
     - name: Set up .NET
       uses: actions/setup-dotnet@v5
       with:
-        dotnet-version: '8.0'
+        dotnet-version: '10.0'
 
     - name: Install system dependencies (Linux)
       if: runner.os == 'Linux'
@@ -70,10 +70,10 @@ jobs:
         
         # Build SteamBridge with self-contained publish (matching build.sh approach)
         dotnet publish --configuration Release --self-contained true --runtime "$RUNTIME"
-        
+
         # Copy built executable and rename to steamkit-service
         mkdir -p ../steambridge-dist
-        cp "bin/Release/net8.0/$RUNTIME/publish/SteamBridge" "../steambridge-dist/steamkit-service"
+        cp "bin/Release/net10.0/$RUNTIME/publish/SteamBridge" "../steambridge-dist/steamkit-service"
 
     - name: Build .NET SteamBridge (Windows)
       if: runner.os == 'Windows'
@@ -82,10 +82,10 @@ jobs:
         # Build SteamBridge with self-contained publish (matching build.sh approach)
         $RUNTIME = "win-x64"
         dotnet publish --configuration Release --self-contained true --runtime $RUNTIME
-        
+
         # Copy built executable and rename to steamkit-service.exe
         mkdir -p ../steambridge-dist
-        Copy-Item "bin/Release/net8.0/$RUNTIME/publish/SteamBridge.exe" "../steambridge-dist/steamkit-service.exe"
+        Copy-Item "bin/Release/net10.0/$RUNTIME/publish/SteamBridge.exe" "../steambridge-dist/steamkit-service.exe"
 
     - name: Build Go binary (Linux)
       if: runner.os == 'Linux'
