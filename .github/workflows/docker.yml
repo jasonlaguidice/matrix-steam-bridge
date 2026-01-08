@@ -96,8 +96,6 @@ jobs:
           type=ref,event=branch,suffix=-${{ matrix.arch }}
           type=ref,event=pr,prefix=pr-,suffix=-${{ matrix.arch }}
           type=semver,pattern={{version}},suffix=-${{ matrix.arch }},value=${{ steps.get_tag.outputs.tag }}
-          type=semver,pattern={{major}}.{{minor}},suffix=-${{ matrix.arch }},value=${{ steps.get_tag.outputs.tag }}
-          type=semver,pattern={{major}},suffix=-${{ matrix.arch }},value=${{ steps.get_tag.outputs.tag }}
           type=raw,value=latest-${{ matrix.arch }},enable={{is_default_branch}}
         labels: |
           org.opencontainers.image.title=Matrix Steam Bridge
@@ -168,8 +166,6 @@ jobs:
         tags: |
           type=ref,event=branch
           type=semver,pattern={{version}},value=${{ steps.get_tag.outputs.tag }}
-          type=semver,pattern={{major}}.{{minor}},value=${{ steps.get_tag.outputs.tag }}
-          type=semver,pattern={{major}},value=${{ steps.get_tag.outputs.tag }}
           type=raw,value=latest,enable={{is_default_branch}}
 
     - name: Create manifest list from arch-specific tags
@@ -231,8 +227,6 @@ jobs:
         tags: |
           type=ref,event=branch
           type=semver,pattern={{version}},value=${{ steps.get_tag.outputs.tag }}
-          type=semver,pattern={{major}}.{{minor}},value=${{ steps.get_tag.outputs.tag }}
-          type=semver,pattern={{major}},value=${{ steps.get_tag.outputs.tag }}
           type=raw,value=latest,enable={{is_default_branch}}
 
     - name: Run Trivy vulnerability scanner
