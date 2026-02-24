@@ -42,7 +42,11 @@ This service provides three main gRPC services:
 dotnet run
 ```
 
-The service will start on `http://localhost:50051` and expose gRPC endpoints.
+The service will start on `localhost:50051` and expose gRPC endpoints over HTTP/2.
+
+> **Note on ports** — port `50051` is the internal **gRPC port** used only for
+> communication with the Go bridge. It is entirely separate from the Matrix appservice
+> HTTP port (`appservice.port`, default `8080`) configured in the Go bridge's `config.yaml`.
 
 ### Testing Connectivity
 

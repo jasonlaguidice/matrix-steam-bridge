@@ -61,6 +61,13 @@ Supported architectures: `linux/amd64`, `linux/arm64`
    - Configure database settings (SQLite or PostgreSQL)
    - Set bridge permissions for your users
 
+   > **Port overview** — this bridge uses two distinct ports that must not conflict:
+   >
+   > | Setting | Default | Purpose |
+   > |---------|---------|---------|
+   > | `appservice.port` | `8080` | Your homeserver connects here to deliver Matrix events |
+   > | `steam_bridge_address` | `50051` | Internal — Go bridge connects here to reach the C# SteamBridge service (gRPC) |
+
 3. **Generate the appservice registration**
    ```bash
    ./steam -g -c ./config.yaml -r ./registration.yaml

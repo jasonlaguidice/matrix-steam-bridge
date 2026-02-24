@@ -1,4 +1,8 @@
 steam_bridge_path: ./
+
+# Internal gRPC address where the SteamBridge C# service listens for the main bridge module
+# If you are using the docker container this should remain set at localhost:50051
+# If you are running the SteamKit connector on a separate system you should set that address here
 steam_bridge_address: localhost:50051
 steam_bridge_auto_start: true
 steam_bridge_startup_timeout: 30
