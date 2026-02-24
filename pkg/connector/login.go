@@ -48,6 +48,10 @@ func (slp *SteamLoginPassword) Cancel() {
 
 // SubmitUserInput implements bridgev2.LoginProcessUserInput for password login
 func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[string]string) (*bridgev2.LoginStep, error) {
+	if slp.Main.authClient == nil {
+		return nil, fmt.Errorf("Steam bridge service is not connected — check that the SteamBridge service is running and that steam_bridge_address is configured correctly")
+	}
+
 	username, hasUsername := input["username"]
 	password, hasPassword := input["password"]
 	guardCode := input["guard_code"] // Optional SteamGuard code
@@ -287,6 +291,10 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 
 // Start implements bridgev2.LoginProcess.Start for QR login
 func (slq *SteamLoginQR) Start(ctx context.Context) (*bridgev2.LoginStep, error) {
+	if slq.Main.authClient == nil {
+		return nil, fmt.Errorf("Steam bridge service is not connected — check that the SteamBridge service is running and that steam_bridge_address is configured correctly")
+	}
+
 	// Start QR authentication with SteamBridge service
 	resp, err := slq.Main.authClient.LoginWithQR(ctx, &steamapi.QRLoginRequest{})
 	if err != nil {
