@@ -37,8 +37,20 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
 
         try
         {
+            if (request.ChatGroupId != 0)
+            {
+                var groupResult = await _messagingManager.SendGroupMessageAsync(
+                    request.ChatGroupId, request.ChatId, request.Message);
+                return new SendMessageResponse
+                {
+                    Success = groupResult.Success,
+                    ErrorMessage = groupResult.ErrorMessage ?? string.Empty,
+                    Timestamp = groupResult.Timestamp,
+                };
+            }
+
             var messageType = MapFromProtoMessageType(request.MessageType);
-            
+
             // If there's an image URL, format the message to include it
             string messageToSend = request.Message;
             if (!string.IsNullOrEmpty(request.ImageUrl))
@@ -96,7 +108,9 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                     Message = caption, // Use parsed caption instead of full message
                     MessageType = MapToProtoMessageType(message.MessageType),
                     Timestamp = message.Timestamp,
-                    IsEcho = message.IsEcho
+                    IsEcho = message.IsEcho,
+                    ChatGroupId = message.ChatGroupId,
+                    ChatId = message.ChatId,
                 };
 
                 // Set image URL if present

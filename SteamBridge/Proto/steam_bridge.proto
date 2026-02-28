@@ -44,6 +44,11 @@ service SteamPresenceService {
   rpc SetPersonaState(SetPersonaStateRequest) returns (SetPersonaStateResponse);
 }
 
+// Group Service
+service SteamGroupService {
+  rpc GetMyChatRoomGroups(GetGroupsRequest) returns (GetGroupsResponse);
+}
+
 // Authentication Messages
 message CredentialsLoginRequest {
   string username = 1;
@@ -185,6 +190,8 @@ message SendMessageRequest {
   string message = 2;
   MessageType message_type = 3;
   string image_url = 4; // Steam CDN/UFS URL for image messages
+  uint64 chat_group_id = 5;  // Non-zero to send to a group channel
+  uint64 chat_id = 6;        // Required when chat_group_id is set
 }
 
 message SendMessageResponse {
@@ -205,6 +212,8 @@ message MessageEvent {
   int64 timestamp = 5;
   bool is_echo = 6; // True if this is an echo of our own message from another client
   string image_url = 7; // Steam CDN/UFS URL for image messages
+  uint64 chat_group_id = 8;  // Non-zero for group messages; 0 for DMs
+  uint64 chat_id = 9;        // Non-zero for group messages; 0 for DMs
 }
 
 message TypingNotificationRequest {
@@ -280,6 +289,33 @@ message ChatHistoryMessage {
   string message_content = 4;
   MessageType message_type = 5;
   string image_url = 6; // Steam CDN/UFS URL for image messages
+}
+
+// Group Messages
+message GetGroupsRequest {
+  // Empty - returns all groups for the authenticated user
+}
+
+message GetGroupsResponse {
+  bool success = 1;
+  string error_message = 2;
+  repeated ChatGroup groups = 3;
+}
+
+message ChatGroup {
+  uint64 chat_group_id = 1;
+  string name = 2;
+  string tagline = 3;
+  bytes avatar_sha = 4;     // SHA-1 hash of group avatar
+  uint32 clanid = 5;        // Non-zero if this group is tied to a Steam Clan
+  bool direct_messages_allowed = 6;  // Whether this group allows DMs between members
+  repeated ChatChannel channels = 7;
+  uint64 default_chat_id = 8;  // The default channel ID for this group
+}
+
+message ChatChannel {
+  uint64 chat_id = 1;
+  string name = 2;
 }
 
 // Enums
