@@ -49,6 +49,13 @@ public class SteamGroupService : Proto.SteamGroupService.SteamGroupServiceBase
                 var summary = summaryPair.group_summary;
                 if (summary == null) continue;
 
+                _logger.LogInformation(
+                    "Group '{GroupName}' (id={GroupId}): default_chat_id={DefaultChatId}, chat_rooms count={ChannelCount}",
+                    summary.chat_group_name,
+                    summary.chat_group_id,
+                    summary.default_chat_id,
+                    summary.chat_rooms.Count);
+
                 var group = new ChatGroup
                 {
                     ChatGroupId = summary.chat_group_id,
@@ -71,6 +78,28 @@ public class SteamGroupService : Proto.SteamGroupService.SteamGroupServiceBase
                         ChatId = chatRoom.chat_id,
                         Name = chatRoom.chat_name ?? string.Empty,
                     });
+                }
+
+                // The default/Home channel (default_chat_id) is identified separately in the Steam API
+                // and is often absent from the chat_rooms list. Ensure it is included so the Go bridge
+                // can create a Matrix room for it.
+                if (summary.default_chat_id != 0)
+                {
+                    bool defaultChannelPresent = group.Channels.Any(c => c.ChatId == summary.default_chat_id);
+                    if (!defaultChannelPresent)
+                    {
+                        _logger.LogInformation(
+                            "Group '{GroupName}' (id={GroupId}): default_chat_id={DefaultChatId} not in chat_rooms list; adding as 'General'",
+                            summary.chat_group_name,
+                            summary.chat_group_id,
+                            summary.default_chat_id);
+
+                        group.Channels.Add(new ChatChannel
+                        {
+                            ChatId = summary.default_chat_id,
+                            Name = "General",
+                        });
+                    }
                 }
 
                 response.Groups.Add(group);
