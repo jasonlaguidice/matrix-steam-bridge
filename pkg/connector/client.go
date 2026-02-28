@@ -413,6 +413,13 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 	// Sync existing portals for backfill after re-authentication
 	go sc.syncExistingPortals(ctx)
 
+	// Sync Steam chat room groups (create Space + channel portals)
+	go func() {
+		if err := sc.syncGroups(context.Background()); err != nil {
+			sc.br.Log.Warn().Err(err).Msg("Failed to sync Steam chat groups")
+		}
+	}()
+
 	// Sync all friends on startup if configured
 	if sc.connector != nil && sc.connector.Config.SyncFriendsOnStartup {
 		go sc.syncFriendsOnStartup(ctx)
