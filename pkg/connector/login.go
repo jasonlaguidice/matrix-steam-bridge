@@ -226,6 +226,7 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 				msgClient:      slp.Main.msgClient,
 				sessionClient:  slp.Main.sessionClient,
 				presenceClient: slp.Main.presenceClient,
+				groupClient:    slp.Main.groupClient,
 				br:             slp.Main.br,
 			}
 			return nil
@@ -271,6 +272,13 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 
 		// Sync existing portals for backfill after fresh login
 		go steamClient.syncExistingPortals(ctx)
+
+		// Sync Steam chat room groups (create Space + channel portals)
+		go func() {
+			if err := steamClient.syncGroups(context.Background()); err != nil {
+				steamClient.br.Log.Warn().Err(err).Msg("Failed to sync Steam chat groups")
+			}
+		}()
 
 		// Save the user login with updated metadata
 		steamClient.UserLogin.Save(ctx)
@@ -423,6 +431,7 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 				msgClient:      slq.Main.msgClient,
 				sessionClient:  slq.Main.sessionClient,
 				presenceClient: slq.Main.presenceClient,
+				groupClient:    slq.Main.groupClient,
 				br:             slq.Main.br,
 			}
 			return nil
@@ -468,6 +477,13 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 
 		// Sync existing portals for backfill after fresh login
 		go steamClient.syncExistingPortals(ctx)
+
+		// Sync Steam chat room groups (create Space + channel portals)
+		go func() {
+			if err := steamClient.syncGroups(context.Background()); err != nil {
+				steamClient.br.Log.Warn().Err(err).Msg("Failed to sync Steam chat groups")
+			}
+		}()
 
 		// Save the user login with updated metadata
 		steamClient.UserLogin.Save(ctx)
