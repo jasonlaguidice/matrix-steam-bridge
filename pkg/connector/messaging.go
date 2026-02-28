@@ -186,12 +186,28 @@ func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		Interface("raw_content", msg.Event.Content.Raw).
 		Msg("HandleMatrixMessage - Raw event details")
 
-	// Parse target Steam ID from portal ID
-	targetSteamID, err := parseSteamIDFromPortalID(msg.Portal.ID)
+	// Parse portal ID to determine type and routing
+	idType, chatGroupID, secondID, err := parsePortalID(msg.Portal.ID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse target Steam ID from portal %s: %w", msg.Portal.ID, err)
+		return nil, fmt.Errorf("failed to parse portal ID %s: %w", msg.Portal.ID, err)
 	}
 
+	switch idType {
+	case PortalIDTypeSpace:
+		return nil, fmt.Errorf("cannot send messages to a Space portal")
+	case PortalIDTypeChannel:
+		// secondID is chatID when type is Channel; chatGroupID is the group ID
+		return sc.handleGroupChannelMessage(ctx, msg, chatGroupID, secondID)
+	case PortalIDTypeDM:
+		// secondID is the target Steam ID for DM portals
+		return sc.handleDMMessage(ctx, msg, secondID)
+	default:
+		return nil, fmt.Errorf("unsupported portal type")
+	}
+}
+
+// handleDMMessage processes outbound Matrix messages destined for a Steam DM (1:1 chat).
+func (sc *SteamClient) handleDMMessage(ctx context.Context, msg *bridgev2.MatrixMessage, targetSteamID uint64) (*bridgev2.MatrixMessageResponse, error) {
 	switch msg.Event.Type {
 	case event.EventMessage:
 		content := msg.Event.Content.AsMessage()
@@ -199,7 +215,7 @@ func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 			Interface("parsed_content", content).
 			Bool("content_is_nil", content == nil).
 			Msg("HandleMatrixMessage - Parsed message content")
-		
+
 		if content != nil && content.MsgType == event.MsgImage {
 			sc.br.Log.Debug().
 				Str("msgtype", string(content.MsgType)).
@@ -214,6 +230,42 @@ func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		sc.br.Log.Warn().Str("event_type", msg.Event.Type.String()).Msg("Unsupported message type")
 		return nil, fmt.Errorf("unsupported message type: %v", msg.Event.Type)
 	}
+}
+
+// handleGroupChannelMessage processes outbound Matrix messages destined for a Steam group channel.
+func (sc *SteamClient) handleGroupChannelMessage(ctx context.Context, msg *bridgev2.MatrixMessage, chatGroupID, chatID uint64) (*bridgev2.MatrixMessageResponse, error) {
+	content := msg.Event.Content.AsMessage()
+	if content == nil {
+		return nil, fmt.Errorf("failed to parse message content")
+	}
+
+	messageText := content.Body
+	if messageText == "" {
+		return nil, fmt.Errorf("empty message text")
+	}
+
+	resp, err := sc.msgClient.SendMessage(ctx, &steamapi.SendMessageRequest{
+		ChatGroupId: chatGroupID,
+		ChatId:      chatID,
+		Message:     messageText,
+		MessageType: steamapi.MessageType_CHAT_MESSAGE,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to send group message: %w", err)
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("group message send failed: %s", resp.ErrorMessage)
+	}
+
+	msgID := networkid.MessageID(fmt.Sprintf("%d:%d:%d", chatGroupID, chatID, resp.Timestamp))
+	return &bridgev2.MatrixMessageResponse{
+		DB: &database.Message{
+			ID:        msgID,
+			MXID:      msg.Event.ID,
+			Timestamp: time.Unix(resp.Timestamp, 0),
+			Metadata:  &MessageMetadata{IsEcho: false},
+		},
+	}, nil
 }
 
 // handleTextMessage processes text messages and sends them to Steam
@@ -842,6 +894,13 @@ func (sc *SteamClient) HandleMatrixReadReceipt(ctx context.Context, msg *bridgev
 // HandleMatrixTyping implements bridgev2.TypingHandlingNetworkAPI.
 // This method handles typing notifications from Matrix and sends them to Steam.
 func (sc *SteamClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.MatrixTyping) error {
+	// Typing notifications are only supported for DM portals.
+	// Silently ignore typing events for Space and Channel portals.
+	idType, _, _, _ := parsePortalID(msg.Portal.ID)
+	if idType != PortalIDTypeDM {
+		return nil
+	}
+
 	if !msg.IsTyping {
 		// Steam doesn't support explicit "stop typing" notifications
 		// Steam typing notifications automatically timeout
@@ -853,7 +912,7 @@ func (sc *SteamClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.Mat
 		sc.presenceManager.HandleActivity(ctx)
 	}
 
-	// Parse the Steam ID from the portal ID
+	// Parse the Steam ID from the portal ID (safe: we already confirmed this is a DM portal)
 	steamID, err := parseSteamIDFromPortalID(msg.Portal.ID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Steam ID from portal ID %q: %w", msg.Portal.ID, err)
