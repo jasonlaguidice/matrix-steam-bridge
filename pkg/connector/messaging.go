@@ -531,30 +531,38 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 		// Continue processing instead of skipping
 	}
 
-	// Generate message ID
-	var msgID string
-	switch msgEvent.MessageType {
-	case steamapi.MessageType_INVITE_GAME:
-		msgID = fmt.Sprintf("%d:%d:invite", msgEvent.SenderSteamId, msgEvent.Timestamp)
-	default:
-		msgID = fmt.Sprintf("%d:%d", msgEvent.SenderSteamId, msgEvent.Timestamp)
-	}
-
-	// Get current user's Steam ID to determine if this is a DM
+	// Get current user's Steam ID to determine if this is a DM or group message
 	meta := sc.UserLogin.Metadata.(*UserLoginMetadata)
 	if meta == nil {
 		sc.br.Log.Error().Msg("No user metadata found for handling incoming message")
 		return
 	}
 
-	// Determine portal ID - for DMs, use the other user's Steam ID
+	// Determine portal ID based on whether this is a group channel or DM message
 	var portalID networkid.PortalID
-	if msgEvent.TargetSteamId == meta.SteamID {
-		// This is a message sent to us, portal is the sender
+	if msgEvent.ChatGroupId != 0 {
+		// Group channel message — route to the channel portal
+		portalID = makeChannelPortalID(msgEvent.ChatGroupId, msgEvent.ChatId)
+	} else if msgEvent.TargetSteamId == meta.SteamID {
+		// DM received by us — portal is the sender
 		portalID = makePortalID(msgEvent.SenderSteamId)
 	} else {
-		// This is a message we sent from another client, portal is the target
+		// DM echo (our own message from another client) — portal is the target
 		portalID = makePortalID(msgEvent.TargetSteamId)
+	}
+
+	// Generate message ID
+	var msgID string
+	if msgEvent.ChatGroupId != 0 {
+		// Group messages: identify by group + channel + timestamp
+		msgID = fmt.Sprintf("%d:%d:%d", msgEvent.ChatGroupId, msgEvent.ChatId, msgEvent.Timestamp)
+	} else {
+		switch msgEvent.MessageType {
+		case steamapi.MessageType_INVITE_GAME:
+			msgID = fmt.Sprintf("%d:%d:invite", msgEvent.SenderSteamId, msgEvent.Timestamp)
+		default:
+			msgID = fmt.Sprintf("%d:%d", msgEvent.SenderSteamId, msgEvent.Timestamp)
+		}
 	}
 
 	// Create portal key
