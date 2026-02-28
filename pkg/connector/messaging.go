@@ -186,8 +186,10 @@ func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		Interface("raw_content", msg.Event.Content.Raw).
 		Msg("HandleMatrixMessage - Raw event details")
 
-	// Parse portal ID to determine type and routing
-	idType, chatGroupID, secondID, err := parsePortalID(msg.Portal.ID)
+	// Parse portal ID to determine type and routing.
+	// For PortalIDTypeChannel: id1=chatGroupID, id2=chatID.
+	// For PortalIDTypeDM: id1=steamID, id2=0.
+	idType, id1, id2, err := parsePortalID(msg.Portal.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse portal ID %s: %w", msg.Portal.ID, err)
 	}
@@ -196,11 +198,9 @@ func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 	case PortalIDTypeSpace:
 		return nil, fmt.Errorf("cannot send messages to a Space portal")
 	case PortalIDTypeChannel:
-		// secondID is chatID when type is Channel; chatGroupID is the group ID
-		return sc.handleGroupChannelMessage(ctx, msg, chatGroupID, secondID)
+		return sc.handleGroupChannelMessage(ctx, msg, id1, id2)
 	case PortalIDTypeDM:
-		// secondID is the target Steam ID for DM portals
-		return sc.handleDMMessage(ctx, msg, secondID)
+		return sc.handleDMMessage(ctx, msg, id1)
 	default:
 		return nil, fmt.Errorf("unsupported portal type")
 	}
