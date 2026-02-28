@@ -15,6 +15,8 @@ type PortalMetadata struct {
 	ChatID uint64 `json:"chat_id,omitempty"`
 	// IsSpace indicates this portal represents a Steam chat group space
 	IsSpace bool `json:"is_space,omitempty"`
+	// Name is the display name for group spaces and channels, cached for GetChatInfo refetch
+	Name string `json:"name,omitempty"`
 }
 
 // GhostMetadata contains Steam user information for ghost users

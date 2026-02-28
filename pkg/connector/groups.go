@@ -56,6 +56,7 @@ func (sc *SteamClient) syncGroup(ctx context.Context, group *steamapi.ChatGroup)
 	}
 
 	chatInfo := buildSpaceChatInfo(group)
+	groupName := group.Name
 
 	resyncEvt := &simplevent.ChatResync{
 		EventMeta: simplevent.EventMeta{
@@ -63,7 +64,12 @@ func (sc *SteamClient) syncGroup(ctx context.Context, group *steamapi.ChatGroup)
 			PortalKey:    spacePortalKey,
 			CreatePortal: true,
 		},
-		ChatInfo: chatInfo,
+		GetChatInfoFunc: func(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
+			if meta, ok := portal.Metadata.(*PortalMetadata); ok && meta != nil {
+				meta.Name = groupName
+			}
+			return chatInfo, nil
+		},
 	}
 
 	if !sc.UserLogin.QueueRemoteEvent(resyncEvt).Success {
@@ -96,6 +102,10 @@ func (sc *SteamClient) syncChannel(_ context.Context, group *steamapi.ChatGroup,
 
 	spacePortalID := makeSpacePortalID(group.ChatGroupId)
 	chatInfo := buildChannelChatInfo(group, channel, spacePortalID)
+	channelName := channel.Name
+	if channelName == "" {
+		channelName = fmt.Sprintf("channel-%d", channel.ChatId)
+	}
 
 	resyncEvt := &simplevent.ChatResync{
 		EventMeta: simplevent.EventMeta{
@@ -103,7 +113,12 @@ func (sc *SteamClient) syncChannel(_ context.Context, group *steamapi.ChatGroup,
 			PortalKey:    channelPortalKey,
 			CreatePortal: true,
 		},
-		ChatInfo: chatInfo,
+		GetChatInfoFunc: func(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
+			if meta, ok := portal.Metadata.(*PortalMetadata); ok && meta != nil {
+				meta.Name = channelName
+			}
+			return chatInfo, nil
+		},
 	}
 
 	if !sc.UserLogin.QueueRemoteEvent(resyncEvt).Success {

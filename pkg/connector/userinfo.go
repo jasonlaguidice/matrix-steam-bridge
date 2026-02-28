@@ -350,27 +350,35 @@ func (sc *SteamClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 		}, nil
 
 	case PortalIDTypeSpace:
-		// id1 is the chatGroupID; return a minimal space ChatInfo
+		// id1 is the chatGroupID; return a minimal space ChatInfo with cached name if available
 		spaceType := database.RoomTypeSpace
-		sc.br.Log.Debug().Uint64("chat_group_id", id1).Msg("GetChatInfo returning space info")
-		return &bridgev2.ChatInfo{
+		chatInfo := &bridgev2.ChatInfo{
 			Type:        &spaceType,
 			CanBackfill: false,
-		}, nil
+		}
+		if meta, ok := portal.Metadata.(*PortalMetadata); ok && meta != nil && meta.Name != "" {
+			chatInfo.Name = ptr.Ptr(meta.Name)
+		}
+		sc.br.Log.Debug().Uint64("chat_group_id", id1).Msg("GetChatInfo returning space info")
+		return chatInfo, nil
 
 	case PortalIDTypeChannel:
-		// id1 is chatGroupID, id2 is chatID
+		// id1 is chatGroupID, id2 is chatID; return channel info with cached name if available
 		roomType := database.RoomTypeDefault
 		parentSpaceID := makeSpacePortalID(id1)
+		chatInfo := &bridgev2.ChatInfo{
+			Type:        &roomType,
+			CanBackfill: true,
+			ParentID:    &parentSpaceID,
+		}
+		if meta, ok := portal.Metadata.(*PortalMetadata); ok && meta != nil && meta.Name != "" {
+			chatInfo.Name = ptr.Ptr(meta.Name)
+		}
 		sc.br.Log.Debug().
 			Uint64("chat_group_id", id1).
 			Uint64("chat_id", id2).
 			Msg("GetChatInfo returning channel info")
-		return &bridgev2.ChatInfo{
-			Type:        &roomType,
-			CanBackfill: true,
-			ParentID:    &parentSpaceID,
-		}, nil
+		return chatInfo, nil
 
 	default:
 		return nil, fmt.Errorf("unrecognized portal ID type for %q", portal.ID)
