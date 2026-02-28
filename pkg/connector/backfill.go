@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"maunium.net/go/mautrix/bridgev2"
@@ -111,20 +110,24 @@ func (sc *SteamClient) FetchMessages(ctx context.Context, params bridgev2.FetchM
 
 // extractChatIDs extracts Steam chat group ID and chat ID from portal key
 func (sc *SteamClient) extractChatIDs(portalKey networkid.PortalKey) (chatGroupID, chatID uint64, err error) {
-	// For Steam, the portal ID typically contains the Steam ID
-	// In 1-to-1 chats, the chat_group_id is 0 and chat_id is the Steam ID
-	// In group chats, both would be set appropriately
-
-	// Parse the portal ID as a Steam ID
-	steamIDStr := string(portalKey.ID)
-	steamID, parseErr := strconv.ParseUint(steamIDStr, 10, 64)
+	idType, firstID, secondID, parseErr := parsePortalID(portalKey.ID)
 	if parseErr != nil {
-		return 0, 0, fmt.Errorf("failed to parse portal ID as Steam ID: %w", parseErr)
+		return 0, 0, fmt.Errorf("failed to parse portal ID: %w", parseErr)
 	}
 
-	// For now, assume all chats are 1-to-1 (chat_group_id = 0, chat_id = steam_id)
-	// TODO: Add support for group chats with proper chat_group_id extraction
-	return 0, steamID, nil
+	switch idType {
+	case PortalIDTypeDM:
+		// For DM portals, parsePortalID returns (PortalIDTypeDM, steamID, 0, nil)
+		// chatGroupID=0 signals DM to the gRPC backend; chatID is the friend's Steam ID
+		return 0, firstID, nil
+	case PortalIDTypeChannel:
+		// For channel portals, parsePortalID returns (PortalIDTypeChannel, chatGroupID, chatID, nil)
+		return firstID, secondID, nil
+	case PortalIDTypeSpace:
+		return 0, 0, fmt.Errorf("cannot backfill a Space portal")
+	default:
+		return 0, 0, fmt.Errorf("unknown portal type for %q", portalKey.ID)
+	}
 }
 
 // parsePaginationCursor parses a pagination cursor string
@@ -273,17 +276,20 @@ func (sc *SteamClient) convertImageMessageFromHistory(ctx context.Context, capti
 // This method allows the bridge to use the max_batches_override configuration
 // to control how many batches of message history to backfill per portal.
 func (sc *SteamClient) GetBackfillMaxBatchCount(ctx context.Context, portal *bridgev2.Portal, task *database.BackfillTask) int {
-	// Determine room type for configuration lookup
-	// Currently, Steam only supports 1-to-1 DM chats, so we use "dm" as the key
-	// Future: Add support for group chats with "channel" or custom keys
-	roomType := "dm"
+	idType, _, _, _ := parsePortalID(portal.PortalKey.ID)
 
-	// Check if this is a DM room (though all Steam rooms are currently DM type)
-	if portal.RoomType == database.RoomTypeDM {
+	var roomType string
+	switch idType {
+	case PortalIDTypeDM:
 		roomType = "dm"
+	case PortalIDTypeChannel:
+		roomType = "channel"
+	default:
+		// Spaces and unknown portal types do not support backfill
+		return 0
 	}
 
-	// Get the override from config (e.g., dm: -1 for unlimited, or dm: 20 for 20 batches)
+	// Get the override from config (e.g., dm: -1 for unlimited, or channel: 20 for 20 batches)
 	maxBatches := sc.br.Config.Backfill.Queue.GetOverride(roomType)
 
 	sc.br.Log.Debug().
