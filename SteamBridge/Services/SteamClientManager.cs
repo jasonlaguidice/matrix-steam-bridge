@@ -80,7 +80,7 @@ public class SteamClientManager : IDisposable
         _callbackManager.Subscribe<SteamFriends.PersonaStateCallback>(OnPersonaStateChange);
         _callbackManager.Subscribe<SteamFriends.FriendMsgCallback>(OnMessageReceived);
         _callbackManager.Subscribe<SteamFriends.FriendMsgEchoCallback>(OnMessageEcho);
-        _callbackManager.SubscribeServiceNotification<SteamKit2.Internal.ChatRoom, SteamKit2.Internal.CChatRoom_IncomingChatMessage_Notification>(OnGroupMessageNotification);
+        _callbackManager.SubscribeServiceNotification<SteamKit2.Internal.ChatRoomClient, SteamKit2.Internal.CChatRoom_IncomingChatMessage_Notification>(OnGroupMessageNotification);
         
         // Start callback processing task
         _callbackTask = Task.Run(ProcessCallbacks, _cancellationTokenSource.Token);
