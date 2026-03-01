@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 
 	"go.mau.fi/util/ptr"
@@ -55,7 +56,7 @@ func (sc *SteamClient) syncGroup(ctx context.Context, group *steamapi.ChatGroup)
 		Receiver: sc.UserLogin.ID,
 	}
 
-	chatInfo := buildSpaceChatInfo(group)
+	chatInfo := sc.buildSpaceChatInfo(group)
 	groupName := group.Name
 
 	resyncEvt := &simplevent.ChatResync{
@@ -131,7 +132,7 @@ func (sc *SteamClient) syncChannel(_ context.Context, group *steamapi.ChatGroup,
 }
 
 // buildSpaceChatInfo constructs a ChatInfo for a Steam chat group space portal.
-func buildSpaceChatInfo(group *steamapi.ChatGroup) *bridgev2.ChatInfo {
+func (sc *SteamClient) buildSpaceChatInfo(group *steamapi.ChatGroup) *bridgev2.ChatInfo {
 	info := &bridgev2.ChatInfo{
 		Type:        ptr.Ptr(database.RoomTypeSpace),
 		CanBackfill: false,
@@ -140,6 +141,18 @@ func buildSpaceChatInfo(group *steamapi.ChatGroup) *bridgev2.ChatInfo {
 
 	if group.Tagline != "" {
 		info.Topic = ptr.Ptr(group.Tagline)
+	}
+
+	if len(group.AvatarSha) > 0 {
+		hexHash := hex.EncodeToString(group.AvatarSha)
+		avatarURL := fmt.Sprintf("https://avatars.steamstatic.com/%s_full.jpg", hexHash)
+		capturedURL := avatarURL
+		info.Avatar = &bridgev2.Avatar{
+			ID: networkid.AvatarID(hexHash),
+			Get: func(ctx context.Context) ([]byte, error) {
+				return sc.downloadImageFromURL(ctx, capturedURL)
+			},
+		}
 	}
 
 	return info
