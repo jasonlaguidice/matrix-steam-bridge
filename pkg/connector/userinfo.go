@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -351,15 +352,62 @@ func (sc *SteamClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 
 	case PortalIDTypeSpace:
 		// id1 is the chatGroupID; return a minimal space ChatInfo with cached name if available
+		chatGroupID := id1
 		spaceType := database.RoomTypeSpace
 		chatInfo := &bridgev2.ChatInfo{
 			Type:        &spaceType,
 			CanBackfill: false,
 		}
-		if meta, ok := portal.Metadata.(*PortalMetadata); ok && meta != nil && meta.Name != "" {
-			chatInfo.Name = ptr.Ptr(meta.Name)
+		meta, hasMeta := portal.Metadata.(*PortalMetadata)
+		if hasMeta && meta != nil {
+			// Ensure metadata fields are consistent
+			if meta.ChatGroupID == 0 {
+				meta.ChatGroupID = chatGroupID
+			}
+			if !meta.IsSpace {
+				meta.IsSpace = true
+			}
+			if meta.Name != "" {
+				chatInfo.Name = ptr.Ptr(meta.Name)
+			}
 		}
-		sc.br.Log.Debug().Uint64("chat_group_id", id1).Msg("GetChatInfo returning space info")
+		if chatInfo.Name == nil {
+			// meta.Name is empty — the space's ChatResync hasn't run yet.
+			// Make a synchronous gRPC call to fetch the group name now.
+			sc.br.Log.Debug().Uint64("chat_group_id", chatGroupID).Msg("GetChatInfo space: name not cached, fetching from gRPC")
+			resp, err := sc.groupClient.GetMyChatRoomGroups(ctx, &steamapi.GetGroupsRequest{})
+			if err != nil {
+				sc.br.Log.Warn().Err(err).Uint64("chat_group_id", chatGroupID).Msg("GetChatInfo space: failed to fetch groups for name lookup")
+			} else if resp.Success {
+				for _, group := range resp.Groups {
+					if group.ChatGroupId == chatGroupID {
+						if group.Name != "" {
+							chatInfo.Name = ptr.Ptr(group.Name)
+							// Populate metadata so future calls don't need to fetch again
+							if hasMeta && meta != nil {
+								meta.Name = group.Name
+								meta.ChatGroupID = chatGroupID
+								meta.IsSpace = true
+							}
+						}
+						// Also set avatar if available
+						if len(group.AvatarSha) > 0 {
+							hexHash := hex.EncodeToString(group.AvatarSha)
+							avatarURL := fmt.Sprintf("https://avatars.steamstatic.com/%s_full.jpg", hexHash)
+							capturedURL := avatarURL
+							chatInfo.Avatar = &bridgev2.Avatar{
+								ID: networkid.AvatarID(hexHash),
+								Get: func(ctx context.Context) ([]byte, error) {
+									return sc.downloadImageFromURL(ctx, capturedURL)
+								},
+							}
+						}
+						break
+					}
+				}
+			}
+		}
+		sc.br.Log.Debug().Uint64("chat_group_id", chatGroupID).Msg("GetChatInfo returning space info")
 		return chatInfo, nil
 
 	case PortalIDTypeChannel:
