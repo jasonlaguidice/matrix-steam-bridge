@@ -102,6 +102,23 @@ public class SteamGroupService : Proto.SteamGroupService.SteamGroupServiceBase
                     }
                 }
 
+                // Steam returns an empty chat_name for the default/home channel even when it is present
+                // in the chat_rooms list. Ensure these channels are named "Home" instead of being
+                // left empty (which causes the Go bridge to fall back to "channel-{id}").
+                foreach (var channel in group.Channels)
+                {
+                    if (channel.ChatId == summary.default_chat_id && string.IsNullOrWhiteSpace(channel.Name))
+                    {
+                        _logger.LogInformation(
+                            "Group '{GroupName}' (id={GroupId}): default channel (chat_id={ChatId}) has empty name; setting to 'Home'",
+                            summary.chat_group_name,
+                            summary.chat_group_id,
+                            channel.ChatId);
+
+                        channel.Name = "Home";
+                    }
+                }
+
                 response.Groups.Add(group);
             }
 
