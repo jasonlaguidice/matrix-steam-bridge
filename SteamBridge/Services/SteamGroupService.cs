@@ -71,6 +71,8 @@ public class SteamGroupService : Proto.SteamGroupService.SteamGroupServiceBase
                     group.AvatarSha = Google.Protobuf.ByteString.CopyFrom(summary.chat_group_avatar_sha);
                 }
 
+                group.AvatarUrl = summary.avatar_ugc_url ?? string.Empty;
+
                 foreach (var chatRoom in summary.chat_rooms)
                 {
                     group.Channels.Add(new ChatChannel
@@ -130,6 +132,25 @@ public class SteamGroupService : Proto.SteamGroupService.SteamGroupServiceBase
             activateRequest.chat_group_ids.AddRange(groupIds);
             var activateJob = _steamClientManager.ChatRoomService.SetSessionActiveChatRoomGroups(activateRequest);
             await activateJob.ToTask();
+
+            // Join each group to receive real-time CChatRoom_IncomingChatMessage_Notification events
+            foreach (var group in response.Groups)
+            {
+                try
+                {
+                    var joinRequest = new CChatRoom_JoinChatRoomGroup_Request
+                    {
+                        chat_group_id = group.ChatGroupId
+                    };
+                    var joinJob = _steamClientManager.ChatRoomService.JoinChatRoomGroup(joinRequest);
+                    await joinJob.ToTask();
+                    _logger.LogDebug("Joined chat room group {GroupId} for real-time notifications", group.ChatGroupId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to join chat room group {GroupId}, real-time messages may not arrive", group.ChatGroupId);
+                }
+            }
 
             return response;
         }
