@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"maunium.net/go/mautrix/bridgev2"
@@ -86,6 +87,7 @@ func (sc *SteamClient) FetchMessages(ctx context.Context, params bridgev2.FetchM
 		}
 		messages = append(messages, backfillMsg)
 	}
+	slices.Reverse(messages)
 
 	// Generate next cursor
 	var nextCursor networkid.PaginationCursor
