@@ -105,7 +105,7 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                 {
                     SenderSteamId = message.SenderSteamId,
                     TargetSteamId = message.TargetSteamId,
-                    Message = caption, // Use parsed caption instead of full message
+                    Message = !string.IsNullOrEmpty(imageUrl) ? caption : message.Message,
                     MessageType = MapToProtoMessageType(message.MessageType),
                     Timestamp = message.Timestamp,
                     IsEcho = message.IsEcho,

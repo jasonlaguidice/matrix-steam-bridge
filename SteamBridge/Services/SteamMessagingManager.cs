@@ -212,13 +212,14 @@ public class SteamMessagingManager : IDisposable
             // Skip server messages (system events, not user chat)
             if (notification.server_message != null) return;
 
+            var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
+            var msgRaw = notification.message?.TrimEnd('\0');
+
             var messageEvent = new MessageEvent
             {
                 SenderSteamId = notification.steamid_sender,
                 TargetSteamId = 0, // Group messages have no single target
-                Message = notification.message_no_bbcode?.TrimEnd('\0')
-                          ?? notification.message?.TrimEnd('\0')
-                          ?? string.Empty,
+                Message = !string.IsNullOrEmpty(msgNoBbCode) ? msgNoBbCode : (msgRaw ?? string.Empty),
                 MessageType = MessageType.ChatMessage,
                 Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 IsEcho = notification.steamid_sender == (_steamClientManager.SteamClient.SteamID?.ConvertToUInt64() ?? 0),
