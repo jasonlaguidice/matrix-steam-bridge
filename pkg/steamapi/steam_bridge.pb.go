@@ -2662,6 +2662,7 @@ type ChatGroup struct {
 	DirectMessagesAllowed bool                   `protobuf:"varint,6,opt,name=direct_messages_allowed,json=directMessagesAllowed,proto3" json:"direct_messages_allowed,omitempty"` // Whether this group allows DMs between members
 	Channels              []*ChatChannel         `protobuf:"bytes,7,rep,name=channels,proto3" json:"channels,omitempty"`
 	DefaultChatId         uint64                 `protobuf:"varint,8,opt,name=default_chat_id,json=defaultChatId,proto3" json:"default_chat_id,omitempty"` // The default channel ID for this group
+	AvatarUrl             string                 `protobuf:"bytes,9,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`                // Pre-built CDN URL for the group avatar (from avatar_ugc_url)
 	unknownFields         protoimpl.UnknownFields
 	sizeCache             protoimpl.SizeCache
 }
@@ -2750,6 +2751,13 @@ func (x *ChatGroup) GetDefaultChatId() uint64 {
 		return x.DefaultChatId
 	}
 	return 0
+}
+
+func (x *ChatGroup) GetAvatarUrl() string {
+	if x != nil {
+		return x.AvatarUrl
+	}
+	return ""
 }
 
 type ChatChannel struct {

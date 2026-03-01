@@ -390,13 +390,24 @@ func (sc *SteamClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 								meta.IsSpace = true
 							}
 						}
-						// Also set avatar if available
-						if len(group.AvatarSha) > 0 {
-							hexHash := hex.EncodeToString(group.AvatarSha)
-							avatarURL := fmt.Sprintf("https://avatars.steamstatic.com/%s_full.jpg", hexHash)
-							capturedURL := avatarURL
+						// Also set avatar if available; prefer the pre-built UGC URL over
+						// constructing a URL from the raw SHA bytes (which uses the wrong CDN).
+						if group.AvatarUrl != "" || len(group.AvatarSha) > 0 {
+							var avatarID networkid.AvatarID
+							if len(group.AvatarSha) > 0 {
+								avatarID = networkid.AvatarID(hex.EncodeToString(group.AvatarSha))
+							}
+							var capturedURL string
+							if group.AvatarUrl != "" {
+								capturedURL = group.AvatarUrl
+								if avatarID == "" {
+									avatarID = networkid.AvatarID(group.AvatarUrl)
+								}
+							} else {
+								capturedURL = fmt.Sprintf("https://avatars.steamstatic.com/%s_full.jpg", string(avatarID))
+							}
 							chatInfo.Avatar = &bridgev2.Avatar{
-								ID: networkid.AvatarID(hexHash),
+								ID: avatarID,
 								Get: func(ctx context.Context) ([]byte, error) {
 									return sc.downloadImageFromURL(ctx, capturedURL)
 								},

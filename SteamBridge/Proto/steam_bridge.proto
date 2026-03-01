@@ -311,6 +311,7 @@ message ChatGroup {
   bool direct_messages_allowed = 6;  // Whether this group allows DMs between members
   repeated ChatChannel channels = 7;
   uint64 default_chat_id = 8;  // The default channel ID for this group
+  string avatar_url = 9;    // Pre-built CDN URL for the group avatar (from avatar_ugc_url)
 }
 
 message ChatChannel {
