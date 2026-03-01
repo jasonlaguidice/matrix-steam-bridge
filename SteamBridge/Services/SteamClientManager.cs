@@ -184,7 +184,7 @@ public class SteamClientManager : IDisposable
             ClientOSType = EOSType.Win11, // Modern Windows client
             MachineName = Environment.MachineName, // Remove "(SteamKit2)" suffix
             UIMode = SteamKit2.EUIMode.DesktopUI, // Desktop Steam client UI mode
-            ChatMode = SteamUser.ChatMode.Default, // Keep default chat mode for compatibility with FriendMsgCallback
+            ChatMode = SteamUser.ChatMode.NewSteamChat, // GroupChat mode required to receive CChatRoom_IncomingChatMessage_Notification
             ClientLanguage = "english",
             AccountInstance = SteamID.DesktopInstance, // PC Steam instance
             
