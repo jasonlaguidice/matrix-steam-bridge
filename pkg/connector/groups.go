@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"time"
 
 	"go.mau.fi/util/ptr"
 	"maunium.net/go/mautrix/bridgev2"
@@ -34,22 +35,38 @@ func (sc *SteamClient) syncGroups(ctx context.Context) error {
 
 	sc.br.Log.Info().Int("group_count", len(resp.Groups)).Msg("Syncing Steam chat room groups")
 
+	// Pass 1: create all spaces
 	for _, group := range resp.Groups {
-		if err := sc.syncGroup(ctx, group); err != nil {
+		if err := sc.syncGroupSpace(ctx, group); err != nil {
 			sc.br.Log.Warn().
 				Err(err).
 				Uint64("chat_group_id", group.ChatGroupId).
 				Str("group_name", group.Name).
-				Msg("Failed to sync Steam chat group, continuing")
+				Msg("Failed to sync group space, skipping")
+		}
+	}
+
+	// Wait for bridgev2 to process space ChatResync events and create Matrix rooms
+	// before queuing channels, to avoid duplicate space creation race condition
+	sc.br.Log.Debug().Msg("Waiting for space portals to be created before syncing channels")
+	time.Sleep(3 * time.Second)
+
+	// Pass 2: create all channels
+	for _, group := range resp.Groups {
+		if err := sc.syncGroupChannels(ctx, group); err != nil {
+			sc.br.Log.Warn().
+				Err(err).
+				Uint64("chat_group_id", group.ChatGroupId).
+				Str("group_name", group.Name).
+				Msg("Failed to sync group channels, skipping")
 		}
 	}
 
 	return nil
 }
 
-// syncGroup queues a ChatResync event for the space portal representing this group,
-// then syncs each channel within the group.
-func (sc *SteamClient) syncGroup(ctx context.Context, group *steamapi.ChatGroup) error {
+// syncGroupSpace queues a ChatResync event for the space portal representing this group only.
+func (sc *SteamClient) syncGroupSpace(_ context.Context, group *steamapi.ChatGroup) error {
 	spacePortalID := makeSpacePortalID(group.ChatGroupId)
 	spacePortalKey := networkid.PortalKey{
 		ID:       spacePortalID,
@@ -79,7 +96,11 @@ func (sc *SteamClient) syncGroup(ctx context.Context, group *steamapi.ChatGroup)
 			Msg("Failed to queue ChatResync event for group space")
 	}
 
-	// Sync each channel within this group
+	return nil
+}
+
+// syncGroupChannels loops all channels within the group and queues ChatResync events for each.
+func (sc *SteamClient) syncGroupChannels(ctx context.Context, group *steamapi.ChatGroup) error {
 	for _, channel := range group.Channels {
 		if err := sc.syncChannel(ctx, group, channel); err != nil {
 			sc.br.Log.Warn().
@@ -143,12 +164,22 @@ func (sc *SteamClient) buildSpaceChatInfo(group *steamapi.ChatGroup) *bridgev2.C
 		info.Topic = ptr.Ptr(group.Tagline)
 	}
 
-	if len(group.AvatarSha) > 0 {
-		hexHash := hex.EncodeToString(group.AvatarSha)
-		avatarURL := fmt.Sprintf("https://avatars.steamstatic.com/%s_full.jpg", hexHash)
-		capturedURL := avatarURL
+	if group.AvatarUrl != "" || len(group.AvatarSha) > 0 {
+		var avatarID networkid.AvatarID
+		if len(group.AvatarSha) > 0 {
+			avatarID = networkid.AvatarID(hex.EncodeToString(group.AvatarSha))
+		}
+		var capturedURL string
+		if group.AvatarUrl != "" {
+			capturedURL = group.AvatarUrl
+			if avatarID == "" {
+				avatarID = networkid.AvatarID(group.AvatarUrl)
+			}
+		} else {
+			capturedURL = fmt.Sprintf("https://avatars.steamstatic.com/%s_full.jpg", string(avatarID))
+		}
 		info.Avatar = &bridgev2.Avatar{
-			ID: networkid.AvatarID(hexHash),
+			ID: avatarID,
 			Get: func(ctx context.Context) ([]byte, error) {
 				return sc.downloadImageFromURL(ctx, capturedURL)
 			},
