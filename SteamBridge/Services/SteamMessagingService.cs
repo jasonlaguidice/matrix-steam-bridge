@@ -585,11 +585,19 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
 
         if (response.messages != null)
         {
+            // Get the universe from our own Steam ID for constructing sender IDs.
+            // msg.sender from CChatRoom_GetMessageHistory_Response is a 32-bit account ID,
+            // not a full SteamID64. Convert it exactly as GetFriendMessageHistory does.
+            var myUniverse = _steamClientManager.SteamClient.SteamID?.AccountUniverse ?? EUniverse.Public;
+
             foreach (var msg in response.messages)
             {
+                // Convert 32-bit account ID to full 64-bit Steam ID using SteamKit's constructor
+                var senderSteamId = new SteamID(msg.sender, myUniverse, EAccountType.Individual);
+
                 var historyMessage = new ChatHistoryMessage
                 {
-                    SenderSteamId = msg.sender,
+                    SenderSteamId = senderSteamId.ConvertToUInt64(),
                     Timestamp = msg.server_timestamp,
                     Ordinal = msg.ordinal,
                     MessageContent = msg.message ?? string.Empty,
