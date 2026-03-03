@@ -214,6 +214,7 @@ message MessageEvent {
   string image_url = 7; // Steam CDN/UFS URL for image messages
   uint64 chat_group_id = 8;  // Non-zero for group messages; 0 for DMs
   uint64 chat_id = 9;        // Non-zero for group messages; 0 for DMs
+  uint32 ordinal = 10;       // Message ordinal for deduplication with backfill
 }
 
 message TypingNotificationRequest {

@@ -1747,6 +1747,7 @@ type MessageEvent struct {
 	ImageUrl      string                 `protobuf:"bytes,7,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"`             // Steam CDN/UFS URL for image messages
 	ChatGroupId   uint64                 `protobuf:"varint,8,opt,name=chat_group_id,json=chatGroupId,proto3" json:"chat_group_id,omitempty"` // Non-zero for group messages; 0 for DMs
 	ChatId        uint64                 `protobuf:"varint,9,opt,name=chat_id,json=chatId,proto3" json:"chat_id,omitempty"`                  // Non-zero for group messages; 0 for DMs
+	Ordinal       uint32                 `protobuf:"varint,10,opt,name=ordinal,proto3" json:"ordinal,omitempty"`                             // Message ordinal for deduplication with backfill
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1840,6 +1841,13 @@ func (x *MessageEvent) GetChatGroupId() uint64 {
 func (x *MessageEvent) GetChatId() uint64 {
 	if x != nil {
 		return x.ChatId
+	}
+	return 0
+}
+
+func (x *MessageEvent) GetOrdinal() uint32 {
+	if x != nil {
+		return x.Ordinal
 	}
 	return 0
 }
@@ -3125,7 +3133,7 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1c\n" +
 	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"\x1c\n" +
-	"\x1aMessageSubscriptionRequest\"\xc6\x02\n" +
+	"\x1aMessageSubscriptionRequest\"\xe0\x02\n" +
 	"\fMessageEvent\x12&\n" +
 	"\x0fsender_steam_id\x18\x01 \x01(\x04R\rsenderSteamId\x12&\n" +
 	"\x0ftarget_steam_id\x18\x02 \x01(\x04R\rtargetSteamId\x12\x18\n" +
@@ -3135,7 +3143,9 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\ais_echo\x18\x06 \x01(\bR\x06isEcho\x12\x1b\n" +
 	"\timage_url\x18\a \x01(\tR\bimageUrl\x12\"\n" +
 	"\rchat_group_id\x18\b \x01(\x04R\vchatGroupId\x12\x17\n" +
-	"\achat_id\x18\t \x01(\x04R\x06chatId\"`\n" +
+	"\achat_id\x18\t \x01(\x04R\x06chatId\x12\x18\n" +
+	"\aordinal\x18\n" +
+	" \x01(\rR\aordinal\"`\n" +
 	"\x19TypingNotificationRequest\x12&\n" +
 	"\x0ftarget_steam_id\x18\x01 \x01(\x04R\rtargetSteamId\x12\x1b\n" +
 	"\tis_typing\x18\x02 \x01(\bR\bisTyping\"6\n" +
@@ -3195,7 +3205,7 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\x11GetGroupsResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12.\n" +
-	"\x06groups\x18\x03 \x03(\v2\x16.steambridge.ChatGroupR\x06groups\"\xaa\x02\n" +
+	"\x06groups\x18\x03 \x03(\v2\x16.steambridge.ChatGroupR\x06groups\"\xc9\x02\n" +
 	"\tChatGroup\x12\"\n" +
 	"\rchat_group_id\x18\x01 \x01(\x04R\vchatGroupId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
@@ -3205,7 +3215,9 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\x06clanid\x18\x05 \x01(\rR\x06clanid\x126\n" +
 	"\x17direct_messages_allowed\x18\x06 \x01(\bR\x15directMessagesAllowed\x124\n" +
 	"\bchannels\x18\a \x03(\v2\x18.steambridge.ChatChannelR\bchannels\x12&\n" +
-	"\x0fdefault_chat_id\x18\b \x01(\x04R\rdefaultChatId\":\n" +
+	"\x0fdefault_chat_id\x18\b \x01(\x04R\rdefaultChatId\x12\x1d\n" +
+	"\n" +
+	"avatar_url\x18\t \x01(\tR\tavatarUrl\":\n" +
 	"\vChatChannel\x12\x17\n" +
 	"\achat_id\x18\x01 \x01(\x04R\x06chatId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\"\x1c\n" +

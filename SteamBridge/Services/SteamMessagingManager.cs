@@ -220,12 +220,13 @@ public class SteamMessagingManager : IDisposable
             {
                 SenderSteamId = notification.steamid_sender,
                 TargetSteamId = 0, // Group messages have no single target
-                Message = !string.IsNullOrEmpty(msgNoBbCode) ? msgNoBbCode : (msgRaw ?? string.Empty),
+                Message = msgRaw ?? string.Empty,
                 MessageType = MessageType.ChatMessage,
-                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                Timestamp = notification.timestamp > 0 ? (long)notification.timestamp : DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                 IsEcho = notification.steamid_sender == (_steamClientManager.SteamClient.SteamID?.ConvertToUInt64() ?? 0),
                 ChatGroupId = notification.chat_group_id,
                 ChatId = notification.chat_id,
+                Ordinal = notification.ordinal,
             };
 
             _logger.LogDebug("Group message from {Sender} in group {GroupId} channel {ChatId}",
@@ -246,9 +247,8 @@ public class SteamMessagingManager : IDisposable
             // Only handle actual chat messages; skip typing indicators etc.
             if (notification.chat_entry_type != 1) return;
 
-            var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
             var msgRaw = notification.message?.TrimEnd('\0');
-            var text = !string.IsNullOrEmpty(msgNoBbCode) ? msgNoBbCode : (msgRaw ?? string.Empty);
+            var text = msgRaw ?? string.Empty;
 
             var botSteamId = _steamClientManager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
 
@@ -372,6 +372,7 @@ public class MessageEvent
     public string ImageUrl { get; set; } = string.Empty;
     public ulong ChatGroupId { get; set; }  // 0 for DMs
     public ulong ChatId { get; set; }       // 0 for DMs
+    public uint Ordinal { get; set; }       // Message ordinal for deduplication with backfill
 }
 
 public enum MessageType

@@ -111,6 +111,7 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                     IsEcho = message.IsEcho,
                     ChatGroupId = message.ChatGroupId,
                     ChatId = message.ChatId,
+                    Ordinal = message.Ordinal,
                 };
 
                 // Set image URL if present

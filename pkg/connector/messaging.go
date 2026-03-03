@@ -3,6 +3,8 @@ package connector
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -20,6 +22,53 @@ import (
 
 	"go.shadowdrake.org/steam/pkg/steamapi"
 )
+
+// buildEmoticonURL returns the Steam CDN URL for an emoticon by name.
+func buildEmoticonURL(name string) string {
+	return "https://community.fastly.steamstatic.com/economy/emoticonlarge/" + url.PathEscape(name)
+}
+
+// buildStickerURL returns the Steam CDN URL for a sticker by name.
+func buildStickerURL(name string) string {
+	return "https://community.fastly.steamstatic.com/economy/sticker/" + url.PathEscape(name)
+}
+
+var (
+	realtimeEmoticon        = regexp.MustCompile(`^:([^:]+):$`)
+	realtimeEmoticonBBCode  = regexp.MustCompile(`^\[emoticon\]([^\[]+)\[/emoticon\]$`)
+	realtimeSticker         = regexp.MustCompile(`^\[sticker\s+type="([^"]+)"[^\]]*\]\[/sticker\]$`)
+)
+
+// convertCDNImageMessage downloads an image from a public CDN URL and uploads it to Matrix,
+// returning a ConvertedMessage with m.image event type.
+func (sc *SteamClient) convertCDNImageMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, cdnURL, body string) (*bridgev2.ConvertedMessage, error) {
+	imageData, err := sc.downloadImageFromURL(ctx, cdnURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download CDN image %s: %w", cdnURL, err)
+	}
+	mimeType := http.DetectContentType(imageData)
+	parts := strings.Split(cdnURL, "/")
+	filename := parts[len(parts)-1]
+	if !strings.Contains(filename, ".") {
+		filename += ".png"
+	}
+	mxcURI, encryptedFile, err := intent.UploadMedia(ctx, portal.MXID, imageData, filename, mimeType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload CDN image to Matrix: %w", err)
+	}
+	content := &event.MessageEventContent{
+		MsgType: event.MsgImage,
+		Body:    body,
+		URL:     mxcURI,
+		File:    encryptedFile,
+	}
+	return &bridgev2.ConvertedMessage{
+		Parts: []*bridgev2.ConvertedMessagePart{{
+			Type:    event.EventMessage,
+			Content: content,
+		}},
+	}, nil
+}
 
 // startMessageSubscription starts a gRPC stream to receive real-time messages from Steam
 // with robust reconnection logic and exponential backoff
@@ -606,8 +655,8 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 	// Generate message ID
 	var msgID string
 	if msgEvent.ChatGroupId != 0 {
-		// Group messages: identify by group + channel + timestamp
-		msgID = fmt.Sprintf("%d:%d:%d", msgEvent.ChatGroupId, msgEvent.ChatId, msgEvent.Timestamp)
+		// Group messages: use timestamp_ordinal format to match backfill deduplication
+		msgID = fmt.Sprintf("%d_%d", msgEvent.Timestamp, msgEvent.Ordinal)
 	} else {
 		switch msgEvent.MessageType {
 		case steamapi.MessageType_INVITE_GAME:
@@ -763,6 +812,19 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 
 	switch data.MessageType {
 	case steamapi.MessageType_CHAT_MESSAGE:
+		// Detect standalone emoticon (:name:) or sticker BBCode — convert to CDN image
+		if data.ImageUrl == "" {
+			if m := realtimeEmoticon.FindStringSubmatch(data.Message); m != nil {
+				return sc.convertCDNImageMessage(ctx, portal, intent, buildEmoticonURL(m[1]), data.Message)
+			}
+			if m := realtimeSticker.FindStringSubmatch(data.Message); m != nil {
+				return sc.convertCDNImageMessage(ctx, portal, intent, buildStickerURL(m[1]), m[1])
+			}
+			if m := realtimeEmoticonBBCode.FindStringSubmatch(data.Message); m != nil {
+				return sc.convertCDNImageMessage(ctx, portal, intent, buildEmoticonURL(m[1]), ":"+m[1]+":")
+			}
+		}
+
 		// Auto-detect image URLs in Steam messages if not already set
 		if data.ImageUrl == "" {
 			if detectedURL := detectImageURL(data.Message); detectedURL != "" {
@@ -773,7 +835,7 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 					Msg("Auto-detected image URL in Steam message")
 			}
 		}
-		
+
 		// Check if this message contains an image URL
 		if data.ImageUrl != "" {
 			return sc.convertImageMessage(ctx, portal, intent, data)
@@ -781,7 +843,7 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 
 		content = &event.MessageEventContent{
 			MsgType: event.MsgText,
-			Body:    data.Message,
+			Body:    stripBBCode(data.Message),
 		}
 	case steamapi.MessageType_EMOTE:
 		content = &event.MessageEventContent{

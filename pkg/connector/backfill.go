@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
 	"time"
 
@@ -169,6 +170,20 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 	var convertedMsg *bridgev2.ConvertedMessage
 	var err error
 
+	// Detect standalone emoticon or sticker BBCode — convert to CDN image
+	if steamMsg.ImageUrl == "" {
+		content := steamMsg.MessageContent
+		if m := bbcodeEmoticonFull.FindStringSubmatch(content); m != nil {
+			name := m[1]
+			steamMsg.ImageUrl = buildEmoticonURL(name)
+			steamMsg.MessageContent = ":" + name + ":"
+		} else if m := bbcodeStickerFull.FindStringSubmatch(content); m != nil {
+			name := m[1]
+			steamMsg.ImageUrl = buildStickerURL(name)
+			steamMsg.MessageContent = name
+		}
+	}
+
 	// Auto-detect image URLs in historical messages if not already set
 	if steamMsg.ImageUrl == "" {
 		if detectedURL := detectImageURL(steamMsg.MessageContent); detectedURL != "" {
@@ -184,8 +199,8 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 		// Handle image message
 		convertedMsg, err = sc.convertImageMessageFromHistory(ctx, steamMsg.MessageContent, steamMsg.ImageUrl, portal)
 	} else {
-		// Handle text message
-		convertedMsg, err = sc.convertTextMessageFromHistory(ctx, steamMsg.MessageContent, portal)
+		// Handle text message — strip BBCode tags before sending to Matrix
+		convertedMsg, err = sc.convertTextMessageFromHistory(ctx, stripBBCode(steamMsg.MessageContent), portal)
 	}
 
 	if err != nil {
@@ -238,6 +253,22 @@ func (sc *SteamClient) convertTextMessageFromHistory(ctx context.Context, conten
 			},
 		},
 	}, nil
+}
+
+// stripBBCode converts BBCode-tagged Steam message content to plain text.
+// [emoticon]name[/emoticon] → :name:  (preserves emoticon short-name format)
+// All other [tag]content[/tag] patterns have their tags stripped, keeping the inner content.
+var (
+	bbcodeEmoticon     = regexp.MustCompile(`\[emoticon\](.*?)\[/emoticon\]`)
+	bbcodeGeneric      = regexp.MustCompile(`\[[a-zA-Z]+[^\]]*\](.*?)\[/[a-zA-Z]+\]`)
+	bbcodeStickerFull  = regexp.MustCompile(`^\[sticker\s+type="([^"]+)"[^\]]*\]\[/sticker\]$`)
+	bbcodeEmoticonFull = regexp.MustCompile(`^\[emoticon\](.*?)\[/emoticon\]$`)
+)
+
+func stripBBCode(s string) string {
+	s = bbcodeEmoticon.ReplaceAllString(s, ":$1:")
+	s = bbcodeGeneric.ReplaceAllString(s, "$1")
+	return s
 }
 
 // convertImageMessageFromHistory converts an image message from history to bridgev2 format
