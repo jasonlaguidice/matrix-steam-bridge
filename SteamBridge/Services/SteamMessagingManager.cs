@@ -33,6 +33,7 @@ public class SteamMessagingManager : IDisposable
         _steamClientManager.MessageReceived += OnMessageReceived;
         _steamClientManager.MessageEcho += OnMessageEcho;
         _steamClientManager.GroupMessageReceived += OnGroupMessageReceived;
+        _steamClientManager.DirectMessageReceived += OnDirectMessageReceived;
         
         _logger.LogInformation("SteamMessagingManager initialized");
     }
@@ -238,6 +239,57 @@ public class SteamMessagingManager : IDisposable
         }
     }
 
+    private async void OnDirectMessageReceived(object? sender, SteamKit2.Internal.CFriendMessages_IncomingMessage_Notification notification)
+    {
+        try
+        {
+            // Only handle actual chat messages; skip typing indicators etc.
+            if (notification.chat_entry_type != 1) return;
+
+            var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
+            var msgRaw = notification.message?.TrimEnd('\0');
+            var text = !string.IsNullOrEmpty(msgNoBbCode) ? msgNoBbCode : (msgRaw ?? string.Empty);
+
+            var botSteamId = _steamClientManager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
+
+            ulong senderSteamId;
+            ulong targetSteamId;
+            if (!notification.local_echo)
+            {
+                senderSteamId = notification.steamid_friend;
+                targetSteamId = botSteamId;
+            }
+            else
+            {
+                senderSteamId = botSteamId;
+                targetSteamId = notification.steamid_friend;
+            }
+
+            var messageEvent = new MessageEvent
+            {
+                SenderSteamId = senderSteamId,
+                TargetSteamId = targetSteamId,
+                Message = text,
+                MessageType = MessageType.ChatMessage,
+                Timestamp = (long)notification.rtime32_server_timestamp,
+                IsEcho = notification.local_echo,
+                ChatGroupId = 0,
+                ChatId = 0,
+            };
+
+            _logger.LogInformation("DM {Direction} {PeerId}: {Message}",
+                notification.local_echo ? "to" : "from",
+                notification.steamid_friend,
+                text);
+
+            await _messageWriter.WriteAsync(messageEvent);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing direct message notification");
+        }
+    }
+
     private async void OnMessageEcho(object? sender, SteamFriends.FriendMsgEchoCallback callback)
     {
         try
@@ -296,6 +348,7 @@ public class SteamMessagingManager : IDisposable
         _steamClientManager.MessageReceived -= OnMessageReceived;
         _steamClientManager.MessageEcho -= OnMessageEcho;
         _steamClientManager.GroupMessageReceived -= OnGroupMessageReceived;
+        _steamClientManager.DirectMessageReceived -= OnDirectMessageReceived;
         
         _logger.LogInformation("SteamMessagingManager disposed");
     }

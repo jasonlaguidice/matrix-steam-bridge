@@ -35,6 +35,7 @@ public class SteamClientManager : IDisposable
     public event EventHandler<SteamFriends.FriendMsgCallback>? MessageReceived;
     public event EventHandler<SteamFriends.FriendMsgEchoCallback>? MessageEcho;
     public event EventHandler<SteamKit2.Internal.CChatRoom_IncomingChatMessage_Notification>? GroupMessageReceived;
+    public event EventHandler<SteamKit2.Internal.CFriendMessages_IncomingMessage_Notification>? DirectMessageReceived;
 
     public bool IsConnected => _isConnected;
     public bool IsLoggedOn => _isLoggedOn;
@@ -81,6 +82,7 @@ public class SteamClientManager : IDisposable
         _callbackManager.Subscribe<SteamFriends.FriendMsgCallback>(OnMessageReceived);
         _callbackManager.Subscribe<SteamFriends.FriendMsgEchoCallback>(OnMessageEcho);
         _callbackManager.SubscribeServiceNotification<SteamKit2.Internal.ChatRoomClient, SteamKit2.Internal.CChatRoom_IncomingChatMessage_Notification>(OnGroupMessageNotification);
+        _callbackManager.SubscribeServiceNotification<SteamKit2.Internal.FriendMessagesClient, SteamKit2.Internal.CFriendMessages_IncomingMessage_Notification>(OnDirectMessageNotification);
         
         // Start callback processing task
         _callbackTask = Task.Run(ProcessCallbacks, _cancellationTokenSource.Token);
@@ -293,6 +295,11 @@ public class SteamClientManager : IDisposable
     private void OnGroupMessageNotification(SteamKit2.SteamUnifiedMessages.ServiceMethodNotification<SteamKit2.Internal.CChatRoom_IncomingChatMessage_Notification> notification)
     {
         GroupMessageReceived?.Invoke(this, notification.Body);
+    }
+
+    private void OnDirectMessageNotification(SteamKit2.SteamUnifiedMessages.ServiceMethodNotification<SteamKit2.Internal.CFriendMessages_IncomingMessage_Notification> notification)
+    {
+        DirectMessageReceived?.Invoke(this, notification.Body);
     }
 
     public void Dispose()
