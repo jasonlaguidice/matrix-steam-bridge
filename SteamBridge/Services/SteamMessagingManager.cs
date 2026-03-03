@@ -316,6 +316,7 @@ public class MessageEvent
     public MessageType MessageType { get; set; }
     public long Timestamp { get; set; }
     public bool IsEcho { get; set; }
+    public string ImageUrl { get; set; } = string.Empty;
     public ulong ChatGroupId { get; set; }  // 0 for DMs
     public ulong ChatId { get; set; }       // 0 for DMs
 }
