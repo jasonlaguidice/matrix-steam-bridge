@@ -61,7 +61,7 @@ RUN adduser -D -s /bin/sh -u 1000 bridge
 
 # Create application directories
 WORKDIR /app
-RUN mkdir -p /app/logs /app/data /app/config && \
+RUN mkdir -p /app/logs && \
     chown -R bridge:bridge /app
 
 # Copy built applications
@@ -76,51 +76,19 @@ RUN chmod +x /app/steam && \
 # Expose ports
 EXPOSE 50051
 
+# Set default config/registration file path
+ENV CONFIG_FILE="/app/config/config.yaml"
+ENV REGISTRATION_FILE="/app/data/registration.yaml"
+
 # Create entrypoint script
-RUN cat > /app/entrypoint.sh << 'EOF'
-#!/bin/sh
-set -e
-
-# Check if running as root and switch to bridge user
-if [ "$(id -u)" = "0" ]; then
-    echo "Running as root, switching to bridge user"
-    exec su-exec bridge "$0" "$@"
-fi
-
-# Ensure data directory exists and is writable
-if [ ! -w /app/data ]; then
-    echo "Error: /app/data is not writable by bridge user"
-    exit 1
-fi
-
-# Check if config exists
-if [ ! -f /app/config/config.yaml ]; then
-    echo "No config file found at /app/config/config.yaml"
-    echo "Please mount your config file to /app/config/config.yaml"
-    echo "You can use the example config as a starting point:"
-    echo "  docker run -v /path/to/config.yaml:/app/config/config.yaml ..."
-    exit 1
-fi
-
-# Start the bridge
-echo "Starting Matrix Steam Bridge..."
-
-# Check if config needs steam_bridge_path fix for Docker
-if grep -q "steam_bridge_path: ./SteamBridge" /app/config/config.yaml 2>/dev/null; then
-    echo "Fixing steam_bridge_path for Docker environment..."
-    sed -i 's|steam_bridge_path: ./SteamBridge|steam_bridge_path: /app/steamkit-service|g' /app/config/config.yaml
-fi
-
-exec /app/steam -c /app/config/config.yaml "$@"
-EOF
+COPY entrypoint.sh /app/entrypoint.sh
 
 RUN chmod +x /app/entrypoint.sh && chown bridge:bridge /app/entrypoint.sh
 
 # Switch to non-root user
 USER bridge
 
-# Set volumes
-VOLUME ["/app/config", "/app/data", "/app/logs"]
+VOLUME ["/app/logs"]
 
 # Default working directory
 WORKDIR /app

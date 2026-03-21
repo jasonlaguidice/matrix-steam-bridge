@@ -91,6 +91,25 @@ Supported architectures: `linux/amd64`, `linux/arm64`
    ./steam -c ./config.yaml
    ```
 
+## Configuration w/ Docker
+
+1. Mount the config file folder to your file system
+2. Start the container
+
+   It will generate the configuration file in the config folder (unless you changed its location via environment variable)
+3. Edit the configuration file
+4. Start the container
+
+   It will generate the registration file in the data folder (unless you changed its location via environment variable)
+5. Register the bridge with your homeserver via the registration file and restart your homeserver
+6. Start the container
+
+   It will now start the bridge
+
+Notes:
+- The configuration file will be regenerated with the example if you delete it
+- The registration file will be regerenerated if you delete it, but leave the configuration file there
+
 ## Usage
 
 1. **Invite the bridge bot** to a new Matrix room - it will automatically mark the room as your management portal room
