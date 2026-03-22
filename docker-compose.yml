@@ -7,8 +7,12 @@ services:
       - ./config:/app/config
       # Mount data directory
       - ./data:/app/data
-      # Mount logs directory
-      - ./logs:/app/logs
+      # Mount logs directory if you want logs to be saved outside the container. Just make sure it is writable by user 1000
+      # - ./logs:/app/logs
+    # If you want to mount differently, use these to configure the configuration and registration files
+    # environment:
+    #  CONFIG_FILE: "/app/data/config.yaml"
+    #  REGISTRATION_FILE: "/app/data/registration.yaml"
     # ports:
     #   # Optional: Expose gRPC port for host access to SteamKit service
     #   - "50051:50051"
