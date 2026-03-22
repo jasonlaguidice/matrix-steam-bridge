@@ -187,6 +187,14 @@ jobs:
         echo "tag=$TAG" >> $GITHUB_OUTPUT
         echo "Found tag: $TAG for commit ${{ github.event.workflow_run.head_sha }}"
 
+        # Detect pre-release tags (e.g. v1.2.0-beta.1, v1.2.0-rc.1, v1.2.0-alpha.1)
+        if echo "$TAG" | grep -qE '\-(alpha|beta|rc)(\.[0-9]+)?$'; then
+          echo "prerelease=true" >> $GITHUB_OUTPUT
+          echo "Detected pre-release tag"
+        else
+          echo "prerelease=false" >> $GITHUB_OUTPUT
+        fi
+
     - name: Download all artifacts
       uses: actions/download-artifact@v6
       with:
@@ -197,7 +205,7 @@ jobs:
       with:
         tag_name: ${{ steps.get_tag.outputs.tag }}
         draft: false
-        prerelease: false
+        prerelease: ${{ steps.get_tag.outputs.prerelease }}
         generate_release_notes: true
         files: ./artifacts/*/*
       env:
