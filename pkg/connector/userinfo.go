@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net/http"
@@ -306,43 +307,141 @@ func (sc *SteamClient) IsThisUser(ctx context.Context, userID networkid.UserID) 
 
 // GetChatInfo implements bridgev2.NetworkAPI.
 func (sc *SteamClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal) (*bridgev2.ChatInfo, error) {
-	sc.br.Log.Info().Msg("GetChatInfo() - Retrieving chat info")
+	sc.br.Log.Info().Str("portal_id", string(portal.ID)).Msg("GetChatInfo() - Retrieving chat info")
 
-	// Below only handles DMs
-	// TODO: Look up how multi-participant rooms are handled in Signal
-	meta := sc.UserLogin.Metadata.(*UserLoginMetadata)
-	if meta == nil {
-		return nil, fmt.Errorf("no user metadata found")
+	idType, id1, id2, err := parsePortalID(portal.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse portal ID %q: %w", portal.ID, err)
 	}
 
-	return &bridgev2.ChatInfo{
-		// CRITICAL: Mark as DM room type - enables both m.direct support AND automatic name/avatar updates
-		Type: ptr.Ptr(database.RoomTypeDM),
-		// Enable backfill as Steam supports message history
-		CanBackfill: true,
-		// Note: Name and Avatar are handled automatically by bridgev2 framework
-		// via UpdateInfoFromGhost() when private_chat_portal_meta=true and Type=RoomTypeDM
-		Members: &bridgev2.ChatMemberList{
-			IsFull: true,
-			Members: []bridgev2.ChatMember{
-				{
-					EventSender: bridgev2.EventSender{
-						IsFromMe: true,
-						Sender:   makeUserID(meta.SteamID),
+	switch idType {
+	case PortalIDTypeDM:
+		// id1 is the remote Steam ID of the other user
+		meta := sc.UserLogin.Metadata.(*UserLoginMetadata)
+		if meta == nil {
+			return nil, fmt.Errorf("no user metadata found")
+		}
+		return &bridgev2.ChatInfo{
+			// CRITICAL: Mark as DM room type - enables both m.direct support AND automatic name/avatar updates
+			Type: ptr.Ptr(database.RoomTypeDM),
+			// Enable backfill as Steam supports message history
+			CanBackfill: true,
+			// Note: Name and Avatar are handled automatically by bridgev2 framework
+			// via UpdateInfoFromGhost() when private_chat_portal_meta=true and Type=RoomTypeDM
+			Members: &bridgev2.ChatMemberList{
+				IsFull: true,
+				Members: []bridgev2.ChatMember{
+					{
+						EventSender: bridgev2.EventSender{
+							IsFromMe: true,
+							Sender:   makeUserID(meta.SteamID),
+						},
+						Membership: event.MembershipJoin,
+						PowerLevel: ptr.Ptr(50),
 					},
-					Membership: event.MembershipJoin,
-					PowerLevel: ptr.Ptr(50),
-				},
-				{
-					EventSender: bridgev2.EventSender{
-						Sender: networkid.UserID(portal.ID),
+					{
+						EventSender: bridgev2.EventSender{
+							Sender: networkid.UserID(portal.ID),
+						},
+						Membership: event.MembershipJoin,
+						PowerLevel: ptr.Ptr(50),
 					},
-					Membership: event.MembershipJoin,
-					PowerLevel: ptr.Ptr(50),
 				},
 			},
-		},
-	}, nil
+		}, nil
+
+	case PortalIDTypeSpace:
+		// id1 is the chatGroupID; return a minimal space ChatInfo with cached name if available
+		chatGroupID := id1
+		spaceType := database.RoomTypeSpace
+		chatInfo := &bridgev2.ChatInfo{
+			Type:        &spaceType,
+			CanBackfill: false,
+		}
+		meta, hasMeta := portal.Metadata.(*PortalMetadata)
+		if hasMeta && meta != nil {
+			// Ensure metadata fields are consistent
+			if meta.ChatGroupID == 0 {
+				meta.ChatGroupID = chatGroupID
+			}
+			if !meta.IsSpace {
+				meta.IsSpace = true
+			}
+			if meta.Name != "" {
+				chatInfo.Name = ptr.Ptr(meta.Name)
+			}
+		}
+		if chatInfo.Name == nil {
+			// meta.Name is empty — the space's ChatResync hasn't run yet.
+			// Make a synchronous gRPC call to fetch the group name now.
+			sc.br.Log.Debug().Uint64("chat_group_id", chatGroupID).Msg("GetChatInfo space: name not cached, fetching from gRPC")
+			resp, err := sc.groupClient.GetMyChatRoomGroups(ctx, &steamapi.GetGroupsRequest{})
+			if err != nil {
+				sc.br.Log.Warn().Err(err).Uint64("chat_group_id", chatGroupID).Msg("GetChatInfo space: failed to fetch groups for name lookup")
+			} else if resp.Success {
+				for _, group := range resp.Groups {
+					if group.ChatGroupId == chatGroupID {
+						if group.Name != "" {
+							chatInfo.Name = ptr.Ptr(group.Name)
+							// Populate metadata so future calls don't need to fetch again
+							if hasMeta && meta != nil {
+								meta.Name = group.Name
+								meta.ChatGroupID = chatGroupID
+								meta.IsSpace = true
+							}
+						}
+						// Also set avatar if available; prefer the pre-built UGC URL over
+						// constructing a URL from the raw SHA bytes (which uses the wrong CDN).
+						if group.AvatarUrl != "" || len(group.AvatarSha) > 0 {
+							var avatarID networkid.AvatarID
+							if len(group.AvatarSha) > 0 {
+								avatarID = networkid.AvatarID(hex.EncodeToString(group.AvatarSha))
+							}
+							var capturedURL string
+							if group.AvatarUrl != "" {
+								capturedURL = group.AvatarUrl
+								if avatarID == "" {
+									avatarID = networkid.AvatarID(group.AvatarUrl)
+								}
+							} else {
+								capturedURL = fmt.Sprintf("https://avatars.steamstatic.com/%s_full.jpg", string(avatarID))
+							}
+							chatInfo.Avatar = &bridgev2.Avatar{
+								ID: avatarID,
+								Get: func(ctx context.Context) ([]byte, error) {
+									return sc.downloadImageFromURL(ctx, capturedURL)
+								},
+							}
+						}
+						break
+					}
+				}
+			}
+		}
+		sc.br.Log.Debug().Uint64("chat_group_id", chatGroupID).Msg("GetChatInfo returning space info")
+		return chatInfo, nil
+
+	case PortalIDTypeChannel:
+		// id1 is chatGroupID, id2 is chatID; return channel info with cached name if available
+		roomType := database.RoomTypeDefault
+		parentSpaceID := makeSpacePortalID(id1)
+		chatInfo := &bridgev2.ChatInfo{
+			Type:        &roomType,
+			CanBackfill: true,
+			ParentID:    &parentSpaceID,
+		}
+		if meta, ok := portal.Metadata.(*PortalMetadata); ok && meta != nil && meta.Name != "" {
+			chatInfo.Name = ptr.Ptr(meta.Name)
+		}
+		sc.br.Log.Debug().
+			Uint64("chat_group_id", id1).
+			Uint64("chat_id", id2).
+			Msg("GetChatInfo returning channel info")
+		return chatInfo, nil
+
+	default:
+		return nil, fmt.Errorf("unrecognized portal ID type for %q", portal.ID)
+	}
 }
 
 // GetUserInfo implements bridgev2.NetworkAPI.

@@ -7,9 +7,16 @@ import (
 	"maunium.net/go/mautrix/bridgev2/networkid"
 )
 
-// PortalMetadata contains Steam-specific metadata for portals (DMs and group chats)
+// PortalMetadata contains Steam-specific metadata for portals (DMs, group spaces, and group channels)
 type PortalMetadata struct {
-	// Nothing required
+	// ChatGroupID is the Steam chat group ID for group spaces and channels (0 for DMs)
+	ChatGroupID uint64 `json:"chat_group_id,omitempty"`
+	// ChatID is the Steam chat channel ID within the group (0 for spaces and DMs)
+	ChatID uint64 `json:"chat_id,omitempty"`
+	// IsSpace indicates this portal represents a Steam chat group space
+	IsSpace bool `json:"is_space,omitempty"`
+	// Name is the display name for group spaces and channels, cached for GetChatInfo refetch
+	Name string `json:"name,omitempty"`
 }
 
 // GhostMetadata contains Steam user information for ghost users

@@ -1561,7 +1561,9 @@ type SendMessageRequest struct {
 	TargetSteamId uint64                 `protobuf:"varint,1,opt,name=target_steam_id,json=targetSteamId,proto3" json:"target_steam_id,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	MessageType   MessageType            `protobuf:"varint,3,opt,name=message_type,json=messageType,proto3,enum=steambridge.MessageType" json:"message_type,omitempty"`
-	ImageUrl      string                 `protobuf:"bytes,4,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"` // Steam CDN/UFS URL for image messages
+	ImageUrl      string                 `protobuf:"bytes,4,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"`             // Steam CDN/UFS URL for image messages
+	ChatGroupId   uint64                 `protobuf:"varint,5,opt,name=chat_group_id,json=chatGroupId,proto3" json:"chat_group_id,omitempty"` // Non-zero to send to a group channel
+	ChatId        uint64                 `protobuf:"varint,6,opt,name=chat_id,json=chatId,proto3" json:"chat_id,omitempty"`                  // Required when chat_group_id is set
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1622,6 +1624,20 @@ func (x *SendMessageRequest) GetImageUrl() string {
 		return x.ImageUrl
 	}
 	return ""
+}
+
+func (x *SendMessageRequest) GetChatGroupId() uint64 {
+	if x != nil {
+		return x.ChatGroupId
+	}
+	return 0
+}
+
+func (x *SendMessageRequest) GetChatId() uint64 {
+	if x != nil {
+		return x.ChatId
+	}
+	return 0
 }
 
 type SendMessageResponse struct {
@@ -1727,8 +1743,11 @@ type MessageEvent struct {
 	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
 	MessageType   MessageType            `protobuf:"varint,4,opt,name=message_type,json=messageType,proto3,enum=steambridge.MessageType" json:"message_type,omitempty"`
 	Timestamp     int64                  `protobuf:"varint,5,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
-	IsEcho        bool                   `protobuf:"varint,6,opt,name=is_echo,json=isEcho,proto3" json:"is_echo,omitempty"`      // True if this is an echo of our own message from another client
-	ImageUrl      string                 `protobuf:"bytes,7,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"` // Steam CDN/UFS URL for image messages
+	IsEcho        bool                   `protobuf:"varint,6,opt,name=is_echo,json=isEcho,proto3" json:"is_echo,omitempty"`                  // True if this is an echo of our own message from another client
+	ImageUrl      string                 `protobuf:"bytes,7,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"`             // Steam CDN/UFS URL for image messages
+	ChatGroupId   uint64                 `protobuf:"varint,8,opt,name=chat_group_id,json=chatGroupId,proto3" json:"chat_group_id,omitempty"` // Non-zero for group messages; 0 for DMs
+	ChatId        uint64                 `protobuf:"varint,9,opt,name=chat_id,json=chatId,proto3" json:"chat_id,omitempty"`                  // Non-zero for group messages; 0 for DMs
+	Ordinal       uint32                 `protobuf:"varint,10,opt,name=ordinal,proto3" json:"ordinal,omitempty"`                             // Message ordinal for deduplication with backfill
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1810,6 +1829,27 @@ func (x *MessageEvent) GetImageUrl() string {
 		return x.ImageUrl
 	}
 	return ""
+}
+
+func (x *MessageEvent) GetChatGroupId() uint64 {
+	if x != nil {
+		return x.ChatGroupId
+	}
+	return 0
+}
+
+func (x *MessageEvent) GetChatId() uint64 {
+	if x != nil {
+		return x.ChatId
+	}
+	return 0
+}
+
+func (x *MessageEvent) GetOrdinal() uint32 {
+	if x != nil {
+		return x.Ordinal
+	}
+	return 0
 }
 
 type TypingNotificationRequest struct {
@@ -2523,6 +2563,263 @@ func (x *ChatHistoryMessage) GetImageUrl() string {
 	return ""
 }
 
+// Group Messages
+type GetGroupsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetGroupsRequest) Reset() {
+	*x = GetGroupsRequest{}
+	mi := &file_Proto_steam_bridge_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetGroupsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetGroupsRequest) ProtoMessage() {}
+
+func (x *GetGroupsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_Proto_steam_bridge_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetGroupsRequest.ProtoReflect.Descriptor instead.
+func (*GetGroupsRequest) Descriptor() ([]byte, []int) {
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{36}
+}
+
+type GetGroupsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	Groups        []*ChatGroup           `protobuf:"bytes,3,rep,name=groups,proto3" json:"groups,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetGroupsResponse) Reset() {
+	*x = GetGroupsResponse{}
+	mi := &file_Proto_steam_bridge_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetGroupsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetGroupsResponse) ProtoMessage() {}
+
+func (x *GetGroupsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_Proto_steam_bridge_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetGroupsResponse.ProtoReflect.Descriptor instead.
+func (*GetGroupsResponse) Descriptor() ([]byte, []int) {
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *GetGroupsResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *GetGroupsResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *GetGroupsResponse) GetGroups() []*ChatGroup {
+	if x != nil {
+		return x.Groups
+	}
+	return nil
+}
+
+type ChatGroup struct {
+	state                 protoimpl.MessageState `protogen:"open.v1"`
+	ChatGroupId           uint64                 `protobuf:"varint,1,opt,name=chat_group_id,json=chatGroupId,proto3" json:"chat_group_id,omitempty"`
+	Name                  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Tagline               string                 `protobuf:"bytes,3,opt,name=tagline,proto3" json:"tagline,omitempty"`
+	AvatarSha             []byte                 `protobuf:"bytes,4,opt,name=avatar_sha,json=avatarSha,proto3" json:"avatar_sha,omitempty"`                                        // SHA-1 hash of group avatar
+	Clanid                uint32                 `protobuf:"varint,5,opt,name=clanid,proto3" json:"clanid,omitempty"`                                                              // Non-zero if this group is tied to a Steam Clan
+	DirectMessagesAllowed bool                   `protobuf:"varint,6,opt,name=direct_messages_allowed,json=directMessagesAllowed,proto3" json:"direct_messages_allowed,omitempty"` // Whether this group allows DMs between members
+	Channels              []*ChatChannel         `protobuf:"bytes,7,rep,name=channels,proto3" json:"channels,omitempty"`
+	DefaultChatId         uint64                 `protobuf:"varint,8,opt,name=default_chat_id,json=defaultChatId,proto3" json:"default_chat_id,omitempty"` // The default channel ID for this group
+	AvatarUrl             string                 `protobuf:"bytes,9,opt,name=avatar_url,json=avatarUrl,proto3" json:"avatar_url,omitempty"`                // Pre-built CDN URL for the group avatar (from avatar_ugc_url)
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *ChatGroup) Reset() {
+	*x = ChatGroup{}
+	mi := &file_Proto_steam_bridge_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChatGroup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChatGroup) ProtoMessage() {}
+
+func (x *ChatGroup) ProtoReflect() protoreflect.Message {
+	mi := &file_Proto_steam_bridge_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChatGroup.ProtoReflect.Descriptor instead.
+func (*ChatGroup) Descriptor() ([]byte, []int) {
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *ChatGroup) GetChatGroupId() uint64 {
+	if x != nil {
+		return x.ChatGroupId
+	}
+	return 0
+}
+
+func (x *ChatGroup) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ChatGroup) GetTagline() string {
+	if x != nil {
+		return x.Tagline
+	}
+	return ""
+}
+
+func (x *ChatGroup) GetAvatarSha() []byte {
+	if x != nil {
+		return x.AvatarSha
+	}
+	return nil
+}
+
+func (x *ChatGroup) GetClanid() uint32 {
+	if x != nil {
+		return x.Clanid
+	}
+	return 0
+}
+
+func (x *ChatGroup) GetDirectMessagesAllowed() bool {
+	if x != nil {
+		return x.DirectMessagesAllowed
+	}
+	return false
+}
+
+func (x *ChatGroup) GetChannels() []*ChatChannel {
+	if x != nil {
+		return x.Channels
+	}
+	return nil
+}
+
+func (x *ChatGroup) GetDefaultChatId() uint64 {
+	if x != nil {
+		return x.DefaultChatId
+	}
+	return 0
+}
+
+func (x *ChatGroup) GetAvatarUrl() string {
+	if x != nil {
+		return x.AvatarUrl
+	}
+	return ""
+}
+
+type ChatChannel struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ChatId        uint64                 `protobuf:"varint,1,opt,name=chat_id,json=chatId,proto3" json:"chat_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ChatChannel) Reset() {
+	*x = ChatChannel{}
+	mi := &file_Proto_steam_bridge_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ChatChannel) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ChatChannel) ProtoMessage() {}
+
+func (x *ChatChannel) ProtoReflect() protoreflect.Message {
+	mi := &file_Proto_steam_bridge_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ChatChannel.ProtoReflect.Descriptor instead.
+func (*ChatChannel) Descriptor() ([]byte, []int) {
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *ChatChannel) GetChatId() uint64 {
+	if x != nil {
+		return x.ChatId
+	}
+	return 0
+}
+
+func (x *ChatChannel) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
 // Session Management Messages
 type SessionSubscriptionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
@@ -2532,7 +2829,7 @@ type SessionSubscriptionRequest struct {
 
 func (x *SessionSubscriptionRequest) Reset() {
 	*x = SessionSubscriptionRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[36]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2544,7 +2841,7 @@ func (x *SessionSubscriptionRequest) String() string {
 func (*SessionSubscriptionRequest) ProtoMessage() {}
 
 func (x *SessionSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[36]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2557,7 +2854,7 @@ func (x *SessionSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*SessionSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{36}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{40}
 }
 
 type SessionEvent struct {
@@ -2571,7 +2868,7 @@ type SessionEvent struct {
 
 func (x *SessionEvent) Reset() {
 	*x = SessionEvent{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[37]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2583,7 +2880,7 @@ func (x *SessionEvent) String() string {
 func (*SessionEvent) ProtoMessage() {}
 
 func (x *SessionEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[37]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2596,7 +2893,7 @@ func (x *SessionEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionEvent.ProtoReflect.Descriptor instead.
 func (*SessionEvent) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{37}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *SessionEvent) GetEventType() SessionEventType {
@@ -2630,7 +2927,7 @@ type SetPersonaStateRequest struct {
 
 func (x *SetPersonaStateRequest) Reset() {
 	*x = SetPersonaStateRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[38]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2642,7 +2939,7 @@ func (x *SetPersonaStateRequest) String() string {
 func (*SetPersonaStateRequest) ProtoMessage() {}
 
 func (x *SetPersonaStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[38]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2655,7 +2952,7 @@ func (x *SetPersonaStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPersonaStateRequest.ProtoReflect.Descriptor instead.
 func (*SetPersonaStateRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{38}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *SetPersonaStateRequest) GetState() PersonaState {
@@ -2675,7 +2972,7 @@ type SetPersonaStateResponse struct {
 
 func (x *SetPersonaStateResponse) Reset() {
 	*x = SetPersonaStateResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[39]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2687,7 +2984,7 @@ func (x *SetPersonaStateResponse) String() string {
 func (*SetPersonaStateResponse) ProtoMessage() {}
 
 func (x *SetPersonaStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[39]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2700,7 +2997,7 @@ func (x *SetPersonaStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPersonaStateResponse.ProtoReflect.Descriptor instead.
 func (*SetPersonaStateResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{39}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *SetPersonaStateResponse) GetSuccess() bool {
@@ -2824,17 +3121,19 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\x18ResolveVanityURLResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x19\n" +
 	"\bsteam_id\x18\x02 \x01(\tR\asteamId\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"\xb0\x01\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"\xed\x01\n" +
 	"\x12SendMessageRequest\x12&\n" +
 	"\x0ftarget_steam_id\x18\x01 \x01(\x04R\rtargetSteamId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12;\n" +
 	"\fmessage_type\x18\x03 \x01(\x0e2\x18.steambridge.MessageTypeR\vmessageType\x12\x1b\n" +
-	"\timage_url\x18\x04 \x01(\tR\bimageUrl\"r\n" +
+	"\timage_url\x18\x04 \x01(\tR\bimageUrl\x12\"\n" +
+	"\rchat_group_id\x18\x05 \x01(\x04R\vchatGroupId\x12\x17\n" +
+	"\achat_id\x18\x06 \x01(\x04R\x06chatId\"r\n" +
 	"\x13SendMessageResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1c\n" +
 	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"\x1c\n" +
-	"\x1aMessageSubscriptionRequest\"\x89\x02\n" +
+	"\x1aMessageSubscriptionRequest\"\xe0\x02\n" +
 	"\fMessageEvent\x12&\n" +
 	"\x0fsender_steam_id\x18\x01 \x01(\x04R\rsenderSteamId\x12&\n" +
 	"\x0ftarget_steam_id\x18\x02 \x01(\x04R\rtargetSteamId\x12\x18\n" +
@@ -2842,7 +3141,11 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\fmessage_type\x18\x04 \x01(\x0e2\x18.steambridge.MessageTypeR\vmessageType\x12\x1c\n" +
 	"\ttimestamp\x18\x05 \x01(\x03R\ttimestamp\x12\x17\n" +
 	"\ais_echo\x18\x06 \x01(\bR\x06isEcho\x12\x1b\n" +
-	"\timage_url\x18\a \x01(\tR\bimageUrl\"`\n" +
+	"\timage_url\x18\a \x01(\tR\bimageUrl\x12\"\n" +
+	"\rchat_group_id\x18\b \x01(\x04R\vchatGroupId\x12\x17\n" +
+	"\achat_id\x18\t \x01(\x04R\x06chatId\x12\x18\n" +
+	"\aordinal\x18\n" +
+	" \x01(\rR\aordinal\"`\n" +
 	"\x19TypingNotificationRequest\x12&\n" +
 	"\x0ftarget_steam_id\x18\x01 \x01(\x04R\rtargetSteamId\x12\x1b\n" +
 	"\tis_typing\x18\x02 \x01(\bR\bisTyping\"6\n" +
@@ -2897,7 +3200,27 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\aordinal\x18\x03 \x01(\rR\aordinal\x12'\n" +
 	"\x0fmessage_content\x18\x04 \x01(\tR\x0emessageContent\x12;\n" +
 	"\fmessage_type\x18\x05 \x01(\x0e2\x18.steambridge.MessageTypeR\vmessageType\x12\x1b\n" +
-	"\timage_url\x18\x06 \x01(\tR\bimageUrl\"\x1c\n" +
+	"\timage_url\x18\x06 \x01(\tR\bimageUrl\"\x12\n" +
+	"\x10GetGroupsRequest\"\x82\x01\n" +
+	"\x11GetGroupsResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12.\n" +
+	"\x06groups\x18\x03 \x03(\v2\x16.steambridge.ChatGroupR\x06groups\"\xc9\x02\n" +
+	"\tChatGroup\x12\"\n" +
+	"\rchat_group_id\x18\x01 \x01(\x04R\vchatGroupId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
+	"\atagline\x18\x03 \x01(\tR\atagline\x12\x1d\n" +
+	"\n" +
+	"avatar_sha\x18\x04 \x01(\fR\tavatarSha\x12\x16\n" +
+	"\x06clanid\x18\x05 \x01(\rR\x06clanid\x126\n" +
+	"\x17direct_messages_allowed\x18\x06 \x01(\bR\x15directMessagesAllowed\x124\n" +
+	"\bchannels\x18\a \x03(\v2\x18.steambridge.ChatChannelR\bchannels\x12&\n" +
+	"\x0fdefault_chat_id\x18\b \x01(\x04R\rdefaultChatId\x12\x1d\n" +
+	"\n" +
+	"avatar_url\x18\t \x01(\tR\tavatarUrl\":\n" +
+	"\vChatChannel\x12\x17\n" +
+	"\achat_id\x18\x01 \x01(\x04R\x06chatId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"\x1c\n" +
 	"\x1aSessionSubscriptionRequest\"\x82\x01\n" +
 	"\fSessionEvent\x12<\n" +
 	"\n" +
@@ -2967,7 +3290,9 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\x13SteamSessionService\x12`\n" +
 	"\x18SubscribeToSessionEvents\x12'.steambridge.SessionSubscriptionRequest\x1a\x19.steambridge.SessionEvent0\x012t\n" +
 	"\x14SteamPresenceService\x12\\\n" +
-	"\x0fSetPersonaState\x12#.steambridge.SetPersonaStateRequest\x1a$.steambridge.SetPersonaStateResponseB;Z%go.shadowdrake.org/steam/pkg/steamapi\xaa\x02\x11SteamBridge.Protob\x06proto3"
+	"\x0fSetPersonaState\x12#.steambridge.SetPersonaStateRequest\x1a$.steambridge.SetPersonaStateResponse2i\n" +
+	"\x11SteamGroupService\x12T\n" +
+	"\x13GetMyChatRoomGroups\x12\x1d.steambridge.GetGroupsRequest\x1a\x1e.steambridge.GetGroupsResponseB;Z%go.shadowdrake.org/steam/pkg/steamapi\xaa\x02\x11SteamBridge.Protob\x06proto3"
 
 var (
 	file_Proto_steam_bridge_proto_rawDescOnce sync.Once
@@ -2982,7 +3307,7 @@ func file_Proto_steam_bridge_proto_rawDescGZIP() []byte {
 }
 
 var file_Proto_steam_bridge_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_Proto_steam_bridge_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
+var file_Proto_steam_bridge_proto_msgTypes = make([]protoimpl.MessageInfo, 44)
 var file_Proto_steam_bridge_proto_goTypes = []any{
 	(PersonaState)(0),                  // 0: steambridge.PersonaState
 	(FriendRelationship)(0),            // 1: steambridge.FriendRelationship
@@ -3025,10 +3350,14 @@ var file_Proto_steam_bridge_proto_goTypes = []any{
 	(*ChatMessageHistoryRequest)(nil),  // 38: steambridge.ChatMessageHistoryRequest
 	(*ChatMessageHistoryResponse)(nil), // 39: steambridge.ChatMessageHistoryResponse
 	(*ChatHistoryMessage)(nil),         // 40: steambridge.ChatHistoryMessage
-	(*SessionSubscriptionRequest)(nil), // 41: steambridge.SessionSubscriptionRequest
-	(*SessionEvent)(nil),               // 42: steambridge.SessionEvent
-	(*SetPersonaStateRequest)(nil),     // 43: steambridge.SetPersonaStateRequest
-	(*SetPersonaStateResponse)(nil),    // 44: steambridge.SetPersonaStateResponse
+	(*GetGroupsRequest)(nil),           // 41: steambridge.GetGroupsRequest
+	(*GetGroupsResponse)(nil),          // 42: steambridge.GetGroupsResponse
+	(*ChatGroup)(nil),                  // 43: steambridge.ChatGroup
+	(*ChatChannel)(nil),                // 44: steambridge.ChatChannel
+	(*SessionSubscriptionRequest)(nil), // 45: steambridge.SessionSubscriptionRequest
+	(*SessionEvent)(nil),               // 46: steambridge.SessionEvent
+	(*SetPersonaStateRequest)(nil),     // 47: steambridge.SetPersonaStateRequest
+	(*SetPersonaStateResponse)(nil),    // 48: steambridge.SetPersonaStateResponse
 }
 var file_Proto_steam_bridge_proto_depIdxs = []int32{
 	18, // 0: steambridge.LoginResponse.user_info:type_name -> steambridge.UserInfo
@@ -3046,51 +3375,55 @@ var file_Proto_steam_bridge_proto_depIdxs = []int32{
 	2,  // 12: steambridge.MessageEvent.message_type:type_name -> steambridge.MessageType
 	40, // 13: steambridge.ChatMessageHistoryResponse.messages:type_name -> steambridge.ChatHistoryMessage
 	2,  // 14: steambridge.ChatHistoryMessage.message_type:type_name -> steambridge.MessageType
-	3,  // 15: steambridge.SessionEvent.event_type:type_name -> steambridge.SessionEventType
-	0,  // 16: steambridge.SetPersonaStateRequest.state:type_name -> steambridge.PersonaState
-	5,  // 17: steambridge.SteamAuthService.LoginWithCredentials:input_type -> steambridge.CredentialsLoginRequest
-	9,  // 18: steambridge.SteamAuthService.ContinueAuthSession:input_type -> steambridge.ContinueAuthRequest
-	6,  // 19: steambridge.SteamAuthService.LoginWithQR:input_type -> steambridge.QRLoginRequest
-	10, // 20: steambridge.SteamAuthService.GetAuthStatus:input_type -> steambridge.AuthStatusRequest
-	13, // 21: steambridge.SteamAuthService.ReAuthenticateWithTokens:input_type -> steambridge.TokenReAuthRequest
-	12, // 22: steambridge.SteamAuthService.Logout:input_type -> steambridge.LogoutRequest
-	16, // 23: steambridge.SteamUserService.GetUserInfo:input_type -> steambridge.UserInfoRequest
-	19, // 24: steambridge.SteamUserService.GetFriendsList:input_type -> steambridge.FriendsListRequest
-	22, // 25: steambridge.SteamUserService.GetUserStatus:input_type -> steambridge.UserStatusRequest
-	24, // 26: steambridge.SteamUserService.ResolveVanityURL:input_type -> steambridge.ResolveVanityURLRequest
-	26, // 27: steambridge.SteamMessagingService.SendMessage:input_type -> steambridge.SendMessageRequest
-	28, // 28: steambridge.SteamMessagingService.SubscribeToMessages:input_type -> steambridge.MessageSubscriptionRequest
-	30, // 29: steambridge.SteamMessagingService.SendTypingNotification:input_type -> steambridge.TypingNotificationRequest
-	32, // 30: steambridge.SteamMessagingService.UploadImageToSteam:input_type -> steambridge.UploadImageRequest
-	34, // 31: steambridge.SteamMessagingService.DownloadImageFromSteam:input_type -> steambridge.DownloadImageRequest
-	36, // 32: steambridge.SteamMessagingService.GetUserAvatarData:input_type -> steambridge.GetUserAvatarDataRequest
-	38, // 33: steambridge.SteamMessagingService.GetChatMessageHistory:input_type -> steambridge.ChatMessageHistoryRequest
-	41, // 34: steambridge.SteamSessionService.SubscribeToSessionEvents:input_type -> steambridge.SessionSubscriptionRequest
-	43, // 35: steambridge.SteamPresenceService.SetPersonaState:input_type -> steambridge.SetPersonaStateRequest
-	8,  // 36: steambridge.SteamAuthService.LoginWithCredentials:output_type -> steambridge.LoginResponse
-	8,  // 37: steambridge.SteamAuthService.ContinueAuthSession:output_type -> steambridge.LoginResponse
-	7,  // 38: steambridge.SteamAuthService.LoginWithQR:output_type -> steambridge.QRLoginResponse
-	11, // 39: steambridge.SteamAuthService.GetAuthStatus:output_type -> steambridge.AuthStatusResponse
-	14, // 40: steambridge.SteamAuthService.ReAuthenticateWithTokens:output_type -> steambridge.TokenReAuthResponse
-	15, // 41: steambridge.SteamAuthService.Logout:output_type -> steambridge.LogoutResponse
-	17, // 42: steambridge.SteamUserService.GetUserInfo:output_type -> steambridge.UserInfoResponse
-	20, // 43: steambridge.SteamUserService.GetFriendsList:output_type -> steambridge.FriendsListResponse
-	23, // 44: steambridge.SteamUserService.GetUserStatus:output_type -> steambridge.UserStatusResponse
-	25, // 45: steambridge.SteamUserService.ResolveVanityURL:output_type -> steambridge.ResolveVanityURLResponse
-	27, // 46: steambridge.SteamMessagingService.SendMessage:output_type -> steambridge.SendMessageResponse
-	29, // 47: steambridge.SteamMessagingService.SubscribeToMessages:output_type -> steambridge.MessageEvent
-	31, // 48: steambridge.SteamMessagingService.SendTypingNotification:output_type -> steambridge.TypingNotificationResponse
-	33, // 49: steambridge.SteamMessagingService.UploadImageToSteam:output_type -> steambridge.UploadImageResponse
-	35, // 50: steambridge.SteamMessagingService.DownloadImageFromSteam:output_type -> steambridge.DownloadImageResponse
-	37, // 51: steambridge.SteamMessagingService.GetUserAvatarData:output_type -> steambridge.GetUserAvatarDataResponse
-	39, // 52: steambridge.SteamMessagingService.GetChatMessageHistory:output_type -> steambridge.ChatMessageHistoryResponse
-	42, // 53: steambridge.SteamSessionService.SubscribeToSessionEvents:output_type -> steambridge.SessionEvent
-	44, // 54: steambridge.SteamPresenceService.SetPersonaState:output_type -> steambridge.SetPersonaStateResponse
-	36, // [36:55] is the sub-list for method output_type
-	17, // [17:36] is the sub-list for method input_type
-	17, // [17:17] is the sub-list for extension type_name
-	17, // [17:17] is the sub-list for extension extendee
-	0,  // [0:17] is the sub-list for field type_name
+	43, // 15: steambridge.GetGroupsResponse.groups:type_name -> steambridge.ChatGroup
+	44, // 16: steambridge.ChatGroup.channels:type_name -> steambridge.ChatChannel
+	3,  // 17: steambridge.SessionEvent.event_type:type_name -> steambridge.SessionEventType
+	0,  // 18: steambridge.SetPersonaStateRequest.state:type_name -> steambridge.PersonaState
+	5,  // 19: steambridge.SteamAuthService.LoginWithCredentials:input_type -> steambridge.CredentialsLoginRequest
+	9,  // 20: steambridge.SteamAuthService.ContinueAuthSession:input_type -> steambridge.ContinueAuthRequest
+	6,  // 21: steambridge.SteamAuthService.LoginWithQR:input_type -> steambridge.QRLoginRequest
+	10, // 22: steambridge.SteamAuthService.GetAuthStatus:input_type -> steambridge.AuthStatusRequest
+	13, // 23: steambridge.SteamAuthService.ReAuthenticateWithTokens:input_type -> steambridge.TokenReAuthRequest
+	12, // 24: steambridge.SteamAuthService.Logout:input_type -> steambridge.LogoutRequest
+	16, // 25: steambridge.SteamUserService.GetUserInfo:input_type -> steambridge.UserInfoRequest
+	19, // 26: steambridge.SteamUserService.GetFriendsList:input_type -> steambridge.FriendsListRequest
+	22, // 27: steambridge.SteamUserService.GetUserStatus:input_type -> steambridge.UserStatusRequest
+	24, // 28: steambridge.SteamUserService.ResolveVanityURL:input_type -> steambridge.ResolveVanityURLRequest
+	26, // 29: steambridge.SteamMessagingService.SendMessage:input_type -> steambridge.SendMessageRequest
+	28, // 30: steambridge.SteamMessagingService.SubscribeToMessages:input_type -> steambridge.MessageSubscriptionRequest
+	30, // 31: steambridge.SteamMessagingService.SendTypingNotification:input_type -> steambridge.TypingNotificationRequest
+	32, // 32: steambridge.SteamMessagingService.UploadImageToSteam:input_type -> steambridge.UploadImageRequest
+	34, // 33: steambridge.SteamMessagingService.DownloadImageFromSteam:input_type -> steambridge.DownloadImageRequest
+	36, // 34: steambridge.SteamMessagingService.GetUserAvatarData:input_type -> steambridge.GetUserAvatarDataRequest
+	38, // 35: steambridge.SteamMessagingService.GetChatMessageHistory:input_type -> steambridge.ChatMessageHistoryRequest
+	45, // 36: steambridge.SteamSessionService.SubscribeToSessionEvents:input_type -> steambridge.SessionSubscriptionRequest
+	47, // 37: steambridge.SteamPresenceService.SetPersonaState:input_type -> steambridge.SetPersonaStateRequest
+	41, // 38: steambridge.SteamGroupService.GetMyChatRoomGroups:input_type -> steambridge.GetGroupsRequest
+	8,  // 39: steambridge.SteamAuthService.LoginWithCredentials:output_type -> steambridge.LoginResponse
+	8,  // 40: steambridge.SteamAuthService.ContinueAuthSession:output_type -> steambridge.LoginResponse
+	7,  // 41: steambridge.SteamAuthService.LoginWithQR:output_type -> steambridge.QRLoginResponse
+	11, // 42: steambridge.SteamAuthService.GetAuthStatus:output_type -> steambridge.AuthStatusResponse
+	14, // 43: steambridge.SteamAuthService.ReAuthenticateWithTokens:output_type -> steambridge.TokenReAuthResponse
+	15, // 44: steambridge.SteamAuthService.Logout:output_type -> steambridge.LogoutResponse
+	17, // 45: steambridge.SteamUserService.GetUserInfo:output_type -> steambridge.UserInfoResponse
+	20, // 46: steambridge.SteamUserService.GetFriendsList:output_type -> steambridge.FriendsListResponse
+	23, // 47: steambridge.SteamUserService.GetUserStatus:output_type -> steambridge.UserStatusResponse
+	25, // 48: steambridge.SteamUserService.ResolveVanityURL:output_type -> steambridge.ResolveVanityURLResponse
+	27, // 49: steambridge.SteamMessagingService.SendMessage:output_type -> steambridge.SendMessageResponse
+	29, // 50: steambridge.SteamMessagingService.SubscribeToMessages:output_type -> steambridge.MessageEvent
+	31, // 51: steambridge.SteamMessagingService.SendTypingNotification:output_type -> steambridge.TypingNotificationResponse
+	33, // 52: steambridge.SteamMessagingService.UploadImageToSteam:output_type -> steambridge.UploadImageResponse
+	35, // 53: steambridge.SteamMessagingService.DownloadImageFromSteam:output_type -> steambridge.DownloadImageResponse
+	37, // 54: steambridge.SteamMessagingService.GetUserAvatarData:output_type -> steambridge.GetUserAvatarDataResponse
+	39, // 55: steambridge.SteamMessagingService.GetChatMessageHistory:output_type -> steambridge.ChatMessageHistoryResponse
+	46, // 56: steambridge.SteamSessionService.SubscribeToSessionEvents:output_type -> steambridge.SessionEvent
+	48, // 57: steambridge.SteamPresenceService.SetPersonaState:output_type -> steambridge.SetPersonaStateResponse
+	42, // 58: steambridge.SteamGroupService.GetMyChatRoomGroups:output_type -> steambridge.GetGroupsResponse
+	39, // [39:59] is the sub-list for method output_type
+	19, // [19:39] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_Proto_steam_bridge_proto_init() }
@@ -3104,9 +3437,9 @@ func file_Proto_steam_bridge_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_Proto_steam_bridge_proto_rawDesc), len(file_Proto_steam_bridge_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   40,
+			NumMessages:   44,
 			NumExtensions: 0,
-			NumServices:   5,
+			NumServices:   6,
 		},
 		GoTypes:           file_Proto_steam_bridge_proto_goTypes,
 		DependencyIndexes: file_Proto_steam_bridge_proto_depIdxs,

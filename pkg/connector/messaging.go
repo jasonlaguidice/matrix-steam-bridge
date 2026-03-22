@@ -3,6 +3,8 @@ package connector
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -20,6 +22,53 @@ import (
 
 	"go.shadowdrake.org/steam/pkg/steamapi"
 )
+
+// buildEmoticonURL returns the Steam CDN URL for an emoticon by name.
+func buildEmoticonURL(name string) string {
+	return "https://community.fastly.steamstatic.com/economy/emoticonlarge/" + url.PathEscape(name)
+}
+
+// buildStickerURL returns the Steam CDN URL for a sticker by name.
+func buildStickerURL(name string) string {
+	return "https://community.fastly.steamstatic.com/economy/sticker/" + url.PathEscape(name)
+}
+
+var (
+	realtimeEmoticon        = regexp.MustCompile(`^:([^:]+):$`)
+	realtimeEmoticonBBCode  = regexp.MustCompile(`^\[emoticon\]([^\[]+)\[/emoticon\]$`)
+	realtimeSticker         = regexp.MustCompile(`^\[sticker\s+type="([^"]+)"[^\]]*\]\[/sticker\]$`)
+)
+
+// convertCDNImageMessage downloads an image from a public CDN URL and uploads it to Matrix,
+// returning a ConvertedMessage with m.image event type.
+func (sc *SteamClient) convertCDNImageMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, cdnURL, body string) (*bridgev2.ConvertedMessage, error) {
+	imageData, err := sc.downloadImageFromURL(ctx, cdnURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download CDN image %s: %w", cdnURL, err)
+	}
+	mimeType := http.DetectContentType(imageData)
+	parts := strings.Split(cdnURL, "/")
+	filename := parts[len(parts)-1]
+	if !strings.Contains(filename, ".") {
+		filename += ".png"
+	}
+	mxcURI, encryptedFile, err := intent.UploadMedia(ctx, portal.MXID, imageData, filename, mimeType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload CDN image to Matrix: %w", err)
+	}
+	content := &event.MessageEventContent{
+		MsgType: event.MsgImage,
+		Body:    body,
+		URL:     mxcURI,
+		File:    encryptedFile,
+	}
+	return &bridgev2.ConvertedMessage{
+		Parts: []*bridgev2.ConvertedMessagePart{{
+			Type:    event.EventMessage,
+			Content: content,
+		}},
+	}, nil
+}
 
 // startMessageSubscription starts a gRPC stream to receive real-time messages from Steam
 // with robust reconnection logic and exponential backoff
@@ -186,12 +235,28 @@ func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		Interface("raw_content", msg.Event.Content.Raw).
 		Msg("HandleMatrixMessage - Raw event details")
 
-	// Parse target Steam ID from portal ID
-	targetSteamID, err := parseSteamIDFromPortalID(msg.Portal.ID)
+	// Parse portal ID to determine type and routing.
+	// For PortalIDTypeChannel: id1=chatGroupID, id2=chatID.
+	// For PortalIDTypeDM: id1=steamID, id2=0.
+	idType, id1, id2, err := parsePortalID(msg.Portal.ID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse target Steam ID from portal %s: %w", msg.Portal.ID, err)
+		return nil, fmt.Errorf("failed to parse portal ID %s: %w", msg.Portal.ID, err)
 	}
 
+	switch idType {
+	case PortalIDTypeSpace:
+		return nil, fmt.Errorf("cannot send messages to a Space portal")
+	case PortalIDTypeChannel:
+		return sc.handleGroupChannelMessage(ctx, msg, id1, id2)
+	case PortalIDTypeDM:
+		return sc.handleDMMessage(ctx, msg, id1)
+	default:
+		return nil, fmt.Errorf("unsupported portal type")
+	}
+}
+
+// handleDMMessage processes outbound Matrix messages destined for a Steam DM (1:1 chat).
+func (sc *SteamClient) handleDMMessage(ctx context.Context, msg *bridgev2.MatrixMessage, targetSteamID uint64) (*bridgev2.MatrixMessageResponse, error) {
 	switch msg.Event.Type {
 	case event.EventMessage:
 		content := msg.Event.Content.AsMessage()
@@ -199,7 +264,7 @@ func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 			Interface("parsed_content", content).
 			Bool("content_is_nil", content == nil).
 			Msg("HandleMatrixMessage - Parsed message content")
-		
+
 		if content != nil && content.MsgType == event.MsgImage {
 			sc.br.Log.Debug().
 				Str("msgtype", string(content.MsgType)).
@@ -214,6 +279,42 @@ func (sc *SteamClient) HandleMatrixMessage(ctx context.Context, msg *bridgev2.Ma
 		sc.br.Log.Warn().Str("event_type", msg.Event.Type.String()).Msg("Unsupported message type")
 		return nil, fmt.Errorf("unsupported message type: %v", msg.Event.Type)
 	}
+}
+
+// handleGroupChannelMessage processes outbound Matrix messages destined for a Steam group channel.
+func (sc *SteamClient) handleGroupChannelMessage(ctx context.Context, msg *bridgev2.MatrixMessage, chatGroupID, chatID uint64) (*bridgev2.MatrixMessageResponse, error) {
+	content := msg.Event.Content.AsMessage()
+	if content == nil {
+		return nil, fmt.Errorf("failed to parse message content")
+	}
+
+	messageText := content.Body
+	if messageText == "" {
+		return nil, fmt.Errorf("empty message text")
+	}
+
+	resp, err := sc.msgClient.SendMessage(ctx, &steamapi.SendMessageRequest{
+		ChatGroupId: chatGroupID,
+		ChatId:      chatID,
+		Message:     messageText,
+		MessageType: steamapi.MessageType_CHAT_MESSAGE,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to send group message: %w", err)
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("group message send failed: %s", resp.ErrorMessage)
+	}
+
+	msgID := networkid.MessageID(fmt.Sprintf("%d:%d:%d", chatGroupID, chatID, resp.Timestamp))
+	return &bridgev2.MatrixMessageResponse{
+		DB: &database.Message{
+			ID:        msgID,
+			MXID:      msg.Event.ID,
+			Timestamp: time.Unix(resp.Timestamp, 0),
+			Metadata:  &MessageMetadata{IsEcho: false},
+		},
+	}, nil
 }
 
 // handleTextMessage processes text messages and sends them to Steam
@@ -531,30 +632,38 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 		// Continue processing instead of skipping
 	}
 
-	// Generate message ID
-	var msgID string
-	switch msgEvent.MessageType {
-	case steamapi.MessageType_INVITE_GAME:
-		msgID = fmt.Sprintf("%d:%d:invite", msgEvent.SenderSteamId, msgEvent.Timestamp)
-	default:
-		msgID = fmt.Sprintf("%d:%d", msgEvent.SenderSteamId, msgEvent.Timestamp)
-	}
-
-	// Get current user's Steam ID to determine if this is a DM
+	// Get current user's Steam ID to determine if this is a DM or group message
 	meta := sc.UserLogin.Metadata.(*UserLoginMetadata)
 	if meta == nil {
 		sc.br.Log.Error().Msg("No user metadata found for handling incoming message")
 		return
 	}
 
-	// Determine portal ID - for DMs, use the other user's Steam ID
+	// Determine portal ID based on whether this is a group channel or DM message
 	var portalID networkid.PortalID
-	if msgEvent.TargetSteamId == meta.SteamID {
-		// This is a message sent to us, portal is the sender
+	if msgEvent.ChatGroupId != 0 {
+		// Group channel message — route to the channel portal
+		portalID = makeChannelPortalID(msgEvent.ChatGroupId, msgEvent.ChatId)
+	} else if msgEvent.TargetSteamId == meta.SteamID {
+		// DM received by us — portal is the sender
 		portalID = makePortalID(msgEvent.SenderSteamId)
 	} else {
-		// This is a message we sent from another client, portal is the target
+		// DM echo (our own message from another client) — portal is the target
 		portalID = makePortalID(msgEvent.TargetSteamId)
+	}
+
+	// Generate message ID
+	var msgID string
+	if msgEvent.ChatGroupId != 0 {
+		// Group messages: use timestamp_ordinal format to match backfill deduplication
+		msgID = fmt.Sprintf("%d_%d", msgEvent.Timestamp, msgEvent.Ordinal)
+	} else {
+		switch msgEvent.MessageType {
+		case steamapi.MessageType_INVITE_GAME:
+			msgID = fmt.Sprintf("%d:%d:invite", msgEvent.SenderSteamId, msgEvent.Timestamp)
+		default:
+			msgID = fmt.Sprintf("%d:%d", msgEvent.SenderSteamId, msgEvent.Timestamp)
+		}
 	}
 
 	// Create portal key
@@ -703,6 +812,19 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 
 	switch data.MessageType {
 	case steamapi.MessageType_CHAT_MESSAGE:
+		// Detect standalone emoticon (:name:) or sticker BBCode — convert to CDN image
+		if data.ImageUrl == "" {
+			if m := realtimeEmoticon.FindStringSubmatch(data.Message); m != nil {
+				return sc.convertCDNImageMessage(ctx, portal, intent, buildEmoticonURL(m[1]), data.Message)
+			}
+			if m := realtimeSticker.FindStringSubmatch(data.Message); m != nil {
+				return sc.convertCDNImageMessage(ctx, portal, intent, buildStickerURL(m[1]), m[1])
+			}
+			if m := realtimeEmoticonBBCode.FindStringSubmatch(data.Message); m != nil {
+				return sc.convertCDNImageMessage(ctx, portal, intent, buildEmoticonURL(m[1]), ":"+m[1]+":")
+			}
+		}
+
 		// Auto-detect image URLs in Steam messages if not already set
 		if data.ImageUrl == "" {
 			if detectedURL := detectImageURL(data.Message); detectedURL != "" {
@@ -713,7 +835,7 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 					Msg("Auto-detected image URL in Steam message")
 			}
 		}
-		
+
 		// Check if this message contains an image URL
 		if data.ImageUrl != "" {
 			return sc.convertImageMessage(ctx, portal, intent, data)
@@ -721,7 +843,7 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 
 		content = &event.MessageEventContent{
 			MsgType: event.MsgText,
-			Body:    data.Message,
+			Body:    stripBBCode(data.Message),
 		}
 	case steamapi.MessageType_EMOTE:
 		content = &event.MessageEventContent{
@@ -834,6 +956,13 @@ func (sc *SteamClient) HandleMatrixReadReceipt(ctx context.Context, msg *bridgev
 // HandleMatrixTyping implements bridgev2.TypingHandlingNetworkAPI.
 // This method handles typing notifications from Matrix and sends them to Steam.
 func (sc *SteamClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.MatrixTyping) error {
+	// Typing notifications are only supported for DM portals.
+	// Silently ignore typing events for Space and Channel portals.
+	idType, _, _, _ := parsePortalID(msg.Portal.ID)
+	if idType != PortalIDTypeDM {
+		return nil
+	}
+
 	if !msg.IsTyping {
 		// Steam doesn't support explicit "stop typing" notifications
 		// Steam typing notifications automatically timeout
@@ -845,7 +974,7 @@ func (sc *SteamClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.Mat
 		sc.presenceManager.HandleActivity(ctx)
 	}
 
-	// Parse the Steam ID from the portal ID
+	// Parse the Steam ID from the portal ID (safe: we already confirmed this is a DM portal)
 	steamID, err := parseSteamIDFromPortalID(msg.Portal.ID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Steam ID from portal ID %q: %w", msg.Portal.ID, err)

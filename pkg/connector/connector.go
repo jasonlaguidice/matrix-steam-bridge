@@ -135,6 +135,7 @@ type SteamConnector struct {
 	msgClient      steamapi.SteamMessagingServiceClient
 	sessionClient  steamapi.SteamSessionServiceClient
 	presenceClient steamapi.SteamPresenceServiceClient
+	groupClient    steamapi.SteamGroupServiceClient
 	healthClient   grpc_health_v1.HealthClient
 
 	// Steam service process management
@@ -154,6 +155,7 @@ type SteamClient struct {
 	msgClient      steamapi.SteamMessagingServiceClient
 	sessionClient  steamapi.SteamSessionServiceClient
 	presenceClient steamapi.SteamPresenceServiceClient
+	groupClient    steamapi.SteamGroupServiceClient
 
 	br *bridgev2.Bridge
 
@@ -303,6 +305,7 @@ func (sc *SteamConnector) Start(ctx context.Context) error {
 	sc.msgClient = steamapi.NewSteamMessagingServiceClient(conn)
 	sc.sessionClient = steamapi.NewSteamSessionServiceClient(conn)
 	sc.presenceClient = steamapi.NewSteamPresenceServiceClient(conn)
+	sc.groupClient = steamapi.NewSteamGroupServiceClient(conn)
 	sc.healthClient = grpc_health_v1.NewHealthClient(conn)
 
 	sc.log.Info().Str("address", address).Msg("Successfully connected to SteamBridge service")
@@ -447,6 +450,7 @@ func (sc *SteamConnector) LoadUserLogin(ctx context.Context, login *bridgev2.Use
 		msgClient:      sc.msgClient,
 		sessionClient:  sc.sessionClient,
 		presenceClient: sc.presenceClient,
+		groupClient:    sc.groupClient,
 		br:             sc.br,
 	}
 
@@ -768,12 +772,76 @@ func makePortalID(steamID uint64) networkid.PortalID {
 	return networkid.PortalID(fmt.Sprintf("%d", steamID))
 }
 
+func makeSpacePortalID(chatGroupID uint64) networkid.PortalID {
+	return networkid.PortalID(fmt.Sprintf("space:%d", chatGroupID))
+}
+
+func makeChannelPortalID(chatGroupID, chatID uint64) networkid.PortalID {
+	return networkid.PortalID(fmt.Sprintf("%d:%d", chatGroupID, chatID))
+}
+
 func makeUserLoginID(steamID uint64) networkid.UserLoginID {
 	return networkid.UserLoginID(fmt.Sprintf("%d", steamID))
 }
 
-// Parse Steam ID from PortalID
+// PortalIDType describes which kind of portal a PortalID refers to.
+type PortalIDType int
+
+const (
+	PortalIDTypeDM      PortalIDType = iota // plain numeric DM: "76561198000000000"
+	PortalIDTypeSpace                       // group space: "space:1234"
+	PortalIDTypeChannel                     // group channel: "groupID:chatID"
+)
+
+// parsePortalID parses a PortalID into its type and constituent IDs.
+// For DM portals it returns (PortalIDTypeDM, steamID, 0, nil).
+// For space portals it returns (PortalIDTypeSpace, chatGroupID, 0, nil).
+// For channel portals it returns (PortalIDTypeChannel, chatGroupID, chatID, nil).
+func parsePortalID(id networkid.PortalID) (PortalIDType, uint64, uint64, error) {
+	s := string(id)
+
+	// Space portals have the prefix "space:"
+	if strings.HasPrefix(s, "space:") {
+		groupIDStr := s[len("space:"):]
+		groupID, err := strconv.ParseUint(groupIDStr, 10, 64)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("invalid space portal ID %q: %w", id, err)
+		}
+		return PortalIDTypeSpace, groupID, 0, nil
+	}
+
+	// Channel portals have the form "groupID:chatID"
+	if idx := strings.Index(s, ":"); idx != -1 {
+		groupIDStr := s[:idx]
+		chatIDStr := s[idx+1:]
+		groupID, err := strconv.ParseUint(groupIDStr, 10, 64)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("invalid channel portal ID %q (bad group id): %w", id, err)
+		}
+		chatID, err := strconv.ParseUint(chatIDStr, 10, 64)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("invalid channel portal ID %q (bad chat id): %w", id, err)
+		}
+		return PortalIDTypeChannel, groupID, chatID, nil
+	}
+
+	// DM portals are plain numeric Steam IDs
+	steamID, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("invalid DM portal ID %q: %w", id, err)
+	}
+	return PortalIDTypeDM, steamID, 0, nil
+}
+
+// parseSteamIDFromPortalID extracts the Steam ID from a DM portal ID.
+// Returns an error if the portal ID is not a DM portal.
 func parseSteamIDFromPortalID(portalID networkid.PortalID) (uint64, error) {
-	// Portal IDs are now just the numeric Steam ID without prefix
-	return strconv.ParseUint(string(portalID), 10, 64)
+	idType, steamID, _, err := parsePortalID(portalID)
+	if err != nil {
+		return 0, err
+	}
+	if idType != PortalIDTypeDM {
+		return 0, fmt.Errorf("portal %q is not a DM portal", portalID)
+	}
+	return steamID, nil
 }

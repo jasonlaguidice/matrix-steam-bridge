@@ -14,6 +14,7 @@ public class SteamClientManager : IDisposable
     private readonly SteamFriends _steamFriends;
     private readonly SteamUnifiedMessages _steamUnifiedMessages;
     private readonly SteamKit2.Internal.FriendMessages _friendMessagesService;
+    private readonly SteamKit2.Internal.ChatRoom _chatRoomService;
 
     private readonly CancellationTokenSource _cancellationTokenSource;
     private readonly Task _callbackTask;
@@ -33,6 +34,8 @@ public class SteamClientManager : IDisposable
     public event EventHandler<SteamFriends.PersonaStateCallback>? PersonaStateChange;
     public event EventHandler<SteamFriends.FriendMsgCallback>? MessageReceived;
     public event EventHandler<SteamFriends.FriendMsgEchoCallback>? MessageEcho;
+    public event EventHandler<SteamKit2.Internal.CChatRoom_IncomingChatMessage_Notification>? GroupMessageReceived;
+    public event EventHandler<SteamKit2.Internal.CFriendMessages_IncomingMessage_Notification>? DirectMessageReceived;
 
     public bool IsConnected => _isConnected;
     public bool IsLoggedOn => _isLoggedOn;
@@ -51,6 +54,7 @@ public class SteamClientManager : IDisposable
     public SteamClient SteamClient => _steamClient;
     public SteamUnifiedMessages SteamUnifiedMessages => _steamUnifiedMessages;
     public SteamKit2.Internal.FriendMessages FriendMessagesService => _friendMessagesService;
+    public SteamKit2.Internal.ChatRoom ChatRoomService => _chatRoomService;
 
     public SteamClientManager(ILogger<SteamClientManager> logger)
     {
@@ -64,6 +68,7 @@ public class SteamClientManager : IDisposable
 
         // Create FriendMessages service to enable proper callback handling for DM message history
         _friendMessagesService = _steamUnifiedMessages.CreateService<SteamKit2.Internal.FriendMessages>();
+        _chatRoomService = _steamUnifiedMessages.CreateService<SteamKit2.Internal.ChatRoom>();
 
         _cancellationTokenSource = new CancellationTokenSource();
         
@@ -76,6 +81,8 @@ public class SteamClientManager : IDisposable
         _callbackManager.Subscribe<SteamFriends.PersonaStateCallback>(OnPersonaStateChange);
         _callbackManager.Subscribe<SteamFriends.FriendMsgCallback>(OnMessageReceived);
         _callbackManager.Subscribe<SteamFriends.FriendMsgEchoCallback>(OnMessageEcho);
+        _callbackManager.SubscribeServiceNotification<SteamKit2.Internal.ChatRoomClient, SteamKit2.Internal.CChatRoom_IncomingChatMessage_Notification>(OnGroupMessageNotification);
+        _callbackManager.SubscribeServiceNotification<SteamKit2.Internal.FriendMessagesClient, SteamKit2.Internal.CFriendMessages_IncomingMessage_Notification>(OnDirectMessageNotification);
         
         // Start callback processing task
         _callbackTask = Task.Run(ProcessCallbacks, _cancellationTokenSource.Token);
@@ -178,8 +185,8 @@ public class SteamClientManager : IDisposable
             // Enhanced client masquerading to appear as official Steam client
             ClientOSType = EOSType.Win11, // Modern Windows client
             MachineName = Environment.MachineName, // Remove "(SteamKit2)" suffix
-            UIMode = SteamKit2.EUIMode.ClientUI, // Desktop Steam client UI mode
-            ChatMode = SteamUser.ChatMode.Default, // Keep default chat mode for compatibility with FriendMsgCallback
+            UIMode = SteamKit2.EUIMode.DesktopUI, // Desktop Steam client UI mode
+            ChatMode = SteamUser.ChatMode.NewSteamChat, // GroupChat mode required to receive CChatRoom_IncomingChatMessage_Notification
             ClientLanguage = "english",
             AccountInstance = SteamID.DesktopInstance, // PC Steam instance
             
@@ -283,6 +290,16 @@ public class SteamClientManager : IDisposable
     {
         _logger.LogDebug("Message echo from {SteamID}: {Message}", callback.Recipient, callback.Message);
         MessageEcho?.Invoke(this, callback);
+    }
+
+    private void OnGroupMessageNotification(SteamKit2.SteamUnifiedMessages.ServiceMethodNotification<SteamKit2.Internal.CChatRoom_IncomingChatMessage_Notification> notification)
+    {
+        GroupMessageReceived?.Invoke(this, notification.Body);
+    }
+
+    private void OnDirectMessageNotification(SteamKit2.SteamUnifiedMessages.ServiceMethodNotification<SteamKit2.Internal.CFriendMessages_IncomingMessage_Notification> notification)
+    {
+        DirectMessageReceived?.Invoke(this, notification.Body);
     }
 
     public void Dispose()

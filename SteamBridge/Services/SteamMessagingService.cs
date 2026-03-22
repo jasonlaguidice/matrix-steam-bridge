@@ -37,8 +37,20 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
 
         try
         {
+            if (request.ChatGroupId != 0)
+            {
+                var groupResult = await _messagingManager.SendGroupMessageAsync(
+                    request.ChatGroupId, request.ChatId, request.Message);
+                return new SendMessageResponse
+                {
+                    Success = groupResult.Success,
+                    ErrorMessage = groupResult.ErrorMessage ?? string.Empty,
+                    Timestamp = groupResult.Timestamp,
+                };
+            }
+
             var messageType = MapFromProtoMessageType(request.MessageType);
-            
+
             // If there's an image URL, format the message to include it
             string messageToSend = request.Message;
             if (!string.IsNullOrEmpty(request.ImageUrl))
@@ -93,10 +105,13 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                 {
                     SenderSteamId = message.SenderSteamId,
                     TargetSteamId = message.TargetSteamId,
-                    Message = caption, // Use parsed caption instead of full message
+                    Message = !string.IsNullOrEmpty(imageUrl) ? caption : message.Message,
                     MessageType = MapToProtoMessageType(message.MessageType),
                     Timestamp = message.Timestamp,
-                    IsEcho = message.IsEcho
+                    IsEcho = message.IsEcho,
+                    ChatGroupId = message.ChatGroupId,
+                    ChatId = message.ChatId,
+                    Ordinal = message.Ordinal,
                 };
 
                 // Set image URL if present
@@ -571,11 +586,19 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
 
         if (response.messages != null)
         {
+            // Get the universe from our own Steam ID for constructing sender IDs.
+            // msg.sender from CChatRoom_GetMessageHistory_Response is a 32-bit account ID,
+            // not a full SteamID64. Convert it exactly as GetFriendMessageHistory does.
+            var myUniverse = _steamClientManager.SteamClient.SteamID?.AccountUniverse ?? EUniverse.Public;
+
             foreach (var msg in response.messages)
             {
+                // Convert 32-bit account ID to full 64-bit Steam ID using SteamKit's constructor
+                var senderSteamId = new SteamID(msg.sender, myUniverse, EAccountType.Individual);
+
                 var historyMessage = new ChatHistoryMessage
                 {
-                    SenderSteamId = msg.sender,
+                    SenderSteamId = senderSteamId.ConvertToUInt64(),
                     Timestamp = msg.server_timestamp,
                     Ordinal = msg.ordinal,
                     MessageContent = msg.message ?? string.Empty,

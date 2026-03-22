@@ -32,6 +32,8 @@ public class SteamMessagingManager : IDisposable
         // Subscribe to Steam message events
         _steamClientManager.MessageReceived += OnMessageReceived;
         _steamClientManager.MessageEcho += OnMessageEcho;
+        _steamClientManager.GroupMessageReceived += OnGroupMessageReceived;
+        _steamClientManager.DirectMessageReceived += OnDirectMessageReceived;
         
         _logger.LogInformation("SteamMessagingManager initialized");
     }
@@ -71,6 +73,39 @@ public class SteamMessagingManager : IDisposable
                 Success = false,
                 ErrorMessage = $"Failed to send message: {ex.Message}"
             };
+        }
+    }
+
+    public async Task<SendMessageResult> SendGroupMessageAsync(
+        ulong chatGroupId, ulong chatId, string message)
+    {
+        if (!_steamClientManager.IsLoggedOn)
+            return new SendMessageResult { Success = false, ErrorMessage = "Not logged on" };
+
+        try
+        {
+            var request = new SteamKit2.Internal.CChatRoom_SendChatMessage_Request
+            {
+                chat_group_id = chatGroupId,
+                chat_id = chatId,
+                message = message,
+            };
+            var job = _steamClientManager.ChatRoomService.SendChatMessage(request);
+            var result = await job.ToTask();
+
+            if (result == null || result.Result != SteamKit2.EResult.OK)
+                return new SendMessageResult { Success = false, ErrorMessage = $"Steam API: {result?.Result}" };
+
+            return new SendMessageResult
+            {
+                Success = true,
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending group message");
+            return new SendMessageResult { Success = false, ErrorMessage = ex.Message };
         }
     }
 
@@ -171,6 +206,90 @@ public class SteamMessagingManager : IDisposable
         }
     }
 
+    private async void OnGroupMessageReceived(object? sender, SteamKit2.Internal.CChatRoom_IncomingChatMessage_Notification notification)
+    {
+        try
+        {
+            // Skip server messages (system events, not user chat)
+            if (notification.server_message != null) return;
+
+            var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
+            var msgRaw = notification.message?.TrimEnd('\0');
+
+            var messageEvent = new MessageEvent
+            {
+                SenderSteamId = notification.steamid_sender,
+                TargetSteamId = 0, // Group messages have no single target
+                Message = msgRaw ?? string.Empty,
+                MessageType = MessageType.ChatMessage,
+                Timestamp = notification.timestamp > 0 ? (long)notification.timestamp : DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                IsEcho = notification.steamid_sender == (_steamClientManager.SteamClient.SteamID?.ConvertToUInt64() ?? 0),
+                ChatGroupId = notification.chat_group_id,
+                ChatId = notification.chat_id,
+                Ordinal = notification.ordinal,
+            };
+
+            _logger.LogDebug("Group message from {Sender} in group {GroupId} channel {ChatId}",
+                notification.steamid_sender, notification.chat_group_id, notification.chat_id);
+
+            await _messageWriter.WriteAsync(messageEvent);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing group message notification");
+        }
+    }
+
+    private async void OnDirectMessageReceived(object? sender, SteamKit2.Internal.CFriendMessages_IncomingMessage_Notification notification)
+    {
+        try
+        {
+            // Only handle actual chat messages; skip typing indicators etc.
+            if (notification.chat_entry_type != 1) return;
+
+            var msgRaw = notification.message?.TrimEnd('\0');
+            var text = msgRaw ?? string.Empty;
+
+            var botSteamId = _steamClientManager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
+
+            ulong senderSteamId;
+            ulong targetSteamId;
+            if (!notification.local_echo)
+            {
+                senderSteamId = notification.steamid_friend;
+                targetSteamId = botSteamId;
+            }
+            else
+            {
+                senderSteamId = botSteamId;
+                targetSteamId = notification.steamid_friend;
+            }
+
+            var messageEvent = new MessageEvent
+            {
+                SenderSteamId = senderSteamId,
+                TargetSteamId = targetSteamId,
+                Message = text,
+                MessageType = MessageType.ChatMessage,
+                Timestamp = (long)notification.rtime32_server_timestamp,
+                IsEcho = notification.local_echo,
+                ChatGroupId = 0,
+                ChatId = 0,
+            };
+
+            _logger.LogInformation("DM {Direction} {PeerId}: {Message}",
+                notification.local_echo ? "to" : "from",
+                notification.steamid_friend,
+                text);
+
+            await _messageWriter.WriteAsync(messageEvent);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing direct message notification");
+        }
+    }
+
     private async void OnMessageEcho(object? sender, SteamFriends.FriendMsgEchoCallback callback)
     {
         try
@@ -228,6 +347,8 @@ public class SteamMessagingManager : IDisposable
         
         _steamClientManager.MessageReceived -= OnMessageReceived;
         _steamClientManager.MessageEcho -= OnMessageEcho;
+        _steamClientManager.GroupMessageReceived -= OnGroupMessageReceived;
+        _steamClientManager.DirectMessageReceived -= OnDirectMessageReceived;
         
         _logger.LogInformation("SteamMessagingManager disposed");
     }
@@ -248,6 +369,10 @@ public class MessageEvent
     public MessageType MessageType { get; set; }
     public long Timestamp { get; set; }
     public bool IsEcho { get; set; }
+    public string ImageUrl { get; set; } = string.Empty;
+    public ulong ChatGroupId { get; set; }  // 0 for DMs
+    public ulong ChatId { get; set; }       // 0 for DMs
+    public uint Ordinal { get; set; }       // Message ordinal for deduplication with backfill
 }
 
 public enum MessageType
