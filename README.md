@@ -108,7 +108,7 @@ Supported architectures: `linux/amd64`, `linux/arm64`
 
 Notes:
 - The configuration file will be regenerated with the example if you delete it
-- The registration file will be regerenerated if you delete it, but leave the configuration file there
+- The registration file will be regenerated if you delete it, but leave the configuration file there
 
 ## Usage
 
