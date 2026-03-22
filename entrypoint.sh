@@ -52,7 +52,6 @@ if [ ! -f "${CONFIG_FILE}" ]; then
     fi
 
     /app/steam -e -c "${CONFIG_FILE}"
-    # mv /app/config.yaml "${CONFIG_FILE}"
     echo "Edit the config file and restart the container to create the registration."
     exit 0
 fi
