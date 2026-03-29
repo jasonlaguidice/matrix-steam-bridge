@@ -22,9 +22,8 @@ if [ ! -w "/app/data" ]; then
 fi
 
 if [ ! -w "/app/logs" ]; then
-    echo "Error: /app/logs is not writable by bridge user"
-    echo "Ensure it has write permissions for user with ID $(id -u)"
-    exit 1
+    echo "Warning: /app/logs is not writable by bridge user (ID $(id -u))"
+    echo "File logging will be unavailable. To enable it, ensure /app/logs has write permissions for user with ID $(id -u)"
 fi
 
 echo "Using Config-file at ${CONFIG_FILE}"
