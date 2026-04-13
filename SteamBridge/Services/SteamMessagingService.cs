@@ -1,6 +1,7 @@
 using Grpc.Core;
 using SteamBridge.Proto;
 using Microsoft.Extensions.Logging;
+using System.Text.RegularExpressions;
 using SteamKit2;
 using SteamKit2.Internal;
 
@@ -427,7 +428,8 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
         {
             steamid1 = mySteamId,
             steamid2 = request.ChatId, // ChatId contains the friend's Steam ID for DMs
-            count = Math.Min(request.MaxCount, 100)
+            count = Math.Min(request.MaxCount, 100),
+            bbcode_format = true // Request raw BBCode so we can detect invite tags
         };
 
         // Set pagination cursor based on direction
@@ -490,21 +492,26 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                 // FriendMessages API returns account IDs only, following SteamKit's own pattern from Callbacks.cs
                 var senderSteamId = new SteamID(msg.accountid, myUniverse, EAccountType.Individual);
 
+                var (msgContent, msgType) = ProcessHistoryMessageContent(msg.message ?? string.Empty);
+
                 var historyMessage = new ChatHistoryMessage
                 {
                     SenderSteamId = senderSteamId.ConvertToUInt64(),
                     Timestamp = msg.timestamp,
                     Ordinal = msg.ordinal,
-                    MessageContent = msg.message ?? string.Empty,
-                    MessageType = Proto.MessageType.ChatMessage // FriendMessages API doesn't include message type
+                    MessageContent = msgContent,
+                    MessageType = msgType
                 };
 
-                // Parse image messages if present
-                var (imageUrl, caption) = ParseImageMessage(historyMessage.MessageContent);
-                if (!string.IsNullOrEmpty(imageUrl))
+                // Parse image messages if present (only for non-invite messages)
+                if (msgType == Proto.MessageType.ChatMessage)
                 {
-                    historyMessage.ImageUrl = imageUrl;
-                    historyMessage.MessageContent = caption;
+                    var (imageUrl, caption) = ParseImageMessage(historyMessage.MessageContent);
+                    if (!string.IsNullOrEmpty(imageUrl))
+                    {
+                        historyMessage.ImageUrl = imageUrl;
+                        historyMessage.MessageContent = caption;
+                    }
                 }
 
                 historyResponse.Messages.Add(historyMessage);
@@ -642,5 +649,25 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
             4 => Proto.MessageType.InviteGame,   // k_EChatEntryType_InviteGame
             _ => Proto.MessageType.ChatMessage   // Default to chat message
         };
+    }
+
+    /// <summary>
+    /// Processes a raw history message body, detecting invite BBCode tags and converting
+    /// them to human-readable plain text with the appropriate message type.
+    /// </summary>
+    private static (string content, Proto.MessageType type) ProcessHistoryMessageContent(string raw)
+    {
+        if (raw.StartsWith("[lobbyinvite", StringComparison.OrdinalIgnoreCase))
+        {
+            var appIdMatch = Regex.Match(raw, @"appid=""?(\d+)""?", RegexOptions.IgnoreCase);
+            if (appIdMatch.Success)
+                return ($"Invited you to play a game (App ID: {appIdMatch.Groups[1].Value})", Proto.MessageType.InviteGame);
+            return ("Invited you to play a game", Proto.MessageType.InviteGame);
+        }
+
+        if (raw.StartsWith("[joingame", StringComparison.OrdinalIgnoreCase))
+            return ("Invited you to join a game", Proto.MessageType.InviteGame);
+
+        return (raw, Proto.MessageType.ChatMessage);
     }
 }

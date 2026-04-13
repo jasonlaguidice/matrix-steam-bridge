@@ -195,7 +195,25 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 		}
 	}
 
-	if steamMsg.ImageUrl != "" {
+	if steamMsg.MessageType == steamapi.MessageType_INVITE_GAME {
+		// Game invite: render as a notice with the plain-text body from C#
+		body := steamMsg.MessageContent
+		if body == "" {
+			body = "Invited you to play a game"
+		}
+		convertedMsg = &bridgev2.ConvertedMessage{
+			Parts: []*bridgev2.ConvertedMessagePart{
+				{
+					Type: event.EventMessage,
+					Content: &event.MessageEventContent{
+						MsgType: event.MsgNotice,
+						Body:    "🎮 Game Invite: " + body,
+					},
+					ID: networkid.PartID("text"),
+				},
+			},
+		}
+	} else if steamMsg.ImageUrl != "" {
 		// Handle image message
 		convertedMsg, err = sc.convertImageMessageFromHistory(ctx, steamMsg.MessageContent, steamMsg.ImageUrl, portal)
 	} else {
@@ -214,10 +232,20 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 		Timestamp: timestamp,
 	}
 
+	// Compute message ID — for DM game invites, use the same format as the real-time path
+	// so the bridge can deduplicate backfill vs real-time events.
+	var msgID string
+	idType, _, _, _ := parsePortalID(portal.PortalKey.ID)
+	if steamMsg.MessageType == steamapi.MessageType_INVITE_GAME && idType == PortalIDTypeDM {
+		msgID = fmt.Sprintf("%d:%d:invite", steamMsg.SenderSteamId, steamMsg.Timestamp)
+	} else {
+		msgID = fmt.Sprintf("%d_%d", steamMsg.Timestamp, steamMsg.Ordinal)
+	}
+
 	backfillMsg := &bridgev2.BackfillMessage{
 		ConvertedMessage: convertedMsg,
 		Sender:           sender,
-		ID:               networkid.MessageID(fmt.Sprintf("%d_%d", steamMsg.Timestamp, steamMsg.Ordinal)),
+		ID:               networkid.MessageID(msgID),
 		Timestamp:        timestamp,
 		StreamOrder:      int64(steamMsg.Ordinal),        // Use ordinal for ordering
 		Reactions:        []*bridgev2.BackfillReaction{}, // TODO: Add reaction support

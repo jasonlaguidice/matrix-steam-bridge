@@ -1,6 +1,7 @@
 using SteamKit2;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
 using System.Threading.Channels;
 
 namespace SteamBridge.Services;
@@ -248,7 +249,9 @@ public class SteamMessagingManager : IDisposable
             if (notification.chat_entry_type != 1) return;
 
             var msgRaw = notification.message?.TrimEnd('\0');
-            var text = msgRaw ?? string.Empty;
+            var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
+
+            var (text, msgType) = ProcessMessageContent(msgRaw ?? string.Empty, msgNoBbCode ?? string.Empty);
 
             var botSteamId = _steamClientManager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
 
@@ -270,16 +273,17 @@ public class SteamMessagingManager : IDisposable
                 SenderSteamId = senderSteamId,
                 TargetSteamId = targetSteamId,
                 Message = text,
-                MessageType = MessageType.ChatMessage,
+                MessageType = msgType,
                 Timestamp = (long)notification.rtime32_server_timestamp,
                 IsEcho = notification.local_echo,
                 ChatGroupId = 0,
                 ChatId = 0,
             };
 
-            _logger.LogInformation("DM {Direction} {PeerId}: {Message}",
+            _logger.LogInformation("DM {Direction} {PeerId} [{Type}]: {Message}",
                 notification.local_echo ? "to" : "from",
                 notification.steamid_friend,
+                msgType,
                 text);
 
             await _messageWriter.WriteAsync(messageEvent);
@@ -288,6 +292,33 @@ public class SteamMessagingManager : IDisposable
         {
             _logger.LogError(ex, "Error processing direct message notification");
         }
+    }
+
+    /// <summary>
+    /// Determines the human-readable text and message type for a raw Steam message body.
+    /// Detects game/lobby invite BBCode tags and converts them to plain text.
+    /// </summary>
+    private static (string text, MessageType type) ProcessMessageContent(string raw, string noBbCode)
+    {
+        // Detect lobby or game invites by their BBCode prefix (case-insensitive)
+        bool isInvite = raw.StartsWith("[lobbyinvite", StringComparison.OrdinalIgnoreCase)
+                     || raw.StartsWith("[joingame", StringComparison.OrdinalIgnoreCase);
+
+        if (isInvite)
+        {
+            // Prefer the server-stripped plain-text version Steam already provides
+            if (!string.IsNullOrWhiteSpace(noBbCode))
+                return (noBbCode, MessageType.InviteGame);
+
+            // Fallback: extract appid attribute from BBCode with a regex
+            var appIdMatch = Regex.Match(raw, @"appid=""?(\d+)""?", RegexOptions.IgnoreCase);
+            if (appIdMatch.Success)
+                return ($"Invited you to play a game (App ID: {appIdMatch.Groups[1].Value})", MessageType.InviteGame);
+
+            return ("Invited you to play a game", MessageType.InviteGame);
+        }
+
+        return (raw, MessageType.ChatMessage);
     }
 
     private async void OnMessageEcho(object? sender, SteamFriends.FriendMsgEchoCallback callback)

@@ -851,9 +851,13 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 			Body:    data.Message,
 		}
 	case steamapi.MessageType_INVITE_GAME:
+		inviteBody := data.Message
+		if inviteBody == "" {
+			inviteBody = "Invited you to play a game"
+		}
 		content = &event.MessageEventContent{
 			MsgType: event.MsgNotice,
-			Body:    fmt.Sprintf("🎮 Game Invite: %s", data.Message),
+			Body:    fmt.Sprintf("🎮 Game Invite: %s", inviteBody),
 		}
 	default:
 		return nil, fmt.Errorf("unsupported message type: %s", data.MessageType.String())
