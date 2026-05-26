@@ -108,7 +108,9 @@ func (sc *SteamClient) syncFriendsOnStartup(ctx context.Context) {
 	}
 
 	// Get the user's friends list from Steam
-	resp, err := sc.userClient.GetFriendsList(ctx, &steamapi.FriendsListRequest{})
+	resp, err := sc.userClient.GetFriendsList(ctx, &steamapi.FriendsListRequest{
+		SteamId: sc.steamID(),
+	})
 	if err != nil {
 		sc.br.Log.Err(err).Msg("Failed to get friends list for startup sync")
 		return

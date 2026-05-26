@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
 	"maunium.net/go/mautrix/bridgev2/status"
@@ -81,6 +82,9 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 		}
 
 		slp.Username = username
+		if slp.LoginSessionKey == "" {
+			slp.LoginSessionKey = uuid.New().String()
+		}
 
 		req := &steamapi.CredentialsLoginRequest{
 			Username:         username,
@@ -88,6 +92,7 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 			GuardCode:        guardCode,
 			EmailCode:        emailCode,
 			RememberPassword: true,
+			LoginSessionKey:  slp.LoginSessionKey,
 		}
 
 		resp, err = slp.Main.authClient.LoginWithCredentials(loginCtx, req)
@@ -304,7 +309,10 @@ func (slq *SteamLoginQR) Start(ctx context.Context) (*bridgev2.LoginStep, error)
 	}
 
 	// Start QR authentication with SteamBridge service
-	resp, err := slq.Main.authClient.LoginWithQR(ctx, &steamapi.QRLoginRequest{})
+	slq.LoginSessionKey = uuid.New().String()
+	resp, err := slq.Main.authClient.LoginWithQR(ctx, &steamapi.QRLoginRequest{
+		LoginSessionKey: slq.LoginSessionKey,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to start QR login: %w", err)
 	}

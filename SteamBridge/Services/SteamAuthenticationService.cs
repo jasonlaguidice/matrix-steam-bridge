@@ -9,26 +9,29 @@ namespace SteamBridge.Services;
 public class SteamAuthenticationService
 {
     private readonly ILogger<SteamAuthenticationService> _logger;
-    private readonly SteamClientManager _steamClientManager;
+    private readonly SteamClientRegistry _registry;
     private readonly ConcurrentDictionary<string, AuthSession> _activeAuthSessions;
     private readonly ConcurrentDictionary<string, QRAuthSessionInfo> _qrAuthSessions;
     private readonly ConcurrentDictionary<string, string> _sessionUsernames;
-    
+    private readonly ConcurrentDictionary<string, string> _sessionIdToLoginKey;
+
     public SteamAuthenticationService(
         ILogger<SteamAuthenticationService> logger,
-        SteamClientManager steamClientManager)
+        SteamClientRegistry registry)
     {
         _logger = logger;
-        _steamClientManager = steamClientManager;
+        _registry = registry;
         _activeAuthSessions = new ConcurrentDictionary<string, AuthSession>();
         _qrAuthSessions = new ConcurrentDictionary<string, QRAuthSessionInfo>();
         _sessionUsernames = new ConcurrentDictionary<string, string>();
+        _sessionIdToLoginKey = new ConcurrentDictionary<string, string>();
     }
 
     public async Task<CredentialsLoginResult> LoginWithCredentialsAsync(
-        string username, 
-        string password, 
-        string? guardCode = null, 
+        string username,
+        string password,
+        string loginSessionKey,
+        string? guardCode = null,
         bool rememberPassword = false,
         string? emailCode = null)
     {
@@ -36,11 +39,13 @@ public class SteamAuthenticationService
         {
             _logger.LogInformation("Attempting credentials login for user: {Username}, HasGuardCode: {HasGuardCode}, HasEmailCode: {HasEmailCode}", username, !string.IsNullOrEmpty(guardCode), !string.IsNullOrEmpty(emailCode));
 
+            var manager = _registry.GetOrCreate(loginSessionKey);
+
             // Ensure connected to Steam
-            if (!_steamClientManager.IsConnected)
+            if (!manager.IsConnected)
             {
                 _logger.LogDebug("Steam client not connected, attempting to connect");
-                var connected = await _steamClientManager.ConnectAsync();
+                var connected = await manager.ConnectAsync();
                 if (!connected)
                 {
                     _logger.LogError("Failed to connect to Steam network");
@@ -64,12 +69,13 @@ public class SteamAuthenticationService
                 WebsiteID = "Unknown"
             };
 
-            var authSession = await _steamClientManager.BeginAuthSessionViaCredentialsAsync(authSessionDetails);
+            var authSession = await manager.BeginAuthSessionViaCredentialsAsync(authSessionDetails);
             
             // Store the session for potential polling
             var sessionId = Guid.NewGuid().ToString();
             _activeAuthSessions[sessionId] = authSession;
             _sessionUsernames[sessionId] = username;
+            _sessionIdToLoginKey[sessionId] = loginSessionKey;
             
             bool shouldCleanupSession = true; // Flag to control session cleanup
 
@@ -90,21 +96,25 @@ public class SteamAuthenticationService
                     _logger.LogInformation("Authentication polling completed successfully for user: {Username}", username);
 
                     // Log on with the access token, including username for SteamKit2 compatibility
-                    _steamClientManager.LogOn(pollResult.AccessToken, pollResult.RefreshToken, username);
+                    manager.LogOn(pollResult.AccessToken, pollResult.RefreshToken, username);
 
                     // Wait for successful logon
-                    var logonSuccess = await WaitForLogonAsync();
-                    
+                    var logonSuccess = await WaitForLogonAsync(manager);
+
                     _activeAuthSessions.TryRemove(sessionId, out _);
                     _sessionUsernames.TryRemove(sessionId, out _);
+                    _sessionIdToLoginKey.TryRemove(sessionId, out _);
+                    var steamId = manager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
+                    if (steamId != 0)
+                        _registry.TransitionKey(loginSessionKey, steamId.ToString());
 
-                    if (!logonSuccess || !_steamClientManager.IsLoggedOn)
+                    if (!logonSuccess || !manager.IsLoggedOn)
                     {
-                        _logger.LogWarning("Steam logon failed for user: {Username} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}", 
-                            username, logonSuccess, _steamClientManager.IsLoggedOn);
-                        
+                        _logger.LogWarning("Steam logon failed for user: {Username} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}",
+                            username, logonSuccess, manager.IsLoggedOn);
+
                         // Additional verification - check if Steam is actually connected
-                        bool steamConnected = _steamClientManager.IsConnected && _steamClientManager.IsLoggedOn;
+                        bool steamConnected = manager.IsConnected && manager.IsLoggedOn;
                         
                         return new CredentialsLoginResult
                         {
@@ -116,7 +126,7 @@ public class SteamAuthenticationService
                     }
 
                     // Verify Steam client state before reporting success
-                    if (!_steamClientManager.IsConnected)
+                    if (!manager.IsConnected)
                     {
                         _logger.LogError("Steam client not connected after successful logon for user: {Username}", username);
                         return new CredentialsLoginResult
@@ -128,8 +138,8 @@ public class SteamAuthenticationService
 
                     _logger.LogInformation("Successfully authenticated user: {Username}", username);
 
-                    // Get current user info but preserve the AccountName from password authentication  
-                    var userInfo = await GetCurrentUserInfoAsync();
+                    // Get current user info but preserve the AccountName from password authentication
+                    var userInfo = await GetCurrentUserInfoAsync(manager);
                     if (userInfo != null && !string.IsNullOrEmpty(pollResult.AccountName))
                     {
                         // Override AccountName with the real account name from password authentication
@@ -224,6 +234,7 @@ public class SteamAuthenticationService
                 {
                     _activeAuthSessions.TryRemove(sessionId, out _);
                     _sessionUsernames.TryRemove(sessionId, out _);
+                    _sessionIdToLoginKey.TryRemove(sessionId, out _);
                 }
             }
         }
@@ -258,16 +269,18 @@ public class SteamAuthenticationService
         }
     }
 
-    public async Task<QRLoginResult> StartQRLoginAsync()
+    public async Task<QRLoginResult> StartQRLoginAsync(string loginSessionKey)
     {
         try
         {
             _logger.LogInformation("Starting QR code authentication");
 
+            var manager = _registry.GetOrCreate(loginSessionKey);
+
             // Ensure connected to Steam
-            if (!_steamClientManager.IsConnected)
+            if (!manager.IsConnected)
             {
-                var connected = await _steamClientManager.ConnectAsync();
+                var connected = await manager.ConnectAsync();
                 if (!connected)
                 {
                     return new QRLoginResult
@@ -279,7 +292,7 @@ public class SteamAuthenticationService
             }
 
             // Begin QR authentication session
-            var qrAuthSession = await _steamClientManager.BeginAuthSessionViaQRAsync();
+            var qrAuthSession = await manager.BeginAuthSessionViaQRAsync();
             
             // Log URL details for debugging
             _logger.LogInformation("Steam QR Challenge URL received: {Length} characters", qrAuthSession.ChallengeURL.Length);
@@ -295,6 +308,7 @@ public class SteamAuthenticationService
                 QrAuthSession = qrAuthSession,
                 StartTime = DateTime.UtcNow
             };
+            _sessionIdToLoginKey[sessionId] = loginSessionKey;
 
             _logger.LogInformation("QR authentication session created with ID: {SessionId}", sessionId);
 
@@ -339,6 +353,24 @@ public class SteamAuthenticationService
             };
         }
 
+        if (!_sessionIdToLoginKey.TryGetValue(sessionId, out var loginSessionKey))
+        {
+            return new AuthStatusResult
+            {
+                State = AuthState.Failed,
+                ErrorMessage = "Auth session routing key not found"
+            };
+        }
+        var manager = _registry.Get(loginSessionKey);
+        if (manager == null)
+        {
+            return new AuthStatusResult
+            {
+                State = AuthState.Failed,
+                ErrorMessage = "Steam client manager not found for session"
+            };
+        }
+
         try
         {
             // Use non-blocking polling to check authentication status
@@ -378,20 +410,24 @@ public class SteamAuthenticationService
 
             // Authentication successful, log on
             // Use AccountName from pollResult as the username (required by SteamKit2)
-            _steamClientManager.LogOn(pollResult.AccessToken, pollResult.RefreshToken, pollResult.AccountName);
+            manager.LogOn(pollResult.AccessToken, pollResult.RefreshToken, pollResult.AccountName);
 
             // Wait for successful logon
-            var logonSuccess = await WaitForLogonAsync();
-            
-            _qrAuthSessions.TryRemove(sessionId, out _);
+            var logonSuccess = await WaitForLogonAsync(manager);
 
-            if (!logonSuccess || !_steamClientManager.IsLoggedOn)
+            _qrAuthSessions.TryRemove(sessionId, out _);
+            _sessionIdToLoginKey.TryRemove(sessionId, out _);
+            var steamId2 = manager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
+            if (steamId2 != 0)
+                _registry.TransitionKey(loginSessionKey, steamId2.ToString());
+
+            if (!logonSuccess || !manager.IsLoggedOn)
             {
-                _logger.LogWarning("QR authentication logon failed for session: {SessionId} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}", 
-                    sessionId, logonSuccess, _steamClientManager.IsLoggedOn);
-                
+                _logger.LogWarning("QR authentication logon failed for session: {SessionId} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}",
+                    sessionId, logonSuccess, manager.IsLoggedOn);
+
                 // Additional verification - check if Steam is actually connected
-                bool steamConnected = _steamClientManager.IsConnected && _steamClientManager.IsLoggedOn;
+                bool steamConnected = manager.IsConnected && manager.IsLoggedOn;
                 
                 return new AuthStatusResult
                 {
@@ -403,7 +439,7 @@ public class SteamAuthenticationService
             }
 
             // Verify Steam client state before reporting success
-            if (!_steamClientManager.IsConnected)
+            if (!manager.IsConnected)
             {
                 _logger.LogError("Steam client not connected after successful QR logon for session: {SessionId}", sessionId);
                 return new AuthStatusResult
@@ -416,7 +452,7 @@ public class SteamAuthenticationService
             _logger.LogInformation("QR authentication successful for session: {SessionId}", sessionId);
 
             // Get current user info but preserve the AccountName from QR authentication
-            var userInfo = await GetCurrentUserInfoAsync();
+            var userInfo = await GetCurrentUserInfoAsync(manager);
             if (userInfo != null)
             {
                 // Override AccountName with the real account name from QR authentication
@@ -443,13 +479,16 @@ public class SteamAuthenticationService
     }
 
     public async Task<TokenReAuthResult> ReAuthenticateWithTokensAsync(
-        string accessToken, 
-        string refreshToken, 
-        string username)
+        string accessToken,
+        string refreshToken,
+        string username,
+        ulong steamId)
     {
         try
         {
             _logger.LogInformation("Attempting token re-authentication for user: {Username}", username);
+
+            var manager = _registry.GetOrCreate(steamId.ToString());
 
             // Validate input parameters
             if (string.IsNullOrEmpty(refreshToken))
@@ -473,10 +512,10 @@ public class SteamAuthenticationService
             }
 
             // Ensure connected to Steam
-            if (!_steamClientManager.IsConnected)
+            if (!manager.IsConnected)
             {
                 _logger.LogDebug("Steam client not connected, attempting to connect");
-                var connected = await _steamClientManager.ConnectAsync();
+                var connected = await manager.ConnectAsync();
                 if (!connected)
                 {
                     _logger.LogError("Failed to connect to Steam network");
@@ -493,18 +532,18 @@ public class SteamAuthenticationService
             // Attempt to log on using stored tokens
             // Per SteamKit2 pattern, use RefreshToken as AccessToken for LogOnDetails
             _logger.LogDebug("Attempting logon with stored tokens for user: {Username}", username);
-            _steamClientManager.LogOn(accessToken, refreshToken, username);
+            manager.LogOn(accessToken, refreshToken, username);
 
             // Wait for logon result
-            var logonSuccess = await WaitForLogonAsync();
-            
-            if (!logonSuccess || !_steamClientManager.IsLoggedOn)
+            var logonSuccess = await WaitForLogonAsync(manager);
+
+            if (!logonSuccess || !manager.IsLoggedOn)
             {
-                _logger.LogWarning("Token re-authentication failed for user: {Username} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}", 
-                    username, logonSuccess, _steamClientManager.IsLoggedOn);
-                
+                _logger.LogWarning("Token re-authentication failed for user: {Username} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}",
+                    username, logonSuccess, manager.IsLoggedOn);
+
                 // Additional verification - check if Steam is actually connected
-                bool steamConnected = _steamClientManager.IsConnected && _steamClientManager.IsLoggedOn;
+                bool steamConnected = manager.IsConnected && manager.IsLoggedOn;
                 
                 return new TokenReAuthResult
                 {
@@ -517,7 +556,7 @@ public class SteamAuthenticationService
             }
 
             // Verify Steam client state before reporting success
-            if (!_steamClientManager.IsConnected)
+            if (!manager.IsConnected)
             {
                 _logger.LogError("Steam client not connected after successful logon for user: {Username}", username);
                 return new TokenReAuthResult
@@ -534,7 +573,7 @@ public class SteamAuthenticationService
             {
                 Success = true,
                 State = AuthState.Authenticated,
-                UserInfo = await GetCurrentUserInfoAsync(),
+                UserInfo = await GetCurrentUserInfoAsync(manager),
                 // Note: For now, we don't refresh tokens - that would require additional SteamKit2 integration
                 NewAccessToken = accessToken,  // Return original tokens since we don't refresh yet
                 NewRefreshToken = refreshToken
@@ -552,44 +591,42 @@ public class SteamAuthenticationService
         }
     }
 
-    public Task<bool> LogoutAsync()
+    public Task<bool> LogoutAsync(ulong steamId)
     {
-        _logger.LogInformation("Logging out from Steam");
-        
-        if (_steamClientManager.IsLoggedOn)
+        _logger.LogInformation("Logging out Steam session for steam_id: {SteamId}", steamId);
+
+        var manager = _registry.Get(steamId.ToString());
+        if (manager != null && manager.IsLoggedOn)
         {
-            _steamClientManager.SteamUser.LogOff();
+            manager.SteamUser.LogOff();
         }
-        
-        // Clear any active sessions
-        _activeAuthSessions.Clear();
-        _qrAuthSessions.Clear();
-        _sessionUsernames.Clear();
-        
+
+        _registry.Remove(steamId.ToString());
+
         return Task.FromResult(true);
     }
 
-    private async Task<bool> WaitForLogonAsync()
+    private async Task<bool> WaitForLogonAsync(SteamClientManager manager)
     {
         var timeout = TimeSpan.FromSeconds(30);
         var startTime = DateTime.UtcNow;
-        
+
         // Wait for both login AND friends list to be ready
-        while (!_steamClientManager.IsFriendsListLoaded && DateTime.UtcNow - startTime < timeout)
+        while (!manager.IsFriendsListLoaded && DateTime.UtcNow - startTime < timeout)
         {
             await Task.Delay(100);
         }
-        
-        return _steamClientManager.IsFriendsListLoaded;
+
+        return manager.IsFriendsListLoaded;
     }
 
-    private async Task<UserInfo?> GetCurrentUserInfoAsync()
+    private async Task<UserInfo?> GetCurrentUserInfoAsync(SteamClientManager manager)
     {
-        if (!_steamClientManager.IsLoggedOn)
+        if (!manager.IsLoggedOn)
             return null;
 
-        var steamFriends = _steamClientManager.SteamFriends;
-        var steamId = _steamClientManager.SteamClient.SteamID;
+        var steamFriends = manager.SteamFriends;
+        var steamId = manager.SteamClient.SteamID;
 
         if (steamId == null)
             return null;
@@ -683,6 +720,26 @@ public class SteamAuthenticationService
                 username = ""; // Fallback to empty string if not found
             }
 
+            if (!_sessionIdToLoginKey.TryGetValue(sessionId, out var loginSessionKey))
+            {
+                _logger.LogWarning("Login key not found for session: {SessionId}", sessionId);
+                return new CredentialsLoginResult
+                {
+                    Success = false,
+                    ErrorMessage = "Authentication session routing key not found"
+                };
+            }
+            var manager = _registry.Get(loginSessionKey);
+            if (manager == null)
+            {
+                _logger.LogWarning("Steam client manager not found for session: {SessionId}", sessionId);
+                return new CredentialsLoginResult
+                {
+                    Success = false,
+                    ErrorMessage = "Steam client manager not found for session"
+                };
+            }
+
             // Update the existing authenticator with the provided codes
             // The authSession still references the original BridgeAuthenticator
             if (authSession.Authenticator is BridgeAuthenticator bridgeAuth)
@@ -721,31 +778,35 @@ public class SteamAuthenticationService
                 _logger.LogDebug("Authentication session completed successfully: {SessionId}", sessionId);
 
                 // Log on with the access token
-                _steamClientManager.LogOn(pollResult.AccessToken, pollResult.RefreshToken, username);
+                manager.LogOn(pollResult.AccessToken, pollResult.RefreshToken, username);
 
                 // Wait for successful logon
-                var logonSuccess = await WaitForLogonAsync();
-                
+                var logonSuccess = await WaitForLogonAsync(manager);
+
                 // Clean up the session
                 _activeAuthSessions.TryRemove(sessionId, out _);
                 _sessionUsernames.TryRemove(sessionId, out _);
+                _sessionIdToLoginKey.TryRemove(sessionId, out _);
+                var steamIdCs = manager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
+                if (steamIdCs != 0)
+                    _registry.TransitionKey(loginSessionKey, steamIdCs.ToString());
 
-                if (!logonSuccess || !_steamClientManager.IsLoggedOn)
+                if (!logonSuccess || !manager.IsLoggedOn)
                 {
-                    _logger.LogWarning("Continuation authentication logon failed for session: {SessionId} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}", 
-                        sessionId, logonSuccess, _steamClientManager.IsLoggedOn);
-                    
+                    _logger.LogWarning("Continuation authentication logon failed for session: {SessionId} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}",
+                        sessionId, logonSuccess, manager.IsLoggedOn);
+
                     return new CredentialsLoginResult
                     {
                         Success = false,
-                        ErrorMessage = _steamClientManager.IsConnected ? 
-                            "Steam logon failed - please verify your credentials" : 
+                        ErrorMessage = manager.IsConnected ?
+                            "Steam logon failed - please verify your credentials" :
                             "Steam connection lost during authentication"
                     };
                 }
 
                 // Verify Steam client state before reporting success
-                if (!_steamClientManager.IsConnected)
+                if (!manager.IsConnected)
                 {
                     _logger.LogError("Steam client not connected after successful continuation logon for session: {SessionId}", sessionId);
                     return new CredentialsLoginResult
@@ -758,7 +819,7 @@ public class SteamAuthenticationService
                 _logger.LogInformation("Successfully continued authentication session: {SessionId}", sessionId);
 
                 // Get current user info but preserve the AccountName from password authentication
-                var userInfo = await GetCurrentUserInfoAsync();
+                var userInfo = await GetCurrentUserInfoAsync(manager);
                 if (userInfo != null && !string.IsNullOrEmpty(pollResult.AccountName))
                 {
                     // Override AccountName with the real account name from password authentication

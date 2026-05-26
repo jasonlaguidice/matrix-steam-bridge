@@ -56,10 +56,11 @@ message CredentialsLoginRequest {
   string guard_code = 3; // Optional SteamGuard code
   bool remember_password = 4;
   string email_code = 5; // Optional email verification code
+  string login_session_key = 6; // Client-generated UUID for routing to per-user SteamClientManager
 }
 
 message QRLoginRequest {
-  // Empty for initial request, will generate QR challenge
+  string login_session_key = 1; // Client-generated UUID for routing to per-user SteamClientManager
 }
 
 message QRLoginResponse {
@@ -104,13 +105,14 @@ message AuthStatusResponse {
 }
 
 message LogoutRequest {
-  // Empty for now
+  uint64 steam_id = 1; // Identifies which user's session to terminate
 }
 
 message TokenReAuthRequest {
   string access_token = 1;
   string refresh_token = 2;
   string username = 3; // Required for SteamKit2 compatibility
+  uint64 steam_id = 4; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message TokenReAuthResponse {
@@ -128,7 +130,8 @@ message LogoutResponse {
 
 // User Messages
 message UserInfoRequest {
-  uint64 steam_id = 1; // Optional, defaults to current user
+  uint64 steam_id = 1; // Target Steam ID to look up (0 = self)
+  uint64 caller_steam_id = 2; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message UserInfoResponse {
@@ -147,7 +150,7 @@ message UserInfo {
 }
 
 message FriendsListRequest {
-  // Empty for now
+  uint64 steam_id = 1; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message FriendsListResponse {
@@ -166,6 +169,7 @@ message Friend {
 
 message UserStatusRequest {
   uint64 steam_id = 1;
+  uint64 caller_steam_id = 2; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message UserStatusResponse {
@@ -176,6 +180,7 @@ message UserStatusResponse {
 
 message ResolveVanityURLRequest {
   string vanity_url = 1; // Username from vanity URL (e.g., "username" from steamcommunity.com/id/username)
+  uint64 caller_steam_id = 2; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message ResolveVanityURLResponse {
@@ -192,6 +197,7 @@ message SendMessageRequest {
   string image_url = 4; // Steam CDN/UFS URL for image messages
   uint64 chat_group_id = 5;  // Non-zero to send to a group channel
   uint64 chat_id = 6;        // Required when chat_group_id is set
+  uint64 caller_steam_id = 7; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message SendMessageResponse {
@@ -201,7 +207,7 @@ message SendMessageResponse {
 }
 
 message MessageSubscriptionRequest {
-  // Empty for now - subscribes to all messages for authenticated user
+  uint64 steam_id = 1; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message MessageEvent {
@@ -220,6 +226,7 @@ message MessageEvent {
 message TypingNotificationRequest {
   uint64 target_steam_id = 1;
   bool is_typing = 2;
+  uint64 caller_steam_id = 3; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message TypingNotificationResponse {
@@ -231,6 +238,7 @@ message UploadImageRequest {
   bytes image_data = 1;
   string mime_type = 2;
   string filename = 3;
+  uint64 caller_steam_id = 4; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message UploadImageResponse {
@@ -252,7 +260,8 @@ message DownloadImageResponse {
 
 // Avatar Messages
 message GetUserAvatarDataRequest {
-  uint64 steam_id = 1;
+  uint64 steam_id = 1; // Target Steam ID to get avatar for
+  uint64 caller_steam_id = 2; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message GetUserAvatarDataResponse {
@@ -272,6 +281,7 @@ message ChatMessageHistoryRequest {
   uint32 last_ordinal = 4; // Ordinal of last known message
   uint32 max_count = 5; // Maximum messages to return
   bool forward = 6; // true for newer messages, false for older
+  uint64 caller_steam_id = 7; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message ChatMessageHistoryResponse {
@@ -294,7 +304,7 @@ message ChatHistoryMessage {
 
 // Group Messages
 message GetGroupsRequest {
-  // Empty - returns all groups for the authenticated user
+  uint64 steam_id = 1; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message GetGroupsResponse {
@@ -351,7 +361,7 @@ enum MessageType {
 
 // Session Management Messages
 message SessionSubscriptionRequest {
-  // Empty for now - subscribes to all session events for authenticated user
+  uint64 steam_id = 1; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message SessionEvent {
@@ -372,6 +382,7 @@ enum SessionEventType {
 // Presence Management Messages
 message SetPersonaStateRequest {
   PersonaState state = 1;
+  uint64 steam_id = 2; // Caller's Steam ID for routing to per-user SteamClientManager
 }
 
 message SetPersonaStateResponse {

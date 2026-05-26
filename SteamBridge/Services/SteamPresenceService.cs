@@ -8,24 +8,35 @@ namespace SteamBridge.Services;
 public class SteamPresenceService : Proto.SteamPresenceService.SteamPresenceServiceBase
 {
     private readonly ILogger<SteamPresenceService> _logger;
-    private readonly SteamClientManager _steamClientManager;
+    private readonly SteamClientRegistry _registry;
 
     public SteamPresenceService(
         ILogger<SteamPresenceService> logger,
-        SteamClientManager steamClientManager)
+        SteamClientRegistry registry)
     {
         _logger = logger;
-        _steamClientManager = steamClientManager;
+        _registry = registry;
     }
 
     public override Task<SetPersonaStateResponse> SetPersonaState(
         SetPersonaStateRequest request,
         ServerCallContext context)
     {
+        var manager = _registry.Get(request.SteamId.ToString());
+        if (manager == null)
+        {
+            _logger.LogWarning("No Steam session found for steam_id: {SteamId}", request.SteamId);
+            return Task.FromResult(new SetPersonaStateResponse
+            {
+                Success = false,
+                ErrorMessage = $"No Steam session found for steam_id {request.SteamId}"
+            });
+        }
+
         try
         {
             // Validate client is logged on
-            if (!_steamClientManager.IsLoggedOn)
+            if (!manager.IsLoggedOn)
             {
                 _logger.LogWarning("Attempt to set persona state while not logged on");
                 return Task.FromResult(new SetPersonaStateResponse
@@ -51,7 +62,7 @@ public class SteamPresenceService : Proto.SteamPresenceService.SteamPresenceServ
             _logger.LogInformation("Setting Steam PersonaState to: {State}", steamState);
 
             // Call SteamKit2 to set the persona state
-            _steamClientManager.SteamFriends.SetPersonaState(steamState);
+            manager.SteamFriends.SetPersonaState(steamState);
 
             return Task.FromResult(new SetPersonaStateResponse
             {

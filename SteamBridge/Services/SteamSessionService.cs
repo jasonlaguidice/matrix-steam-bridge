@@ -1,7 +1,7 @@
 using Grpc.Core;
 using SteamBridge.Proto;
 using Microsoft.Extensions.Logging;
-using System.Collections.Concurrent;
+using SteamKit2;
 using System.Threading.Channels;
 
 namespace SteamBridge.Services;
@@ -9,14 +9,14 @@ namespace SteamBridge.Services;
 public class SteamSessionService : Proto.SteamSessionService.SteamSessionServiceBase
 {
     private readonly ILogger<SteamSessionService> _logger;
-    private readonly SteamSessionManager _sessionManager;
+    private readonly SteamClientRegistry _registry;
 
     public SteamSessionService(
         ILogger<SteamSessionService> logger,
-        SteamSessionManager sessionManager)
+        SteamClientRegistry registry)
     {
         _logger = logger;
-        _sessionManager = sessionManager;
+        _registry = registry;
     }
 
     public override async Task SubscribeToSessionEvents(
@@ -24,13 +24,56 @@ public class SteamSessionService : Proto.SteamSessionService.SteamSessionService
         IServerStreamWriter<Proto.SessionEvent> responseStream,
         ServerCallContext context)
     {
-        _logger.LogInformation("New session event subscription started");
+        _logger.LogInformation("New session event subscription started for steam_id: {SteamId}", request.SteamId);
+
+        var manager = _registry.Get(request.SteamId.ToString());
+        if (manager == null)
+        {
+            throw new RpcException(new Status(StatusCode.NotFound,
+                $"No Steam session found for steam_id {request.SteamId}"));
+        }
+
+        var channel = Channel.CreateUnbounded<InternalSessionEvent>();
+
+        void OnLoggedOff(object? sender, SteamUser.LoggedOffCallback callback)
+        {
+            var eventType = callback.Result switch
+            {
+                EResult.LogonSessionReplaced => SessionEventType.SessionReplaced,
+                EResult.AccountDisabled => SessionEventType.AccountDisabled,
+                EResult.AccountLoginDeniedNeedTwoFactor => SessionEventType.TokenExpired,
+                EResult.InvalidPassword => SessionEventType.TokenExpired,
+                EResult.LoggedInElsewhere => SessionEventType.SessionReplaced,
+                _ => SessionEventType.LoggedOff
+            };
+
+            channel.Writer.TryWrite(new InternalSessionEvent
+            {
+                EventType = eventType,
+                Reason = callback.Result.ToString(),
+                Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            });
+        }
+
+        void OnDisconnected(object? sender, SteamClient.DisconnectedCallback callback)
+        {
+            if (!callback.UserInitiated)
+            {
+                channel.Writer.TryWrite(new InternalSessionEvent
+                {
+                    EventType = SessionEventType.ConnectionLost,
+                    Reason = "Connection lost unexpectedly",
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+                });
+            }
+        }
+
+        manager.LoggedOff += OnLoggedOff;
+        manager.Disconnected += OnDisconnected;
 
         try
         {
-            var eventStream = _sessionManager.SubscribeToSessionEventsAsync(context.CancellationToken);
-            
-            await foreach (var sessionEvent in eventStream.WithCancellation(context.CancellationToken))
+            await foreach (var sessionEvent in channel.Reader.ReadAllAsync(context.CancellationToken))
             {
                 var protoEvent = new Proto.SessionEvent
                 {
@@ -40,8 +83,8 @@ public class SteamSessionService : Proto.SteamSessionService.SteamSessionService
                 };
 
                 await responseStream.WriteAsync(protoEvent);
-                
-                _logger.LogDebug("Streamed session event: {EventType} - {Reason}", 
+
+                _logger.LogDebug("Streamed session event: {EventType} - {Reason}",
                     sessionEvent.EventType, sessionEvent.Reason);
             }
         }
@@ -56,7 +99,10 @@ public class SteamSessionService : Proto.SteamSessionService.SteamSessionService
         }
         finally
         {
-            _logger.LogInformation("Session event subscription ended");
+            manager.LoggedOff -= OnLoggedOff;
+            manager.Disconnected -= OnDisconnected;
+            channel.Writer.TryComplete();
+            _logger.LogInformation("Session event subscription ended for steam_id: {SteamId}", request.SteamId);
         }
     }
 
@@ -73,4 +119,21 @@ public class SteamSessionService : Proto.SteamSessionService.SteamSessionService
             _ => Proto.SessionEventType.LoggedOff
         };
     }
+}
+
+public class InternalSessionEvent
+{
+    public SessionEventType EventType { get; set; }
+    public string Reason { get; set; } = string.Empty;
+    public long Timestamp { get; set; }
+}
+
+public enum SessionEventType
+{
+    LoggedOff,
+    ConnectionLost,
+    SessionReplaced,
+    TokenExpired,
+    AccountDisabled,
+    Kicked
 }

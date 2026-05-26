@@ -25,11 +25,9 @@ builder.Services.AddLogging();
 builder.Services.AddHttpClient();
 
 // Configure Steam services
-builder.Services.AddSingleton<SteamClientManager>();
+builder.Services.AddSingleton<SteamClientRegistry>();
 builder.Services.AddSingleton<SteamAuthenticationService>();
 builder.Services.AddSingleton<SteamUserInformationService>();
-builder.Services.AddSingleton<SteamMessagingManager>();
-builder.Services.AddSingleton<SteamSessionManager>();
 builder.Services.AddSingleton<SteamImageService>();
 
 // Add parent process monitoring service

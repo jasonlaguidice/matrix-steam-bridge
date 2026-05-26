@@ -27,7 +27,7 @@ public class SteamUserService : Proto.SteamUserService.SteamUserServiceBase
         try
         {
             var steamId = request.SteamId == 0 ? null : (ulong?)request.SteamId;
-            var userInfo = await _userInfoService.GetUserInfoAsync(steamId);
+            var userInfo = await _userInfoService.GetUserInfoAsync(request.CallerSteamId, steamId);
 
             var response = new UserInfoResponse();
             
@@ -53,7 +53,7 @@ public class SteamUserService : Proto.SteamUserService.SteamUserServiceBase
 
         try
         {
-            var friends = await _userInfoService.GetFriendsListAsync();
+            var friends = await _userInfoService.GetFriendsListAsync(request.SteamId);
             var response = new FriendsListResponse();
             
             foreach (var friend in friends)
@@ -79,7 +79,7 @@ public class SteamUserService : Proto.SteamUserService.SteamUserServiceBase
 
         try
         {
-            var status = await _userInfoService.GetUserStatusAsync(request.SteamId);
+            var status = await _userInfoService.GetUserStatusAsync(request.CallerSteamId, request.SteamId);
             
             return new UserStatusResponse
             {
@@ -112,7 +112,7 @@ public class SteamUserService : Proto.SteamUserService.SteamUserServiceBase
                 };
             }
 
-            var (success, steamId, errorMessage) = await _userInfoService.ResolveVanityUrlAsync(request.VanityUrl);
+            var (success, steamId, errorMessage) = await _userInfoService.ResolveVanityUrlAsync(request.VanityUrl, request.CallerSteamId);
             
             var response = new ResolveVanityURLResponse
             {

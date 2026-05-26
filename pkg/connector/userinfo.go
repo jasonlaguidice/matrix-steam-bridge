@@ -235,7 +235,8 @@ func (sc *SteamClient) resolveVanityURL(ctx context.Context, vanityURL string) (
 	sc.br.Log.Debug().Str("vanity_url", vanityURL).Msg("Resolving vanity URL via gRPC")
 
 	resp, err := sc.userClient.ResolveVanityURL(ctx, &steamapi.ResolveVanityURLRequest{
-		VanityUrl: vanityURL,
+		VanityUrl:     vanityURL,
+		CallerSteamId: sc.steamID(),
 	})
 	if err != nil {
 		return "", fmt.Errorf("gRPC call to ResolveVanityURL failed: %w", err)
@@ -375,7 +376,9 @@ func (sc *SteamClient) GetChatInfo(ctx context.Context, portal *bridgev2.Portal)
 			// meta.Name is empty — the space's ChatResync hasn't run yet.
 			// Make a synchronous gRPC call to fetch the group name now.
 			sc.br.Log.Debug().Uint64("chat_group_id", chatGroupID).Msg("GetChatInfo space: name not cached, fetching from gRPC")
-			resp, err := sc.groupClient.GetMyChatRoomGroups(ctx, &steamapi.GetGroupsRequest{})
+			resp, err := sc.groupClient.GetMyChatRoomGroups(ctx, &steamapi.GetGroupsRequest{
+				SteamId: sc.steamID(),
+			})
 			if err != nil {
 				sc.br.Log.Warn().Err(err).Uint64("chat_group_id", chatGroupID).Msg("GetChatInfo space: failed to fetch groups for name lookup")
 			} else if resp.Success {
@@ -468,7 +471,8 @@ func (sc *SteamClient) GetUserInfo(ctx context.Context, ghost *bridgev2.Ghost) (
 
 	// Always fetch current user info for real-time data (presence, game status)
 	resp, err := sc.userClient.GetUserInfo(ctx, &steamapi.UserInfoRequest{
-		SteamId: steamID,
+		SteamId:       steamID,
+		CallerSteamId: sc.steamID(),
 	})
 	if err != nil {
 		// On API error, fall back to cached data if available
@@ -668,7 +672,9 @@ func (sc *SteamClient) SearchUsers(ctx context.Context, query string) ([]*bridge
 	sc.br.Log.Debug().Str("query", query).Msg("Fetching friends list for user search")
 
 	// Get the user's friends list
-	resp, err := sc.userClient.GetFriendsList(ctx, &steamapi.FriendsListRequest{})
+	resp, err := sc.userClient.GetFriendsList(ctx, &steamapi.FriendsListRequest{
+		SteamId: sc.steamID(),
+	})
 	if err != nil {
 		return nil, fmt.Errorf("gRPC call to GetFriendsList failed: %w", err)
 	}

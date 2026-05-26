@@ -72,6 +72,15 @@ func (sc *SteamClient) getUserMetadata() *UserLoginMetadata {
 	return nil
 }
 
+// steamID returns the current user's Steam ID for gRPC request routing
+func (sc *SteamClient) steamID() uint64 {
+	meta := sc.getUserMetadata()
+	if meta == nil {
+		return 0
+	}
+	return meta.SteamID
+}
+
 // debouncedDisconnectState sends a debounced transient disconnect state following Signal bridge patterns
 func (sc *SteamClient) debouncedDisconnectState() {
 	sc.disconnectDebounceMutex.Lock()
@@ -152,7 +161,8 @@ func (sc *SteamClient) checkConnectionHealth() error {
 	}
 
 	_, err := sc.userClient.GetUserInfo(ctx, &steamapi.UserInfoRequest{
-		SteamId: meta.SteamID,
+		SteamId:       meta.SteamID,
+		CallerSteamId: meta.SteamID,
 	})
 	return err
 }
@@ -221,9 +231,10 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		sc.br.Log.Info().Str("username", authUsername).Msg("Attempting re-authentication with stored tokens")
 
 		reAuthReq := &steamapi.TokenReAuthRequest{
-			AccessToken:  meta.AccessToken, // Send tokens as stored
+			AccessToken:  meta.AccessToken,
 			RefreshToken: meta.RefreshToken,
 			Username:     authUsername,
+			SteamId:      meta.SteamID,
 		}
 
 		resp, err := sc.authClient.ReAuthenticateWithTokens(ctx, reAuthReq)
@@ -436,7 +447,9 @@ func (sc *SteamClient) initializeMessageStream(ctx context.Context) error {
 		return fmt.Errorf("message client not available")
 	}
 
-	stream, err := sc.msgClient.SubscribeToMessages(ctx, &steamapi.MessageSubscriptionRequest{})
+	stream, err := sc.msgClient.SubscribeToMessages(ctx, &steamapi.MessageSubscriptionRequest{
+		SteamId: sc.steamID(),
+	})
 	if err != nil {
 		return fmt.Errorf("failed to start message subscription: %w", err)
 	}
@@ -536,7 +549,9 @@ func (sc *SteamClient) LogoutRemote(ctx context.Context) {
 
 	// Invalidate credentials with remote network and logout
 	if sc.authClient != nil {
-		_, err := sc.authClient.Logout(ctx, &steamapi.LogoutRequest{})
+		_, err := sc.authClient.Logout(ctx, &steamapi.LogoutRequest{
+			SteamId: sc.steamID(),
+		})
 		if err != nil {
 			sc.br.Log.Err(err).Msg("Failed to logout from Steam")
 			sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,
@@ -571,7 +586,8 @@ func (sc *SteamClient) verifysteamAuthentication(ctx context.Context) (bool, err
 	}
 
 	req := &steamapi.UserInfoRequest{
-		SteamId: meta.SteamID,
+		SteamId:       meta.SteamID,
+		CallerSteamId: meta.SteamID,
 	}
 
 	resp, err := sc.userClient.GetUserInfo(ctx, req)

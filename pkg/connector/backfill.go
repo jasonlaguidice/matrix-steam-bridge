@@ -60,12 +60,13 @@ func (sc *SteamClient) FetchMessages(ctx context.Context, params bridgev2.FetchM
 
 	// Call gRPC service
 	historyResp, err := sc.msgClient.GetChatMessageHistory(ctx, &steamapi.ChatMessageHistoryRequest{
-		ChatGroupId: chatGroupID,
-		ChatId:      chatID,
-		LastTime:    lastTime,
-		LastOrdinal: lastOrdinal,
-		MaxCount:    uint32(params.Count),
-		Forward:     params.Forward,
+		ChatGroupId:   chatGroupID,
+		ChatId:        chatID,
+		LastTime:      lastTime,
+		LastOrdinal:   lastOrdinal,
+		MaxCount:      uint32(params.Count),
+		Forward:       params.Forward,
+		CallerSteamId: sc.steamID(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get chat history: %w", err)

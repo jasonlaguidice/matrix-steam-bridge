@@ -216,7 +216,8 @@ func (pm *PresenceManager) setPersonaStateLocked(ctx context.Context, state stea
 
 	// Call gRPC to update Steam
 	resp, err := pm.client.presenceClient.SetPersonaState(ctx, &steamapi.SetPersonaStateRequest{
-		State: state,
+		State:   state,
+		SteamId: pm.client.steamID(),
 	})
 
 	if err != nil {

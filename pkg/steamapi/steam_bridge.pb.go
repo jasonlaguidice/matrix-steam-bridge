@@ -316,7 +316,8 @@ type CredentialsLoginRequest struct {
 	Password         string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
 	GuardCode        string                 `protobuf:"bytes,3,opt,name=guard_code,json=guardCode,proto3" json:"guard_code,omitempty"` // Optional SteamGuard code
 	RememberPassword bool                   `protobuf:"varint,4,opt,name=remember_password,json=rememberPassword,proto3" json:"remember_password,omitempty"`
-	EmailCode        string                 `protobuf:"bytes,5,opt,name=email_code,json=emailCode,proto3" json:"email_code,omitempty"` // Optional email verification code
+	EmailCode        string                 `protobuf:"bytes,5,opt,name=email_code,json=emailCode,proto3" json:"email_code,omitempty"`                     // Optional email verification code
+	LoginSessionKey  string                 `protobuf:"bytes,6,opt,name=login_session_key,json=loginSessionKey,proto3" json:"login_session_key,omitempty"` // Client-generated UUID for routing to per-user SteamClientManager
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -386,10 +387,18 @@ func (x *CredentialsLoginRequest) GetEmailCode() string {
 	return ""
 }
 
+func (x *CredentialsLoginRequest) GetLoginSessionKey() string {
+	if x != nil {
+		return x.LoginSessionKey
+	}
+	return ""
+}
+
 type QRLoginRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	LoginSessionKey string                 `protobuf:"bytes,1,opt,name=login_session_key,json=loginSessionKey,proto3" json:"login_session_key,omitempty"` // Client-generated UUID for routing to per-user SteamClientManager
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *QRLoginRequest) Reset() {
@@ -420,6 +429,13 @@ func (x *QRLoginRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use QRLoginRequest.ProtoReflect.Descriptor instead.
 func (*QRLoginRequest) Descriptor() ([]byte, []int) {
 	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *QRLoginRequest) GetLoginSessionKey() string {
+	if x != nil {
+		return x.LoginSessionKey
+	}
+	return ""
 }
 
 type QRLoginResponse struct {
@@ -764,6 +780,7 @@ func (x *AuthStatusResponse) GetUserInfo() *UserInfo {
 
 type LogoutRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"` // Identifies which user's session to terminate
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -798,11 +815,19 @@ func (*LogoutRequest) Descriptor() ([]byte, []int) {
 	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{7}
 }
 
+func (x *LogoutRequest) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
+}
+
 type TokenReAuthRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	AccessToken   string                 `protobuf:"bytes,1,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
 	RefreshToken  string                 `protobuf:"bytes,2,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
-	Username      string                 `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"` // Required for SteamKit2 compatibility
+	Username      string                 `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"`               // Required for SteamKit2 compatibility
+	SteamId       uint64                 `protobuf:"varint,4,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -856,6 +881,13 @@ func (x *TokenReAuthRequest) GetUsername() string {
 		return x.Username
 	}
 	return ""
+}
+
+func (x *TokenReAuthRequest) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
 }
 
 type TokenReAuthResponse struct {
@@ -989,7 +1021,8 @@ func (x *LogoutResponse) GetSuccess() bool {
 // User Messages
 type UserInfoRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"` // Optional, defaults to current user
+	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"`                     // Target Steam ID to look up (0 = self)
+	CallerSteamId uint64                 `protobuf:"varint,2,opt,name=caller_steam_id,json=callerSteamId,proto3" json:"caller_steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1027,6 +1060,13 @@ func (*UserInfoRequest) Descriptor() ([]byte, []int) {
 func (x *UserInfoRequest) GetSteamId() uint64 {
 	if x != nil {
 		return x.SteamId
+	}
+	return 0
+}
+
+func (x *UserInfoRequest) GetCallerSteamId() uint64 {
+	if x != nil {
+		return x.CallerSteamId
 	}
 	return 0
 }
@@ -1177,6 +1217,7 @@ func (x *UserInfo) GetCurrentGame() string {
 
 type FriendsListRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1209,6 +1250,13 @@ func (x *FriendsListRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use FriendsListRequest.ProtoReflect.Descriptor instead.
 func (*FriendsListRequest) Descriptor() ([]byte, []int) {
 	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *FriendsListRequest) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
 }
 
 type FriendsListResponse struct {
@@ -1350,6 +1398,7 @@ func (x *Friend) GetRelationship() FriendRelationship {
 type UserStatusRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"`
+	CallerSteamId uint64                 `protobuf:"varint,2,opt,name=caller_steam_id,json=callerSteamId,proto3" json:"caller_steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1387,6 +1436,13 @@ func (*UserStatusRequest) Descriptor() ([]byte, []int) {
 func (x *UserStatusRequest) GetSteamId() uint64 {
 	if x != nil {
 		return x.SteamId
+	}
+	return 0
+}
+
+func (x *UserStatusRequest) GetCallerSteamId() uint64 {
+	if x != nil {
+		return x.CallerSteamId
 	}
 	return 0
 }
@@ -1453,7 +1509,8 @@ func (x *UserStatusResponse) GetLastOnline() int64 {
 
 type ResolveVanityURLRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	VanityUrl     string                 `protobuf:"bytes,1,opt,name=vanity_url,json=vanityUrl,proto3" json:"vanity_url,omitempty"` // Username from vanity URL (e.g., "username" from steamcommunity.com/id/username)
+	VanityUrl     string                 `protobuf:"bytes,1,opt,name=vanity_url,json=vanityUrl,proto3" json:"vanity_url,omitempty"`                // Username from vanity URL (e.g., "username" from steamcommunity.com/id/username)
+	CallerSteamId uint64                 `protobuf:"varint,2,opt,name=caller_steam_id,json=callerSteamId,proto3" json:"caller_steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1493,6 +1550,13 @@ func (x *ResolveVanityURLRequest) GetVanityUrl() string {
 		return x.VanityUrl
 	}
 	return ""
+}
+
+func (x *ResolveVanityURLRequest) GetCallerSteamId() uint64 {
+	if x != nil {
+		return x.CallerSteamId
+	}
+	return 0
 }
 
 type ResolveVanityURLResponse struct {
@@ -1561,9 +1625,10 @@ type SendMessageRequest struct {
 	TargetSteamId uint64                 `protobuf:"varint,1,opt,name=target_steam_id,json=targetSteamId,proto3" json:"target_steam_id,omitempty"`
 	Message       string                 `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
 	MessageType   MessageType            `protobuf:"varint,3,opt,name=message_type,json=messageType,proto3,enum=steambridge.MessageType" json:"message_type,omitempty"`
-	ImageUrl      string                 `protobuf:"bytes,4,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"`             // Steam CDN/UFS URL for image messages
-	ChatGroupId   uint64                 `protobuf:"varint,5,opt,name=chat_group_id,json=chatGroupId,proto3" json:"chat_group_id,omitempty"` // Non-zero to send to a group channel
-	ChatId        uint64                 `protobuf:"varint,6,opt,name=chat_id,json=chatId,proto3" json:"chat_id,omitempty"`                  // Required when chat_group_id is set
+	ImageUrl      string                 `protobuf:"bytes,4,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"`                   // Steam CDN/UFS URL for image messages
+	ChatGroupId   uint64                 `protobuf:"varint,5,opt,name=chat_group_id,json=chatGroupId,proto3" json:"chat_group_id,omitempty"`       // Non-zero to send to a group channel
+	ChatId        uint64                 `protobuf:"varint,6,opt,name=chat_id,json=chatId,proto3" json:"chat_id,omitempty"`                        // Required when chat_group_id is set
+	CallerSteamId uint64                 `protobuf:"varint,7,opt,name=caller_steam_id,json=callerSteamId,proto3" json:"caller_steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1640,6 +1705,13 @@ func (x *SendMessageRequest) GetChatId() uint64 {
 	return 0
 }
 
+func (x *SendMessageRequest) GetCallerSteamId() uint64 {
+	if x != nil {
+		return x.CallerSteamId
+	}
+	return 0
+}
+
 type SendMessageResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -1702,6 +1774,7 @@ func (x *SendMessageResponse) GetTimestamp() int64 {
 
 type MessageSubscriptionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1734,6 +1807,13 @@ func (x *MessageSubscriptionRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use MessageSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*MessageSubscriptionRequest) Descriptor() ([]byte, []int) {
 	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *MessageSubscriptionRequest) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
 }
 
 type MessageEvent struct {
@@ -1856,6 +1936,7 @@ type TypingNotificationRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TargetSteamId uint64                 `protobuf:"varint,1,opt,name=target_steam_id,json=targetSteamId,proto3" json:"target_steam_id,omitempty"`
 	IsTyping      bool                   `protobuf:"varint,2,opt,name=is_typing,json=isTyping,proto3" json:"is_typing,omitempty"`
+	CallerSteamId uint64                 `protobuf:"varint,3,opt,name=caller_steam_id,json=callerSteamId,proto3" json:"caller_steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1902,6 +1983,13 @@ func (x *TypingNotificationRequest) GetIsTyping() bool {
 		return x.IsTyping
 	}
 	return false
+}
+
+func (x *TypingNotificationRequest) GetCallerSteamId() uint64 {
+	if x != nil {
+		return x.CallerSteamId
+	}
+	return 0
 }
 
 type TypingNotificationResponse struct {
@@ -1954,6 +2042,7 @@ type UploadImageRequest struct {
 	ImageData     []byte                 `protobuf:"bytes,1,opt,name=image_data,json=imageData,proto3" json:"image_data,omitempty"`
 	MimeType      string                 `protobuf:"bytes,2,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
 	Filename      string                 `protobuf:"bytes,3,opt,name=filename,proto3" json:"filename,omitempty"`
+	CallerSteamId uint64                 `protobuf:"varint,4,opt,name=caller_steam_id,json=callerSteamId,proto3" json:"caller_steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2007,6 +2096,13 @@ func (x *UploadImageRequest) GetFilename() string {
 		return x.Filename
 	}
 	return ""
+}
+
+func (x *UploadImageRequest) GetCallerSteamId() uint64 {
+	if x != nil {
+		return x.CallerSteamId
+	}
+	return 0
 }
 
 type UploadImageResponse struct {
@@ -2184,7 +2280,8 @@ func (x *DownloadImageResponse) GetMimeType() string {
 // Avatar Messages
 type GetUserAvatarDataRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"`
+	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"`                     // Target Steam ID to get avatar for
+	CallerSteamId uint64                 `protobuf:"varint,2,opt,name=caller_steam_id,json=callerSteamId,proto3" json:"caller_steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2222,6 +2319,13 @@ func (*GetUserAvatarDataRequest) Descriptor() ([]byte, []int) {
 func (x *GetUserAvatarDataRequest) GetSteamId() uint64 {
 	if x != nil {
 		return x.SteamId
+	}
+	return 0
+}
+
+func (x *GetUserAvatarDataRequest) GetCallerSteamId() uint64 {
+	if x != nil {
+		return x.CallerSteamId
 	}
 	return 0
 }
@@ -2315,10 +2419,11 @@ type ChatMessageHistoryRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	ChatGroupId   uint64                 `protobuf:"varint,1,opt,name=chat_group_id,json=chatGroupId,proto3" json:"chat_group_id,omitempty"`
 	ChatId        uint64                 `protobuf:"varint,2,opt,name=chat_id,json=chatId,proto3" json:"chat_id,omitempty"`
-	LastTime      uint32                 `protobuf:"varint,3,opt,name=last_time,json=lastTime,proto3" json:"last_time,omitempty"`          // Unix timestamp of last known message
-	LastOrdinal   uint32                 `protobuf:"varint,4,opt,name=last_ordinal,json=lastOrdinal,proto3" json:"last_ordinal,omitempty"` // Ordinal of last known message
-	MaxCount      uint32                 `protobuf:"varint,5,opt,name=max_count,json=maxCount,proto3" json:"max_count,omitempty"`          // Maximum messages to return
-	Forward       bool                   `protobuf:"varint,6,opt,name=forward,proto3" json:"forward,omitempty"`                            // true for newer messages, false for older
+	LastTime      uint32                 `protobuf:"varint,3,opt,name=last_time,json=lastTime,proto3" json:"last_time,omitempty"`                  // Unix timestamp of last known message
+	LastOrdinal   uint32                 `protobuf:"varint,4,opt,name=last_ordinal,json=lastOrdinal,proto3" json:"last_ordinal,omitempty"`         // Ordinal of last known message
+	MaxCount      uint32                 `protobuf:"varint,5,opt,name=max_count,json=maxCount,proto3" json:"max_count,omitempty"`                  // Maximum messages to return
+	Forward       bool                   `protobuf:"varint,6,opt,name=forward,proto3" json:"forward,omitempty"`                                    // true for newer messages, false for older
+	CallerSteamId uint64                 `protobuf:"varint,7,opt,name=caller_steam_id,json=callerSteamId,proto3" json:"caller_steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2393,6 +2498,13 @@ func (x *ChatMessageHistoryRequest) GetForward() bool {
 		return x.Forward
 	}
 	return false
+}
+
+func (x *ChatMessageHistoryRequest) GetCallerSteamId() uint64 {
+	if x != nil {
+		return x.CallerSteamId
+	}
+	return 0
 }
 
 type ChatMessageHistoryResponse struct {
@@ -2566,6 +2678,7 @@ func (x *ChatHistoryMessage) GetImageUrl() string {
 // Group Messages
 type GetGroupsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2598,6 +2711,13 @@ func (x *GetGroupsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use GetGroupsRequest.ProtoReflect.Descriptor instead.
 func (*GetGroupsRequest) Descriptor() ([]byte, []int) {
 	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *GetGroupsRequest) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
 }
 
 type GetGroupsResponse struct {
@@ -2823,6 +2943,7 @@ func (x *ChatChannel) GetName() string {
 // Session Management Messages
 type SessionSubscriptionRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2855,6 +2976,13 @@ func (x *SessionSubscriptionRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use SessionSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*SessionSubscriptionRequest) Descriptor() ([]byte, []int) {
 	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *SessionSubscriptionRequest) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
 }
 
 type SessionEvent struct {
@@ -2921,6 +3049,7 @@ func (x *SessionEvent) GetTimestamp() int64 {
 type SetPersonaStateRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	State         PersonaState           `protobuf:"varint,1,opt,name=state,proto3,enum=steambridge.PersonaState" json:"state,omitempty"`
+	SteamId       uint64                 `protobuf:"varint,2,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2960,6 +3089,13 @@ func (x *SetPersonaStateRequest) GetState() PersonaState {
 		return x.State
 	}
 	return PersonaState_OFFLINE
+}
+
+func (x *SetPersonaStateRequest) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
 }
 
 type SetPersonaStateResponse struct {
@@ -3018,7 +3154,7 @@ var File_Proto_steam_bridge_proto protoreflect.FileDescriptor
 
 const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\n" +
-	"\x18Proto/steam_bridge.proto\x12\vsteambridge\"\xbc\x01\n" +
+	"\x18Proto/steam_bridge.proto\x12\vsteambridge\"\xe8\x01\n" +
 	"\x17CredentialsLoginRequest\x12\x1a\n" +
 	"\busername\x18\x01 \x01(\tR\busername\x12\x1a\n" +
 	"\bpassword\x18\x02 \x01(\tR\bpassword\x12\x1d\n" +
@@ -3026,8 +3162,10 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"guard_code\x18\x03 \x01(\tR\tguardCode\x12+\n" +
 	"\x11remember_password\x18\x04 \x01(\bR\x10rememberPassword\x12\x1d\n" +
 	"\n" +
-	"email_code\x18\x05 \x01(\tR\temailCode\"\x10\n" +
-	"\x0eQRLoginRequest\"\x7f\n" +
+	"email_code\x18\x05 \x01(\tR\temailCode\x12*\n" +
+	"\x11login_session_key\x18\x06 \x01(\tR\x0floginSessionKey\"<\n" +
+	"\x0eQRLoginRequest\x12*\n" +
+	"\x11login_session_key\x18\x01 \x01(\tR\x0floginSessionKey\"\x7f\n" +
 	"\x0fQRLoginResponse\x12#\n" +
 	"\rchallenge_url\x18\x01 \x01(\tR\fchallengeUrl\x12(\n" +
 	"\x10qr_code_fallback\x18\x03 \x01(\tR\x0eqrCodeFallback\x12\x1d\n" +
@@ -3064,12 +3202,14 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\rAUTHENTICATED\x10\x01\x12\n" +
 	"\n" +
 	"\x06FAILED\x10\x02\x12\v\n" +
-	"\aEXPIRED\x10\x03\"\x0f\n" +
-	"\rLogoutRequest\"x\n" +
+	"\aEXPIRED\x10\x03\"*\n" +
+	"\rLogoutRequest\x12\x19\n" +
+	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\"\x93\x01\n" +
 	"\x12TokenReAuthRequest\x12!\n" +
 	"\faccess_token\x18\x01 \x01(\tR\vaccessToken\x12#\n" +
 	"\rrefresh_token\x18\x02 \x01(\tR\frefreshToken\x12\x1a\n" +
-	"\busername\x18\x03 \x01(\tR\busername\"\x9f\x02\n" +
+	"\busername\x18\x03 \x01(\tR\busername\x12\x19\n" +
+	"\bsteam_id\x18\x04 \x01(\x04R\asteamId\"\x9f\x02\n" +
 	"\x13TokenReAuthResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12?\n" +
@@ -3078,9 +3218,10 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\x11new_refresh_token\x18\x05 \x01(\tR\x0fnewRefreshToken\x122\n" +
 	"\tuser_info\x18\x06 \x01(\v2\x15.steambridge.UserInfoR\buserInfo\"*\n" +
 	"\x0eLogoutResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\",\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"T\n" +
 	"\x0fUserInfoRequest\x12\x19\n" +
-	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\"F\n" +
+	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\x12&\n" +
+	"\x0fcaller_steam_id\x18\x02 \x01(\x04R\rcallerSteamId\"F\n" +
 	"\x10UserInfoResponse\x122\n" +
 	"\tuser_info\x18\x01 \x01(\v2\x15.steambridge.UserInfoR\buserInfo\"\xa2\x02\n" +
 	"\bUserInfo\x12\x19\n" +
@@ -3094,8 +3235,9 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\vavatar_hash\x18\x06 \x01(\tR\n" +
 	"avatarHash\x121\n" +
 	"\x06status\x18\a \x01(\x0e2\x19.steambridge.PersonaStateR\x06status\x12!\n" +
-	"\fcurrent_game\x18\b \x01(\tR\vcurrentGame\"\x14\n" +
-	"\x12FriendsListRequest\"D\n" +
+	"\fcurrent_game\x18\b \x01(\tR\vcurrentGame\"/\n" +
+	"\x12FriendsListRequest\x12\x19\n" +
+	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\"D\n" +
 	"\x13FriendsListResponse\x12-\n" +
 	"\afriends\x18\x01 \x03(\v2\x13.steambridge.FriendR\afriends\"\xa1\x02\n" +
 	"\x06Friend\x12\x19\n" +
@@ -3107,33 +3249,37 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"avatarHash\x121\n" +
 	"\x06status\x18\x05 \x01(\x0e2\x19.steambridge.PersonaStateR\x06status\x12!\n" +
 	"\fcurrent_game\x18\x06 \x01(\tR\vcurrentGame\x12C\n" +
-	"\frelationship\x18\a \x01(\x0e2\x1f.steambridge.FriendRelationshipR\frelationship\".\n" +
+	"\frelationship\x18\a \x01(\x0e2\x1f.steambridge.FriendRelationshipR\frelationship\"V\n" +
 	"\x11UserStatusRequest\x12\x19\n" +
-	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\"\x8b\x01\n" +
+	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\x12&\n" +
+	"\x0fcaller_steam_id\x18\x02 \x01(\x04R\rcallerSteamId\"\x8b\x01\n" +
 	"\x12UserStatusResponse\x121\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x19.steambridge.PersonaStateR\x06status\x12!\n" +
 	"\fcurrent_game\x18\x02 \x01(\tR\vcurrentGame\x12\x1f\n" +
 	"\vlast_online\x18\x03 \x01(\x03R\n" +
-	"lastOnline\"8\n" +
+	"lastOnline\"`\n" +
 	"\x17ResolveVanityURLRequest\x12\x1d\n" +
 	"\n" +
-	"vanity_url\x18\x01 \x01(\tR\tvanityUrl\"t\n" +
+	"vanity_url\x18\x01 \x01(\tR\tvanityUrl\x12&\n" +
+	"\x0fcaller_steam_id\x18\x02 \x01(\x04R\rcallerSteamId\"t\n" +
 	"\x18ResolveVanityURLResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12\x19\n" +
 	"\bsteam_id\x18\x02 \x01(\tR\asteamId\x12#\n" +
-	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"\xed\x01\n" +
+	"\rerror_message\x18\x03 \x01(\tR\ferrorMessage\"\x95\x02\n" +
 	"\x12SendMessageRequest\x12&\n" +
 	"\x0ftarget_steam_id\x18\x01 \x01(\x04R\rtargetSteamId\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12;\n" +
 	"\fmessage_type\x18\x03 \x01(\x0e2\x18.steambridge.MessageTypeR\vmessageType\x12\x1b\n" +
 	"\timage_url\x18\x04 \x01(\tR\bimageUrl\x12\"\n" +
 	"\rchat_group_id\x18\x05 \x01(\x04R\vchatGroupId\x12\x17\n" +
-	"\achat_id\x18\x06 \x01(\x04R\x06chatId\"r\n" +
+	"\achat_id\x18\x06 \x01(\x04R\x06chatId\x12&\n" +
+	"\x0fcaller_steam_id\x18\a \x01(\x04R\rcallerSteamId\"r\n" +
 	"\x13SendMessageResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1c\n" +
-	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"\x1c\n" +
-	"\x1aMessageSubscriptionRequest\"\xe0\x02\n" +
+	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"7\n" +
+	"\x1aMessageSubscriptionRequest\x12\x19\n" +
+	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\"\xe0\x02\n" +
 	"\fMessageEvent\x12&\n" +
 	"\x0fsender_steam_id\x18\x01 \x01(\x04R\rsenderSteamId\x12&\n" +
 	"\x0ftarget_steam_id\x18\x02 \x01(\x04R\rtargetSteamId\x12\x18\n" +
@@ -3145,17 +3291,19 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\rchat_group_id\x18\b \x01(\x04R\vchatGroupId\x12\x17\n" +
 	"\achat_id\x18\t \x01(\x04R\x06chatId\x12\x18\n" +
 	"\aordinal\x18\n" +
-	" \x01(\rR\aordinal\"`\n" +
+	" \x01(\rR\aordinal\"\x88\x01\n" +
 	"\x19TypingNotificationRequest\x12&\n" +
 	"\x0ftarget_steam_id\x18\x01 \x01(\x04R\rtargetSteamId\x12\x1b\n" +
-	"\tis_typing\x18\x02 \x01(\bR\bisTyping\"6\n" +
+	"\tis_typing\x18\x02 \x01(\bR\bisTyping\x12&\n" +
+	"\x0fcaller_steam_id\x18\x03 \x01(\x04R\rcallerSteamId\"6\n" +
 	"\x1aTypingNotificationResponse\x12\x18\n" +
-	"\asuccess\x18\x01 \x01(\bR\asuccess\"l\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\"\x94\x01\n" +
 	"\x12UploadImageRequest\x12\x1d\n" +
 	"\n" +
 	"image_data\x18\x01 \x01(\fR\timageData\x12\x1b\n" +
 	"\tmime_type\x18\x02 \x01(\tR\bmimeType\x12\x1a\n" +
-	"\bfilename\x18\x03 \x01(\tR\bfilename\"q\n" +
+	"\bfilename\x18\x03 \x01(\tR\bfilename\x12&\n" +
+	"\x0fcaller_steam_id\x18\x04 \x01(\x04R\rcallerSteamId\"q\n" +
 	"\x13UploadImageResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1b\n" +
@@ -3167,9 +3315,10 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1d\n" +
 	"\n" +
 	"image_data\x18\x03 \x01(\fR\timageData\x12\x1b\n" +
-	"\tmime_type\x18\x04 \x01(\tR\bmimeType\"5\n" +
+	"\tmime_type\x18\x04 \x01(\tR\bmimeType\"]\n" +
 	"\x18GetUserAvatarDataRequest\x12\x19\n" +
-	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\"\xd6\x01\n" +
+	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\x12&\n" +
+	"\x0fcaller_steam_id\x18\x02 \x01(\x04R\rcallerSteamId\"\xd6\x01\n" +
 	"\x19GetUserAvatarDataResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1f\n" +
@@ -3179,14 +3328,15 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"avatar_url\x18\x04 \x01(\tR\tavatarUrl\x12\x1d\n" +
 	"\n" +
 	"image_data\x18\x05 \x01(\fR\timageData\x12\x1b\n" +
-	"\tmime_type\x18\x06 \x01(\tR\bmimeType\"\xcf\x01\n" +
+	"\tmime_type\x18\x06 \x01(\tR\bmimeType\"\xf7\x01\n" +
 	"\x19ChatMessageHistoryRequest\x12\"\n" +
 	"\rchat_group_id\x18\x01 \x01(\x04R\vchatGroupId\x12\x17\n" +
 	"\achat_id\x18\x02 \x01(\x04R\x06chatId\x12\x1b\n" +
 	"\tlast_time\x18\x03 \x01(\rR\blastTime\x12!\n" +
 	"\flast_ordinal\x18\x04 \x01(\rR\vlastOrdinal\x12\x1b\n" +
 	"\tmax_count\x18\x05 \x01(\rR\bmaxCount\x12\x18\n" +
-	"\aforward\x18\x06 \x01(\bR\aforward\"\xf3\x01\n" +
+	"\aforward\x18\x06 \x01(\bR\aforward\x12&\n" +
+	"\x0fcaller_steam_id\x18\a \x01(\x04R\rcallerSteamId\"\xf3\x01\n" +
 	"\x1aChatMessageHistoryResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12;\n" +
@@ -3200,8 +3350,9 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\aordinal\x18\x03 \x01(\rR\aordinal\x12'\n" +
 	"\x0fmessage_content\x18\x04 \x01(\tR\x0emessageContent\x12;\n" +
 	"\fmessage_type\x18\x05 \x01(\x0e2\x18.steambridge.MessageTypeR\vmessageType\x12\x1b\n" +
-	"\timage_url\x18\x06 \x01(\tR\bimageUrl\"\x12\n" +
-	"\x10GetGroupsRequest\"\x82\x01\n" +
+	"\timage_url\x18\x06 \x01(\tR\bimageUrl\"-\n" +
+	"\x10GetGroupsRequest\x12\x19\n" +
+	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\"\x82\x01\n" +
 	"\x11GetGroupsResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12.\n" +
@@ -3220,15 +3371,17 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"avatar_url\x18\t \x01(\tR\tavatarUrl\":\n" +
 	"\vChatChannel\x12\x17\n" +
 	"\achat_id\x18\x01 \x01(\x04R\x06chatId\x12\x12\n" +
-	"\x04name\x18\x02 \x01(\tR\x04name\"\x1c\n" +
-	"\x1aSessionSubscriptionRequest\"\x82\x01\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\"7\n" +
+	"\x1aSessionSubscriptionRequest\x12\x19\n" +
+	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\"\x82\x01\n" +
 	"\fSessionEvent\x12<\n" +
 	"\n" +
 	"event_type\x18\x01 \x01(\x0e2\x1d.steambridge.SessionEventTypeR\teventType\x12\x16\n" +
 	"\x06reason\x18\x02 \x01(\tR\x06reason\x12\x1c\n" +
-	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"I\n" +
+	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"d\n" +
 	"\x16SetPersonaStateRequest\x12/\n" +
-	"\x05state\x18\x01 \x01(\x0e2\x19.steambridge.PersonaStateR\x05state\"X\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x19.steambridge.PersonaStateR\x05state\x12\x19\n" +
+	"\bsteam_id\x18\x02 \x01(\x04R\asteamId\"X\n" +
 	"\x17SetPersonaStateResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage*\x81\x01\n" +
