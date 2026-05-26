@@ -145,7 +145,9 @@ func (sc *SteamClient) subscribeWithStream(ctx context.Context) error {
 
 // subscribeWithStreamRetry handles stream connection attempts during reconnection
 func (sc *SteamClient) subscribeWithStreamRetry(ctx context.Context) error {
-	stream, err := sc.msgClient.SubscribeToMessages(ctx, &steamapi.MessageSubscriptionRequest{})
+	stream, err := sc.msgClient.SubscribeToMessages(ctx, &steamapi.MessageSubscriptionRequest{
+		SteamId: sc.steamID(),
+	})
 	if err != nil {
 		return fmt.Errorf("failed to start message subscription: %w", err)
 	}
