@@ -6,16 +6,13 @@ namespace SteamBridge.Services;
 public class SteamImageService
 {
     private readonly ILogger<SteamImageService> _logger;
-    private readonly SteamClientManager _steamClientManager;
     private readonly HttpClient _httpClient;
-    
+
     public SteamImageService(
         ILogger<SteamImageService> logger,
-        SteamClientManager steamClientManager,
         HttpClient httpClient)
     {
         _logger = logger;
-        _steamClientManager = steamClientManager;
         _httpClient = httpClient;
     }
 
