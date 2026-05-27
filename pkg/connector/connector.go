@@ -186,6 +186,9 @@ type SteamClient struct {
 
 	// Presence management
 	presenceManager *PresenceManager
+
+	// Emote image cache: CDN URL → mxc:// URI (in-process, resets on restart)
+	emoteCache sync.Map
 }
 
 // SteamLoginPassword implements password-based login flow

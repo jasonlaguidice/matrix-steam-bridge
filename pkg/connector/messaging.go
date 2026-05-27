@@ -3,9 +3,11 @@ package connector
 import (
 	"context"
 	"fmt"
+	"html"
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,9 +36,9 @@ func buildStickerURL(name string) string {
 }
 
 var (
-	realtimeEmoticon        = regexp.MustCompile(`^:([^:]+):$`)
-	realtimeEmoticonBBCode  = regexp.MustCompile(`^\[emoticon\]([^\[]+)\[/emoticon\]$`)
-	realtimeSticker         = regexp.MustCompile(`^\[sticker\s+type="([^"]+)"[^\]]*\]\[/sticker\]$`)
+	inlineEmoticon       = regexp.MustCompile(`:([^:\s][^:]*):`)
+	inlineEmoticonBBCode = regexp.MustCompile(`\[emoticon\]([^\[]+)\[/emoticon\]`)
+	inlineSticker        = regexp.MustCompile(`\[sticker\s+type="([^"]+)"[^\]]*\]\[/sticker\]`)
 )
 
 // convertCDNImageMessage downloads an image from a public CDN URL and uploads it to Matrix,
@@ -66,6 +68,120 @@ func (sc *SteamClient) convertCDNImageMessage(ctx context.Context, portal *bridg
 		Parts: []*bridgev2.ConvertedMessagePart{{
 			Type:    event.EventMessage,
 			Content: content,
+		}},
+	}, nil
+}
+
+type emoteToken struct {
+	start, end int
+	name       string
+	isSticker  bool
+}
+
+func findAllEmoteTokens(msg string) []emoteToken {
+	var tokens []emoteToken
+	seen := make(map[[2]int]bool)
+
+	add := func(locs [][]int, isSticker bool) {
+		for _, loc := range locs {
+			key := [2]int{loc[0], loc[1]}
+			if !seen[key] {
+				seen[key] = true
+				tokens = append(tokens, emoteToken{loc[0], loc[1], msg[loc[2]:loc[3]], isSticker})
+			}
+		}
+	}
+	add(inlineEmoticon.FindAllStringSubmatchIndex(msg, -1), false)
+	add(inlineEmoticonBBCode.FindAllStringSubmatchIndex(msg, -1), false)
+	add(inlineSticker.FindAllStringSubmatchIndex(msg, -1), true)
+
+	sort.Slice(tokens, func(i, j int) bool { return tokens[i].start < tokens[j].start })
+	return tokens
+}
+
+// convertInlineEmotesMessage converts any message containing emote tokens to a single m.text
+// event with data-mx-emoticon HTML. When intent is nil (backfill path), cached mxc:// URIs are
+// used if available; otherwise CDN URLs are used directly in the img src.
+func (sc *SteamClient) convertInlineEmotesMessage(
+	ctx context.Context,
+	portal *bridgev2.Portal,
+	intent bridgev2.MatrixAPI,
+	rawMessage string,
+) (*bridgev2.ConvertedMessage, error) {
+	tokens := findAllEmoteTokens(rawMessage)
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("convertInlineEmotesMessage called with no emote tokens")
+	}
+
+	resolveEmote := func(tok emoteToken) (src, alt string) {
+		var cdnURL string
+		if tok.isSticker {
+			cdnURL = buildStickerURL(tok.name)
+		} else {
+			cdnURL = buildEmoticonURL(tok.name)
+		}
+		alt = ":" + tok.name + ":"
+
+		if cached, ok := sc.emoteCache.Load(cdnURL); ok {
+			return string(cached.(id.ContentURIString)), alt
+		}
+		// Backfill path passes nil intent — use the bridge bot to upload.
+		uploadIntent := intent
+		if uploadIntent == nil {
+			uploadIntent = sc.br.Bot
+		}
+
+		imageData, err := sc.downloadImageFromURL(ctx, cdnURL)
+		if err != nil {
+			return cdnURL, alt
+		}
+		mimeType := http.DetectContentType(imageData)
+		parts := strings.Split(cdnURL, "/")
+		filename := parts[len(parts)-1]
+		if !strings.Contains(filename, ".") {
+			filename += ".png"
+		}
+		// Empty roomID forces unencrypted upload — data-mx-emoticon img src has no
+		// place for a decryption key, so the mxc:// URI must be directly fetchable.
+		mxcURI, _, err := uploadIntent.UploadMedia(ctx, "", imageData, filename, mimeType)
+		if err != nil {
+			return cdnURL, alt
+		}
+		sc.emoteCache.Store(cdnURL, mxcURI)
+		return string(mxcURI), alt
+	}
+
+	var plainBuf, htmlBuf strings.Builder
+	pos := 0
+	for _, tok := range tokens {
+		if tok.start < pos {
+			continue
+		}
+		before := stripBBCode(rawMessage[pos:tok.start])
+		plainBuf.WriteString(before)
+		htmlBuf.WriteString(html.EscapeString(before))
+
+		src, alt := resolveEmote(tok)
+		plainBuf.WriteString(alt)
+		fmt.Fprintf(&htmlBuf,
+			`<img data-mx-emoticon src="%s" alt="%s" title="%s" height="32" />`,
+			src, html.EscapeString(alt), html.EscapeString(alt),
+		)
+		pos = tok.end
+	}
+	after := stripBBCode(rawMessage[pos:])
+	plainBuf.WriteString(after)
+	htmlBuf.WriteString(html.EscapeString(after))
+
+	return &bridgev2.ConvertedMessage{
+		Parts: []*bridgev2.ConvertedMessagePart{{
+			Type: event.EventMessage,
+			Content: &event.MessageEventContent{
+				MsgType:       event.MsgText,
+				Body:          plainBuf.String(),
+				Format:        event.FormatHTML,
+				FormattedBody: htmlBuf.String(),
+			},
 		}},
 	}, nil
 }
@@ -819,16 +935,12 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 
 	switch data.MessageType {
 	case steamapi.MessageType_CHAT_MESSAGE:
-		// Detect standalone emoticon (:name:) or sticker BBCode — convert to CDN image
+		// Detect any inline emote tokens — convert to m.text with data-mx-emoticon HTML
 		if data.ImageUrl == "" {
-			if m := realtimeEmoticon.FindStringSubmatch(data.Message); m != nil {
-				return sc.convertCDNImageMessage(ctx, portal, intent, buildEmoticonURL(m[1]), data.Message)
-			}
-			if m := realtimeSticker.FindStringSubmatch(data.Message); m != nil {
-				return sc.convertCDNImageMessage(ctx, portal, intent, buildStickerURL(m[1]), m[1])
-			}
-			if m := realtimeEmoticonBBCode.FindStringSubmatch(data.Message); m != nil {
-				return sc.convertCDNImageMessage(ctx, portal, intent, buildEmoticonURL(m[1]), ":"+m[1]+":")
+			if inlineEmoticon.MatchString(data.Message) ||
+				inlineEmoticonBBCode.MatchString(data.Message) ||
+				inlineSticker.MatchString(data.Message) {
+				return sc.convertInlineEmotesMessage(ctx, portal, intent, data.Message)
 			}
 		}
 

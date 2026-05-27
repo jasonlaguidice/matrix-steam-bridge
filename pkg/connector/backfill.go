@@ -171,55 +171,50 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 	var convertedMsg *bridgev2.ConvertedMessage
 	var err error
 
-	// Detect standalone emoticon or sticker BBCode — convert to CDN image
-	if steamMsg.ImageUrl == "" {
-		content := steamMsg.MessageContent
-		if m := bbcodeEmoticonFull.FindStringSubmatch(content); m != nil {
-			name := m[1]
-			steamMsg.ImageUrl = buildEmoticonURL(name)
-			steamMsg.MessageContent = ":" + name + ":"
-		} else if m := bbcodeStickerFull.FindStringSubmatch(content); m != nil {
-			name := m[1]
-			steamMsg.ImageUrl = buildStickerURL(name)
-			steamMsg.MessageContent = name
-		}
-	}
-
-	// Auto-detect image URLs in historical messages if not already set
-	if steamMsg.ImageUrl == "" {
-		if detectedURL := detectImageURL(steamMsg.MessageContent); detectedURL != "" {
-			steamMsg.ImageUrl = detectedURL
-			sc.br.Log.Info().
-				Str("detected_image_url", detectedURL).
-				Str("original_message", steamMsg.MessageContent).
-				Msg("Auto-detected image URL in historical Steam message")
-		}
-	}
-
-	if steamMsg.MessageType == steamapi.MessageType_INVITE_GAME {
-		// Game invite: render as a notice with the plain-text body from C#
-		body := steamMsg.MessageContent
-		if body == "" {
-			body = "Invited you to play a game"
-		}
-		convertedMsg = &bridgev2.ConvertedMessage{
-			Parts: []*bridgev2.ConvertedMessagePart{
-				{
-					Type: event.EventMessage,
-					Content: &event.MessageEventContent{
-						MsgType: event.MsgNotice,
-						Body:    "🎮 Game Invite: " + body,
-					},
-					ID: networkid.PartID("text"),
-				},
-			},
-		}
-	} else if steamMsg.ImageUrl != "" {
-		// Handle image message
-		convertedMsg, err = sc.convertImageMessageFromHistory(ctx, steamMsg.MessageContent, steamMsg.ImageUrl, portal)
+	// Detect any inline emote tokens — convert to m.text with data-mx-emoticon HTML
+	content := steamMsg.MessageContent
+	if steamMsg.ImageUrl == "" &&
+		(inlineEmoticon.MatchString(content) ||
+			inlineEmoticonBBCode.MatchString(content) ||
+			inlineSticker.MatchString(content)) {
+		convertedMsg, err = sc.convertInlineEmotesMessage(ctx, portal, nil, content)
 	} else {
-		// Handle text message — strip BBCode tags before sending to Matrix
-		convertedMsg, err = sc.convertTextMessageFromHistory(ctx, stripBBCode(steamMsg.MessageContent), portal)
+		// Auto-detect image URLs in historical messages if not already set
+		if steamMsg.ImageUrl == "" {
+			if detectedURL := detectImageURL(content); detectedURL != "" {
+				steamMsg.ImageUrl = detectedURL
+				sc.br.Log.Info().
+					Str("detected_image_url", detectedURL).
+					Str("original_message", content).
+					Msg("Auto-detected image URL in historical Steam message")
+			}
+		}
+
+		if steamMsg.MessageType == steamapi.MessageType_INVITE_GAME {
+			// Game invite: render as a notice with the plain-text body from C#
+			body := content
+			if body == "" {
+				body = "Invited you to play a game"
+			}
+			convertedMsg = &bridgev2.ConvertedMessage{
+				Parts: []*bridgev2.ConvertedMessagePart{
+					{
+						Type: event.EventMessage,
+						Content: &event.MessageEventContent{
+							MsgType: event.MsgNotice,
+							Body:    "🎮 Game Invite: " + body,
+						},
+						ID: networkid.PartID("text"),
+					},
+				},
+			}
+		} else if steamMsg.ImageUrl != "" {
+			// Handle image message
+			convertedMsg, err = sc.convertImageMessageFromHistory(ctx, content, steamMsg.ImageUrl, portal)
+		} else {
+			// Handle text message — strip BBCode tags before sending to Matrix
+			convertedMsg, err = sc.convertTextMessageFromHistory(ctx, stripBBCode(content), portal)
+		}
 	}
 
 	if err != nil {
@@ -288,10 +283,8 @@ func (sc *SteamClient) convertTextMessageFromHistory(ctx context.Context, conten
 // [emoticon]name[/emoticon] → :name:  (preserves emoticon short-name format)
 // All other [tag]content[/tag] patterns have their tags stripped, keeping the inner content.
 var (
-	bbcodeEmoticon     = regexp.MustCompile(`\[emoticon\](.*?)\[/emoticon\]`)
-	bbcodeGeneric      = regexp.MustCompile(`\[[a-zA-Z]+[^\]]*\](.*?)\[/[a-zA-Z]+\]`)
-	bbcodeStickerFull  = regexp.MustCompile(`^\[sticker\s+type="([^"]+)"[^\]]*\]\[/sticker\]$`)
-	bbcodeEmoticonFull = regexp.MustCompile(`^\[emoticon\](.*?)\[/emoticon\]$`)
+	bbcodeEmoticon = regexp.MustCompile(`\[emoticon\](.*?)\[/emoticon\]`)
+	bbcodeGeneric  = regexp.MustCompile(`\[[a-zA-Z]+[^\]]*\](.*?)\[/[a-zA-Z]+\]`)
 )
 
 func stripBBCode(s string) string {
