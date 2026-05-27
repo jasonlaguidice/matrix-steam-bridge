@@ -22,7 +22,9 @@ func (sc *SteamClient) syncGroups(ctx context.Context) error {
 
 	sc.br.Log.Info().Msg("Fetching Steam chat room groups")
 
-	resp, err := sc.groupClient.GetMyChatRoomGroups(ctx, &steamapi.GetGroupsRequest{})
+	resp, err := sc.groupClient.GetMyChatRoomGroups(ctx, &steamapi.GetGroupsRequest{
+		SteamId: sc.steamID(),
+	})
 	if err != nil {
 		return fmt.Errorf("failed to get chat room groups: %w", err)
 	}

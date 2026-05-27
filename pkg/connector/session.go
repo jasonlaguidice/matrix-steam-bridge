@@ -23,7 +23,9 @@ func (sc *SteamClient) startSessionEventSubscription(ctx context.Context) {
 		return
 	}
 
-	stream, err := sc.sessionClient.SubscribeToSessionEvents(ctx, &steamapi.SessionSubscriptionRequest{})
+	stream, err := sc.sessionClient.SubscribeToSessionEvents(ctx, &steamapi.SessionSubscriptionRequest{
+		SteamId: sc.steamID(),
+	})
 	if err != nil {
 		sc.br.Log.Error().Err(err).Msg("Failed to start session event subscription")
 		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,

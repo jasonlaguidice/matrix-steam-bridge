@@ -145,7 +145,9 @@ func (sc *SteamClient) subscribeWithStream(ctx context.Context) error {
 
 // subscribeWithStreamRetry handles stream connection attempts during reconnection
 func (sc *SteamClient) subscribeWithStreamRetry(ctx context.Context) error {
-	stream, err := sc.msgClient.SubscribeToMessages(ctx, &steamapi.MessageSubscriptionRequest{})
+	stream, err := sc.msgClient.SubscribeToMessages(ctx, &steamapi.MessageSubscriptionRequest{
+		SteamId: sc.steamID(),
+	})
 	if err != nil {
 		return fmt.Errorf("failed to start message subscription: %w", err)
 	}
@@ -294,10 +296,11 @@ func (sc *SteamClient) handleGroupChannelMessage(ctx context.Context, msg *bridg
 	}
 
 	resp, err := sc.msgClient.SendMessage(ctx, &steamapi.SendMessageRequest{
-		ChatGroupId: chatGroupID,
-		ChatId:      chatID,
-		Message:     messageText,
-		MessageType: steamapi.MessageType_CHAT_MESSAGE,
+		ChatGroupId:   chatGroupID,
+		ChatId:        chatID,
+		Message:       messageText,
+		MessageType:   steamapi.MessageType_CHAT_MESSAGE,
+		CallerSteamId: sc.steamID(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to send group message: %w", err)
@@ -356,6 +359,7 @@ func (sc *SteamClient) handleTextMessage(ctx context.Context, msg *bridgev2.Matr
 		TargetSteamId: targetSteamID,
 		Message:       messageText,
 		MessageType:   steamMsgType,
+		CallerSteamId: sc.steamID(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to send message to Steam: %w", err)
@@ -395,6 +399,7 @@ func (sc *SteamClient) handleStickerMessage(ctx context.Context, msg *bridgev2.M
 		TargetSteamId: targetSteamID,
 		Message:       stickerText,
 		MessageType:   steamapi.MessageType_CHAT_MESSAGE,
+		CallerSteamId: sc.steamID(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to send sticker message to Steam: %w", err)
@@ -521,6 +526,7 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 					TargetSteamId: targetSteamID,
 					Message:       content.Body,
 					MessageType:   steamapi.MessageType_CHAT_MESSAGE,
+					CallerSteamId: sc.steamID(),
 				})
 				if err != nil {
 					return nil, fmt.Errorf("failed to send image caption to Steam: %w", err)
@@ -535,6 +541,7 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 				TargetSteamId: targetSteamID,
 				Message:       publicURL,
 				MessageType:   steamapi.MessageType_CHAT_MESSAGE,
+				CallerSteamId: sc.steamID(),
 			})
 			if err != nil {
 				return nil, fmt.Errorf("failed to send image URL to Steam: %w", err)
@@ -988,6 +995,7 @@ func (sc *SteamClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.Mat
 	resp, err := sc.msgClient.SendTypingNotification(ctx, &steamapi.TypingNotificationRequest{
 		TargetSteamId: steamID,
 		IsTyping:      true,
+		CallerSteamId: sc.steamID(),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to send typing notification to Steam: %w", err)

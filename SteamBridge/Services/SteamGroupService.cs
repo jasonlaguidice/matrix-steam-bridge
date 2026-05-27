@@ -8,28 +8,29 @@ namespace SteamBridge.Services;
 public class SteamGroupService : Proto.SteamGroupService.SteamGroupServiceBase
 {
     private readonly ILogger<SteamGroupService> _logger;
-    private readonly SteamClientManager _steamClientManager;
+    private readonly SteamClientRegistry _registry;
 
-    public SteamGroupService(ILogger<SteamGroupService> logger, SteamClientManager steamClientManager)
+    public SteamGroupService(ILogger<SteamGroupService> logger, SteamClientRegistry registry)
     {
         _logger = logger;
-        _steamClientManager = steamClientManager;
+        _registry = registry;
     }
 
     public override async Task<GetGroupsResponse> GetMyChatRoomGroups(
         GetGroupsRequest request,
         ServerCallContext context)
     {
-        _logger.LogInformation("Getting user's chat room groups");
+        _logger.LogInformation("Getting user's chat room groups for steam_id: {SteamId}", request.SteamId);
 
-        if (!_steamClientManager.IsLoggedOn)
+        var manager = _registry.Get(request.SteamId.ToString());
+        if (manager == null || !manager.IsLoggedOn)
         {
-            return new GetGroupsResponse { Success = false, ErrorMessage = "Not logged on" };
+            return new GetGroupsResponse { Success = false, ErrorMessage = "No Steam session or not logged on" };
         }
 
         try
         {
-            var chatRoomService = _steamClientManager.ChatRoomService;
+            var chatRoomService = manager.ChatRoomService;
             var job = chatRoomService.GetMyChatRoomGroups(new CChatRoom_GetMyChatRoomGroups_Request());
             var result = await job.ToTask();
 
@@ -130,7 +131,7 @@ public class SteamGroupService : Proto.SteamGroupService.SteamGroupServiceBase
             var groupIds = response.Groups.Select(g => g.ChatGroupId).ToList();
             var activateRequest = new CChatRoom_SetSessionActiveChatRoomGroups_Request();
             activateRequest.chat_group_ids.AddRange(groupIds);
-            var activateJob = _steamClientManager.ChatRoomService.SetSessionActiveChatRoomGroups(activateRequest);
+            var activateJob = manager.ChatRoomService.SetSessionActiveChatRoomGroups(activateRequest);
             await activateJob.ToTask();
 
             // Join each group to receive real-time CChatRoom_IncomingChatMessage_Notification events
@@ -142,7 +143,7 @@ public class SteamGroupService : Proto.SteamGroupService.SteamGroupServiceBase
                     {
                         chat_group_id = group.ChatGroupId
                     };
-                    var joinJob = _steamClientManager.ChatRoomService.JoinChatRoomGroup(joinRequest);
+                    var joinJob = manager.ChatRoomService.JoinChatRoomGroup(joinRequest);
                     await joinJob.ToTask();
                     _logger.LogDebug("Joined chat room group {GroupId} for real-time notifications", group.ChatGroupId);
                 }

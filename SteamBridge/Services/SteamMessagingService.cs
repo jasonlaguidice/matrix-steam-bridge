@@ -2,6 +2,7 @@ using Grpc.Core;
 using SteamBridge.Proto;
 using Microsoft.Extensions.Logging;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
 using SteamKit2;
 using SteamKit2.Internal;
 
@@ -10,38 +11,38 @@ namespace SteamBridge.Services;
 public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingServiceBase
 {
     private readonly ILogger<SteamMessagingService> _logger;
-    private readonly SteamMessagingManager _messagingManager;
+    private readonly SteamClientRegistry _registry;
     private readonly SteamImageService _imageService;
     private readonly SteamUserInformationService _userInfoService;
-    private readonly SteamClientManager _steamClientManager;
 
     public SteamMessagingService(
         ILogger<SteamMessagingService> logger,
-        SteamMessagingManager messagingManager,
+        SteamClientRegistry registry,
         SteamImageService imageService,
-        SteamUserInformationService userInfoService,
-        SteamClientManager steamClientManager)
+        SteamUserInformationService userInfoService)
     {
         _logger = logger;
-        _messagingManager = messagingManager;
+        _registry = registry;
         _imageService = imageService;
         _userInfoService = userInfoService;
-        _steamClientManager = steamClientManager;
     }
 
     public override async Task<SendMessageResponse> SendMessage(
-        SendMessageRequest request, 
+        SendMessageRequest request,
         ServerCallContext context)
     {
-        _logger.LogInformation("Received send message request to {SteamID}: {Message}", 
+        _logger.LogInformation("Received send message request to {SteamID}: {Message}",
             request.TargetSteamId, request.Message);
+
+        var manager = _registry.Get(request.CallerSteamId.ToString())
+            ?? throw new RpcException(new Status(StatusCode.NotFound,
+                $"No Steam session for caller steam_id {request.CallerSteamId}"));
 
         try
         {
             if (request.ChatGroupId != 0)
             {
-                var groupResult = await _messagingManager.SendGroupMessageAsync(
-                    request.ChatGroupId, request.ChatId, request.Message);
+                var groupResult = await SendGroupMessageAsync(manager, request.ChatGroupId, request.ChatId, request.Message);
                 return new SendMessageResponse
                 {
                     Success = groupResult.Success,
@@ -52,20 +53,15 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
 
             var messageType = MapFromProtoMessageType(request.MessageType);
 
-            // If there's an image URL, format the message to include it
             string messageToSend = request.Message;
             if (!string.IsNullOrEmpty(request.ImageUrl))
             {
-                // Format: [Image: URL] caption
-                messageToSend = string.IsNullOrEmpty(request.Message) 
+                messageToSend = string.IsNullOrEmpty(request.Message)
                     ? $"[Image: {request.ImageUrl}]"
                     : $"[Image: {request.ImageUrl}] {request.Message}";
             }
-            
-            var result = await _messagingManager.SendMessageAsync(
-                request.TargetSteamId, 
-                messageToSend, 
-                messageType);
+
+            var result = await SendMessageAsync(manager, request.TargetSteamId, messageToSend, messageType);
 
             return new SendMessageResponse
             {
@@ -73,6 +69,10 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                 ErrorMessage = result.ErrorMessage ?? string.Empty,
                 Timestamp = result.Timestamp
             };
+        }
+        catch (RpcException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -91,17 +91,142 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
         IServerStreamWriter<Proto.MessageEvent> responseStream,
         ServerCallContext context)
     {
-        _logger.LogInformation("New message subscription started");
+        _logger.LogInformation("New message subscription started for steam_id: {SteamId}", request.SteamId);
+
+        var manager = _registry.Get(request.SteamId.ToString())
+            ?? throw new RpcException(new Status(StatusCode.NotFound,
+                $"No Steam session for steam_id {request.SteamId}"));
+
+        var channel = Channel.CreateUnbounded<MessageEvent>();
+
+        async void OnMessageReceived(object? sender, SteamFriends.FriendMsgCallback callback)
+        {
+            try
+            {
+                var messageEvent = new MessageEvent
+                {
+                    SenderSteamId = callback.Sender.ConvertToUInt64(),
+                    TargetSteamId = manager.SteamClient.SteamID?.ConvertToUInt64() ?? 0,
+                    Message = callback.Message.TrimEnd('\0'),
+                    MessageType = MapFromChatEntryType(callback.EntryType),
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    IsEcho = false
+                };
+                await channel.Writer.WriteAsync(messageEvent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing received message");
+            }
+        }
+
+        async void OnMessageEcho(object? sender, SteamFriends.FriendMsgEchoCallback callback)
+        {
+            try
+            {
+                var messageEvent = new MessageEvent
+                {
+                    SenderSteamId = manager.SteamClient.SteamID?.ConvertToUInt64() ?? 0,
+                    TargetSteamId = callback.Recipient.ConvertToUInt64(),
+                    Message = callback.Message.TrimEnd('\0'),
+                    MessageType = MapFromChatEntryType(callback.EntryType),
+                    Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    IsEcho = true
+                };
+                await channel.Writer.WriteAsync(messageEvent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing message echo");
+            }
+        }
+
+        async void OnGroupMessageReceived(object? sender, CChatRoom_IncomingChatMessage_Notification notification)
+        {
+            try
+            {
+                if (notification.server_message != null) return;
+
+                var msgRaw = notification.message?.TrimEnd('\0');
+
+                var messageEvent = new MessageEvent
+                {
+                    SenderSteamId = notification.steamid_sender,
+                    TargetSteamId = 0,
+                    Message = msgRaw ?? string.Empty,
+                    MessageType = MessageType.ChatMessage,
+                    Timestamp = notification.timestamp > 0 ? (long)notification.timestamp : DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    IsEcho = notification.steamid_sender == (manager.SteamClient.SteamID?.ConvertToUInt64() ?? 0),
+                    ChatGroupId = notification.chat_group_id,
+                    ChatId = notification.chat_id,
+                    Ordinal = notification.ordinal,
+                };
+
+                await channel.Writer.WriteAsync(messageEvent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing group message notification");
+            }
+        }
+
+        async void OnDirectMessageReceived(object? sender, CFriendMessages_IncomingMessage_Notification notification)
+        {
+            try
+            {
+                if (notification.chat_entry_type != 1) return;
+
+                var msgRaw = notification.message?.TrimEnd('\0');
+                var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
+
+                var (text, msgType) = ProcessMessageContent(msgRaw ?? string.Empty, msgNoBbCode ?? string.Empty);
+
+                var botSteamId = manager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
+
+                ulong senderSteamId;
+                ulong targetSteamId;
+                if (!notification.local_echo)
+                {
+                    senderSteamId = notification.steamid_friend;
+                    targetSteamId = botSteamId;
+                }
+                else
+                {
+                    senderSteamId = botSteamId;
+                    targetSteamId = notification.steamid_friend;
+                }
+
+                var messageEvent = new MessageEvent
+                {
+                    SenderSteamId = senderSteamId,
+                    TargetSteamId = targetSteamId,
+                    Message = text,
+                    MessageType = msgType,
+                    Timestamp = (long)notification.rtime32_server_timestamp,
+                    IsEcho = notification.local_echo,
+                    ChatGroupId = 0,
+                    ChatId = 0,
+                };
+
+                await channel.Writer.WriteAsync(messageEvent);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error processing direct message notification");
+            }
+        }
+
+        manager.MessageReceived += OnMessageReceived;
+        manager.MessageEcho += OnMessageEcho;
+        manager.GroupMessageReceived += OnGroupMessageReceived;
+        manager.DirectMessageReceived += OnDirectMessageReceived;
 
         try
         {
-            var messageStream = _messagingManager.SubscribeToMessagesAsync(context.CancellationToken);
-            
-            await foreach (var message in messageStream.WithCancellation(context.CancellationToken))
+            await foreach (var message in channel.Reader.ReadAllAsync(context.CancellationToken))
             {
-                // Parse image URL and caption from message
                 var (imageUrl, caption) = ParseImageMessage(message.Message);
-                
+
                 var protoMessage = new Proto.MessageEvent
                 {
                     SenderSteamId = message.SenderSteamId,
@@ -115,15 +240,12 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                     Ordinal = message.Ordinal,
                 };
 
-                // Set image URL if present
                 if (!string.IsNullOrEmpty(imageUrl))
-                {
                     protoMessage.ImageUrl = imageUrl;
-                }
 
                 await responseStream.WriteAsync(protoMessage);
-                
-                _logger.LogDebug("Streamed message event from {SenderID} to {TargetID}", 
+
+                _logger.LogDebug("Streamed message event from {SenderID} to {TargetID}",
                     message.SenderSteamId, message.TargetSteamId);
             }
         }
@@ -138,47 +260,57 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
         }
         finally
         {
-            _logger.LogInformation("Message subscription ended");
+            manager.MessageReceived -= OnMessageReceived;
+            manager.MessageEcho -= OnMessageEcho;
+            manager.GroupMessageReceived -= OnGroupMessageReceived;
+            manager.DirectMessageReceived -= OnDirectMessageReceived;
+            channel.Writer.TryComplete();
+            _logger.LogInformation("Message subscription ended for steam_id: {SteamId}", request.SteamId);
         }
     }
 
     public override async Task<TypingNotificationResponse> SendTypingNotification(
-        TypingNotificationRequest request, 
+        TypingNotificationRequest request,
         ServerCallContext context)
     {
-        _logger.LogDebug("Received typing notification request to {SteamID}: {IsTyping}", 
+        _logger.LogDebug("Received typing notification request to {SteamID}: {IsTyping}",
             request.TargetSteamId, request.IsTyping);
+
+        var manager = _registry.Get(request.CallerSteamId.ToString())
+            ?? throw new RpcException(new Status(StatusCode.NotFound,
+                $"No Steam session for caller steam_id {request.CallerSteamId}"));
 
         try
         {
-            var success = await _messagingManager.SendTypingNotificationAsync(
-                request.TargetSteamId, 
-                request.IsTyping);
-
-            return new TypingNotificationResponse
+            if (!manager.IsLoggedOn)
             {
-                Success = success
-            };
+                _logger.LogWarning("Cannot send typing notification - not logged on to Steam");
+                return new TypingNotificationResponse { Success = false };
+            }
+
+            var targetId = new SteamID(request.TargetSteamId);
+            if (request.IsTyping)
+            {
+                manager.SteamFriends.SendChatMessage(targetId, EChatEntryType.Typing, string.Empty);
+            }
+
+            return new TypingNotificationResponse { Success = true };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error processing typing notification request");
-            return new TypingNotificationResponse
-            {
-                Success = false
-            };
+            return new TypingNotificationResponse { Success = false };
         }
     }
 
     public override Task<UploadImageResponse> UploadImageToSteam(
-        UploadImageRequest request, 
+        UploadImageRequest request,
         ServerCallContext context)
     {
         _logger.LogWarning("Steam UGC upload request denied: {Filename}, {MimeType}, {Size} bytes. " +
-                          "Steam blocks UGC uploads from third-party clients.", 
+                          "Steam blocks UGC uploads from third-party clients.",
             request.Filename, request.MimeType, request.ImageData.Length);
 
-        // Return consistent error explaining that Steam blocks UGC uploads from third-party clients
         return Task.FromResult(new UploadImageResponse
         {
             Success = false,
@@ -188,7 +320,7 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
     }
 
     public override async Task<DownloadImageResponse> DownloadImageFromSteam(
-        DownloadImageRequest request, 
+        DownloadImageRequest request,
         ServerCallContext context)
     {
         _logger.LogInformation("Received image download request: {Url}", request.ImageUrl);
@@ -216,15 +348,14 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
     }
 
     public override async Task<GetUserAvatarDataResponse> GetUserAvatarData(
-        GetUserAvatarDataRequest request, 
+        GetUserAvatarDataRequest request,
         ServerCallContext context)
     {
         _logger.LogInformation("Received avatar data request for Steam ID: {SteamId}", request.SteamId);
 
         try
         {
-            // Get user info which includes avatar URL and hash
-            var userInfo = await _userInfoService.GetUserInfoAsync(request.SteamId);
+            var userInfo = await _userInfoService.GetUserInfoAsync(request.CallerSteamId, request.SteamId);
             if (userInfo == null)
             {
                 return new GetUserAvatarDataResponse
@@ -234,7 +365,6 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                 };
             }
 
-            // If no avatar URL is available, return empty response
             if (string.IsNullOrEmpty(userInfo.AvatarUrl))
             {
                 _logger.LogDebug("No avatar URL available for Steam ID: {SteamId}", request.SteamId);
@@ -249,9 +379,8 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
 
             try
             {
-                // Download the avatar image data
                 var (imageData, mimeType) = await _imageService.DownloadImageAsync(userInfo.AvatarUrl);
-                
+
                 return new GetUserAvatarDataResponse
                 {
                     Success = true,
@@ -263,11 +392,9 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
             }
             catch (Exception downloadEx)
             {
-                _logger.LogWarning(downloadEx, "Failed to download avatar image for Steam ID {SteamId} from URL: {AvatarUrl}", 
+                _logger.LogWarning(downloadEx, "Failed to download avatar image for Steam ID {SteamId} from URL: {AvatarUrl}",
                     request.SteamId, userInfo.AvatarUrl);
-                
-                // Return success but with empty image data if download fails
-                // This allows the system to still work with avatar URL for fallback
+
                 return new GetUserAvatarDataResponse
                 {
                     Success = true,
@@ -290,44 +417,367 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
         }
     }
 
-    /// <summary>
-    /// Parses a message to extract image URL and caption.
-    /// Expected format: "[Image: URL] caption" or "[Image: URL]"
-    /// </summary>
-    /// <param name="message">The message to parse</param>
-    /// <returns>A tuple containing the image URL (if found) and the caption text</returns>
+    public override async Task<ChatMessageHistoryResponse> GetChatMessageHistory(
+        ChatMessageHistoryRequest request,
+        ServerCallContext context)
+    {
+        var manager = _registry.Get(request.CallerSteamId.ToString())
+            ?? throw new RpcException(new Status(StatusCode.NotFound,
+                $"No Steam session for caller steam_id {request.CallerSteamId}"));
+
+        try
+        {
+            _logger.LogDebug("Getting chat message history for chat group {ChatGroupId}, chat {ChatId}",
+                request.ChatGroupId, request.ChatId);
+
+            var steamUnified = manager.SteamUnifiedMessages;
+            if (steamUnified == null)
+            {
+                _logger.LogError("SteamUnifiedMessages is not available");
+                return new ChatMessageHistoryResponse
+                {
+                    Success = false,
+                    ErrorMessage = "Steam client not connected"
+                };
+            }
+
+            bool isDM = request.ChatGroupId == 0;
+
+            if (isDM)
+                return await GetFriendMessageHistory(request, manager, steamUnified);
+            else
+                return await GetChatRoomMessageHistory(request, manager, steamUnified);
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogError(ex, "Task was canceled while retrieving chat message history.");
+            return new ChatMessageHistoryResponse
+            {
+                Success = false,
+                ErrorMessage = "Failed to retrieve message history: A task was canceled."
+            };
+        }
+        catch (RpcException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving chat message history");
+            return new ChatMessageHistoryResponse
+            {
+                Success = false,
+                ErrorMessage = $"Failed to retrieve message history: {ex.Message}"
+            };
+        }
+    }
+
+    private async Task<SendMessageResult> SendMessageAsync(SteamClientManager manager, ulong targetSteamId, string message, MessageType messageType = MessageType.ChatMessage)
+    {
+        if (!manager.IsLoggedOn)
+            return new SendMessageResult { Success = false, ErrorMessage = "Not logged on to Steam" };
+
+        try
+        {
+            var targetId = new SteamID(targetSteamId);
+            var steamFriends = manager.SteamFriends;
+            var chatEntryType = MapToChatEntryType(messageType);
+
+            _logger.LogInformation("Sending message to {SteamID}: {Message}", targetSteamId, message);
+            steamFriends.SendChatMessage(targetId, chatEntryType, message);
+
+            return new SendMessageResult { Success = true, Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending message to {SteamID}", targetSteamId);
+            return new SendMessageResult { Success = false, ErrorMessage = $"Failed to send message: {ex.Message}" };
+        }
+    }
+
+    private async Task<SendMessageResult> SendGroupMessageAsync(SteamClientManager manager, ulong chatGroupId, ulong chatId, string message)
+    {
+        if (!manager.IsLoggedOn)
+            return new SendMessageResult { Success = false, ErrorMessage = "Not logged on" };
+
+        try
+        {
+            var request = new CChatRoom_SendChatMessage_Request
+            {
+                chat_group_id = chatGroupId,
+                chat_id = chatId,
+                message = message,
+            };
+            var job = manager.ChatRoomService.SendChatMessage(request);
+            var result = await job.ToTask();
+
+            if (result == null || result.Result != EResult.OK)
+                return new SendMessageResult { Success = false, ErrorMessage = $"Steam API: {result?.Result}" };
+
+            return new SendMessageResult { Success = true, Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error sending group message");
+            return new SendMessageResult { Success = false, ErrorMessage = ex.Message };
+        }
+    }
+
+    private async Task<ChatMessageHistoryResponse> GetFriendMessageHistory(
+        ChatMessageHistoryRequest request,
+        SteamClientManager manager,
+        SteamUnifiedMessages steamUnified)
+    {
+        var mySteamId = manager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
+        if (mySteamId == 0)
+        {
+            return new ChatMessageHistoryResponse
+            {
+                Success = false,
+                ErrorMessage = "Cannot get own Steam ID"
+            };
+        }
+
+        var friendMsgRequest = new CFriendMessages_GetRecentMessages_Request
+        {
+            steamid1 = mySteamId,
+            steamid2 = request.ChatId,
+            count = Math.Min(request.MaxCount, 100),
+            bbcode_format = true
+        };
+
+        if (request.LastTime > 0 || request.LastOrdinal > 0)
+        {
+            if (request.Forward)
+            {
+                friendMsgRequest.rtime32_start_time = request.LastTime;
+                friendMsgRequest.start_ordinal = request.LastOrdinal;
+            }
+            else
+            {
+                friendMsgRequest.time_last = request.LastTime;
+                friendMsgRequest.ordinal_last = request.LastOrdinal;
+            }
+        }
+
+        _logger.LogDebug("Sending FriendMessages.GetRecentMessages: SteamId1={SteamId1}, SteamId2={SteamId2}, Count={Count}",
+            friendMsgRequest.steamid1, friendMsgRequest.steamid2, friendMsgRequest.count);
+
+        var friendMessagesService = manager.FriendMessagesService;
+        var job = friendMessagesService.GetRecentMessages(friendMsgRequest);
+        var result = await job.ToTask();
+
+        if (result == null || result.Result != EResult.OK)
+        {
+            _logger.LogWarning("Failed to get friend message history: result={Result}", result?.Result);
+            return new ChatMessageHistoryResponse
+            {
+                Success = false,
+                ErrorMessage = $"Steam API returned error: {result?.Result}"
+            };
+        }
+
+        var response = result.Body;
+        _logger.LogDebug("Received {MessageCount} friend messages from Steam API", response.messages?.Count ?? 0);
+
+        var historyResponse = new ChatMessageHistoryResponse
+        {
+            Success = true,
+            HasMore = response.more_available,
+            Messages = { }
+        };
+
+        if (response.messages != null)
+        {
+            var myUniverse = manager.SteamClient.SteamID?.AccountUniverse ?? EUniverse.Public;
+
+            foreach (var msg in response.messages)
+            {
+                var senderSteamId = new SteamID(msg.accountid, myUniverse, EAccountType.Individual);
+                var (msgContent, msgType) = ProcessHistoryMessageContent(msg.message ?? string.Empty);
+
+                var historyMessage = new ChatHistoryMessage
+                {
+                    SenderSteamId = senderSteamId.ConvertToUInt64(),
+                    Timestamp = msg.timestamp,
+                    Ordinal = msg.ordinal,
+                    MessageContent = msgContent,
+                    MessageType = msgType
+                };
+
+                if (msgType == Proto.MessageType.ChatMessage)
+                {
+                    var (imageUrl, caption) = ParseImageMessage(historyMessage.MessageContent);
+                    if (!string.IsNullOrEmpty(imageUrl))
+                    {
+                        historyMessage.ImageUrl = imageUrl;
+                        historyMessage.MessageContent = caption;
+                    }
+                }
+
+                historyResponse.Messages.Add(historyMessage);
+            }
+
+            if (response.messages.Count > 0)
+            {
+                var lastMessage = response.messages.Last();
+                historyResponse.NextTime = lastMessage.timestamp;
+                historyResponse.NextOrdinal = lastMessage.ordinal;
+            }
+        }
+
+        return historyResponse;
+    }
+
+    private async Task<ChatMessageHistoryResponse> GetChatRoomMessageHistory(
+        ChatMessageHistoryRequest request,
+        SteamClientManager manager,
+        SteamUnifiedMessages steamUnified)
+    {
+        var historyRequest = new CChatRoom_GetMessageHistory_Request
+        {
+            chat_group_id = request.ChatGroupId,
+            chat_id = request.ChatId,
+            max_count = Math.Min(request.MaxCount, 100)
+        };
+
+        if (request.LastTime > 0 && request.LastOrdinal > 0)
+        {
+            if (request.Forward)
+            {
+                historyRequest.start_time = request.LastTime;
+                historyRequest.start_ordinal = request.LastOrdinal;
+            }
+            else
+            {
+                historyRequest.last_time = request.LastTime;
+                historyRequest.last_ordinal = request.LastOrdinal;
+            }
+        }
+
+        _logger.LogDebug("Sending ChatRoom.GetMessageHistory request: GroupId={GroupId}, ChatId={ChatId}, MaxCount={MaxCount}",
+            historyRequest.chat_group_id, historyRequest.chat_id, historyRequest.max_count);
+
+        var job = steamUnified.SendMessage<CChatRoom_GetMessageHistory_Request, CChatRoom_GetMessageHistory_Response>(
+            "ChatRoom.GetMessageHistory#1", historyRequest);
+        var result = await job.ToTask();
+
+        if (result == null || result.Result != EResult.OK)
+        {
+            _logger.LogWarning("Failed to get chat room history: result={Result}", result?.Result);
+            return new ChatMessageHistoryResponse
+            {
+                Success = false,
+                ErrorMessage = $"Steam API returned error: {result?.Result}"
+            };
+        }
+
+        var response = result.Body;
+        _logger.LogDebug("Received {MessageCount} chat room messages from Steam API", response.messages?.Count ?? 0);
+
+        var historyResponse = new ChatMessageHistoryResponse
+        {
+            Success = true,
+            HasMore = response.more_available,
+            Messages = { }
+        };
+
+        if (response.messages != null)
+        {
+            var myUniverse = manager.SteamClient.SteamID?.AccountUniverse ?? EUniverse.Public;
+
+            foreach (var msg in response.messages)
+            {
+                var senderSteamId = new SteamID(msg.sender, myUniverse, EAccountType.Individual);
+
+                var historyMessage = new ChatHistoryMessage
+                {
+                    SenderSteamId = senderSteamId.ConvertToUInt64(),
+                    Timestamp = msg.server_timestamp,
+                    Ordinal = msg.ordinal,
+                    MessageContent = msg.message ?? string.Empty,
+                    MessageType = Proto.MessageType.ChatMessage
+                };
+
+                var (imageUrl, caption) = ParseImageMessage(historyMessage.MessageContent);
+                if (!string.IsNullOrEmpty(imageUrl))
+                {
+                    historyMessage.ImageUrl = imageUrl;
+                    historyMessage.MessageContent = caption;
+                }
+
+                historyResponse.Messages.Add(historyMessage);
+            }
+
+            if (response.messages.Count > 0)
+            {
+                var lastMessage = response.messages.Last();
+                historyResponse.NextTime = lastMessage.server_timestamp;
+                historyResponse.NextOrdinal = lastMessage.ordinal;
+            }
+        }
+
+        return historyResponse;
+    }
+
     private static (string? imageUrl, string caption) ParseImageMessage(string message)
     {
         if (string.IsNullOrEmpty(message))
-        {
             return (null, message);
-        }
 
-        // Look for pattern: [Image: URL]
         const string imagePrefix = "[Image: ";
         const string imageSuffix = "]";
 
         if (!message.StartsWith(imagePrefix))
-        {
-            return (null, message); // No image URL found
-        }
+            return (null, message);
 
         var endIndex = message.IndexOf(imageSuffix, imagePrefix.Length);
         if (endIndex == -1)
-        {
-            return (null, message); // Malformed image marker
-        }
+            return (null, message);
 
-        // Extract the URL
         var imageUrl = message.Substring(imagePrefix.Length, endIndex - imagePrefix.Length);
-        
-        // Extract the caption (everything after the closing bracket and optional space)
         var captionStart = endIndex + imageSuffix.Length;
-        var caption = captionStart < message.Length 
-            ? message.Substring(captionStart).TrimStart() 
+        var caption = captionStart < message.Length
+            ? message.Substring(captionStart).TrimStart()
             : string.Empty;
 
         return (imageUrl, caption);
+    }
+
+    private static (string text, MessageType type) ProcessMessageContent(string raw, string noBbCode)
+    {
+        bool isInvite = raw.StartsWith("[lobbyinvite", StringComparison.OrdinalIgnoreCase)
+                     || raw.StartsWith("[joingame", StringComparison.OrdinalIgnoreCase);
+
+        if (isInvite)
+        {
+            if (!string.IsNullOrWhiteSpace(noBbCode))
+                return (noBbCode, MessageType.InviteGame);
+
+            var appIdMatch = Regex.Match(raw, @"appid=""?(\d+)""?", RegexOptions.IgnoreCase);
+            if (appIdMatch.Success)
+                return ($"Invited you to play a game (App ID: {appIdMatch.Groups[1].Value})", MessageType.InviteGame);
+
+            return ("Invited you to play a game", MessageType.InviteGame);
+        }
+
+        return (raw, MessageType.ChatMessage);
+    }
+
+    private static (string content, Proto.MessageType type) ProcessHistoryMessageContent(string raw)
+    {
+        if (raw.StartsWith("[lobbyinvite", StringComparison.OrdinalIgnoreCase))
+        {
+            var appIdMatch = Regex.Match(raw, @"appid=""?(\d+)""?", RegexOptions.IgnoreCase);
+            if (appIdMatch.Success)
+                return ($"Invited you to play a game (App ID: {appIdMatch.Groups[1].Value})", Proto.MessageType.InviteGame);
+            return ("Invited you to play a game", Proto.MessageType.InviteGame);
+        }
+
+        if (raw.StartsWith("[joingame", StringComparison.OrdinalIgnoreCase))
+            return ("Invited you to join a game", Proto.MessageType.InviteGame);
+
+        return (raw, Proto.MessageType.ChatMessage);
     }
 
     private static Services.MessageType MapFromProtoMessageType(Proto.MessageType messageType)
@@ -354,320 +804,55 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
         };
     }
 
-    public override async Task<ChatMessageHistoryResponse> GetChatMessageHistory(
-        ChatMessageHistoryRequest request,
-        ServerCallContext context)
+    private static EChatEntryType MapToChatEntryType(MessageType messageType)
     {
-        try
+        return messageType switch
         {
-            _logger.LogDebug("Getting chat message history for chat group {ChatGroupId}, chat {ChatId}",
-                request.ChatGroupId, request.ChatId);
-
-            var steamUnified = _steamClientManager.SteamUnifiedMessages;
-            if (steamUnified == null)
-            {
-                _logger.LogError("SteamUnifiedMessages is not available");
-                return new ChatMessageHistoryResponse
-                {
-                    Success = false,
-                    ErrorMessage = "Steam client not connected"
-                };
-            }
-
-            // Detect conversation type: DM (chat_group_id == 0) vs Group Chat (chat_group_id != 0)
-            bool isDM = request.ChatGroupId == 0;
-
-            if (isDM)
-            {
-                // Use FriendMessages API for 1-to-1 DM conversations
-                return await GetFriendMessageHistory(request, steamUnified);
-            }
-            else
-            {
-                // Use ChatRoom API for group chats
-                return await GetChatRoomMessageHistory(request, steamUnified);
-            }
-        }
-        catch (TaskCanceledException ex)
-        {
-            _logger.LogError(ex, "Task was canceled while retrieving chat message history. CancellationToken.IsCancellationRequested: {IsCancelled}", context.CancellationToken.IsCancellationRequested);
-            return new ChatMessageHistoryResponse
-            {
-                Success = false,
-                ErrorMessage = $"Failed to retrieve message history: A task was canceled."
-            };
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error retrieving chat message history");
-            return new ChatMessageHistoryResponse
-            {
-                Success = false,
-                ErrorMessage = $"Failed to retrieve message history: {ex.Message}"
-            };
-        }
-    }
-
-    private async Task<ChatMessageHistoryResponse> GetFriendMessageHistory(
-        ChatMessageHistoryRequest request,
-        SteamUnifiedMessages steamUnified)
-    {
-        // Get our own Steam ID for the friend messages request
-        var mySteamId = _steamClientManager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
-        if (mySteamId == 0)
-        {
-            return new ChatMessageHistoryResponse
-            {
-                Success = false,
-                ErrorMessage = "Cannot get own Steam ID"
-            };
-        }
-
-        // Build FriendMessages.GetRecentMessages request
-        var friendMsgRequest = new CFriendMessages_GetRecentMessages_Request
-        {
-            steamid1 = mySteamId,
-            steamid2 = request.ChatId, // ChatId contains the friend's Steam ID for DMs
-            count = Math.Min(request.MaxCount, 100),
-            bbcode_format = true // Request raw BBCode so we can detect invite tags
-        };
-
-        // Set pagination cursor based on direction
-        if (request.LastTime > 0 || request.LastOrdinal > 0)
-        {
-            if (request.Forward)
-            {
-                // Forward pagination: fetch messages AFTER the anchor point (for catchup)
-                friendMsgRequest.rtime32_start_time = request.LastTime;
-                friendMsgRequest.start_ordinal = request.LastOrdinal;
-            }
-            else
-            {
-                // Backward pagination: fetch messages BEFORE the anchor point (for history)
-                friendMsgRequest.time_last = request.LastTime;
-                friendMsgRequest.ordinal_last = request.LastOrdinal;
-            }
-        }
-
-        _logger.LogDebug("Sending FriendMessages.GetRecentMessages: SteamId1={SteamId1}, SteamId2={SteamId2}, Count={Count}, TimeLast={TimeLast}",
-            friendMsgRequest.steamid1, friendMsgRequest.steamid2, friendMsgRequest.count, friendMsgRequest.time_last);
-
-        // Call Steam FriendMessages API using the registered service (enables proper callback handling)
-        _logger.LogDebug("Starting Steam API call for FriendMessages.GetRecentMessages");
-        var friendMessagesService = _steamClientManager.FriendMessagesService;
-        var job = friendMessagesService.GetRecentMessages(friendMsgRequest);
-
-        _logger.LogDebug("Awaiting Steam API response for FriendMessages.GetRecentMessages");
-        var result = await job.ToTask();
-        _logger.LogDebug("Received Steam API response for FriendMessages.GetRecentMessages");
-
-        if (result == null || result.Result != EResult.OK)
-        {
-            _logger.LogWarning("Failed to get friend message history: result={Result}", result?.Result);
-            return new ChatMessageHistoryResponse
-            {
-                Success = false,
-                ErrorMessage = $"Steam API returned error: {result?.Result}"
-            };
-        }
-
-        var response = result.Body;
-        _logger.LogDebug("Received {MessageCount} friend messages from Steam API", response.messages?.Count ?? 0);
-
-        var historyResponse = new ChatMessageHistoryResponse
-        {
-            Success = true,
-            HasMore = response.more_available,
-            Messages = { }
-        };
-
-        if (response.messages != null)
-        {
-            // Get the universe from our own Steam ID for constructing sender IDs
-            var myUniverse = _steamClientManager.SteamClient.SteamID?.AccountUniverse ?? EUniverse.Public;
-
-            foreach (var msg in response.messages)
-            {
-                // Convert 32-bit account ID to full 64-bit Steam ID using SteamKit's constructor
-                // FriendMessages API returns account IDs only, following SteamKit's own pattern from Callbacks.cs
-                var senderSteamId = new SteamID(msg.accountid, myUniverse, EAccountType.Individual);
-
-                var (msgContent, msgType) = ProcessHistoryMessageContent(msg.message ?? string.Empty);
-
-                var historyMessage = new ChatHistoryMessage
-                {
-                    SenderSteamId = senderSteamId.ConvertToUInt64(),
-                    Timestamp = msg.timestamp,
-                    Ordinal = msg.ordinal,
-                    MessageContent = msgContent,
-                    MessageType = msgType
-                };
-
-                // Parse image messages if present (only for non-invite messages)
-                if (msgType == Proto.MessageType.ChatMessage)
-                {
-                    var (imageUrl, caption) = ParseImageMessage(historyMessage.MessageContent);
-                    if (!string.IsNullOrEmpty(imageUrl))
-                    {
-                        historyMessage.ImageUrl = imageUrl;
-                        historyMessage.MessageContent = caption;
-                    }
-                }
-
-                historyResponse.Messages.Add(historyMessage);
-            }
-
-            // Set next cursor for pagination (use the oldest message for backward pagination)
-            if (response.messages.Count > 0)
-            {
-                var lastMessage = response.messages.Last();
-                historyResponse.NextTime = lastMessage.timestamp;
-                historyResponse.NextOrdinal = lastMessage.ordinal;
-            }
-        }
-
-        _logger.LogDebug("Returning {MessageCount} processed friend messages, HasMore={HasMore}",
-            historyResponse.Messages.Count, historyResponse.HasMore);
-
-        return historyResponse;
-    }
-
-    private async Task<ChatMessageHistoryResponse> GetChatRoomMessageHistory(
-        ChatMessageHistoryRequest request,
-        SteamUnifiedMessages steamUnified)
-    {
-        // Create the Steam API request for group chats
-        var historyRequest = new CChatRoom_GetMessageHistory_Request
-        {
-            chat_group_id = request.ChatGroupId,
-            chat_id = request.ChatId,
-            max_count = Math.Min(request.MaxCount, 100) // Limit to reasonable batch size
-        };
-
-        // Set pagination cursor if provided
-        if (request.LastTime > 0 && request.LastOrdinal > 0)
-        {
-            if (request.Forward)
-            {
-                historyRequest.start_time = request.LastTime;
-                historyRequest.start_ordinal = request.LastOrdinal;
-            }
-            else
-            {
-                historyRequest.last_time = request.LastTime;
-                historyRequest.last_ordinal = request.LastOrdinal;
-            }
-        }
-
-        _logger.LogDebug("Sending ChatRoom.GetMessageHistory request: GroupId={GroupId}, ChatId={ChatId}, MaxCount={MaxCount}, Forward={Forward}",
-            historyRequest.chat_group_id, historyRequest.chat_id, historyRequest.max_count, request.Forward);
-
-        // Call Steam API
-        _logger.LogDebug("Starting Steam API call for ChatRoom.GetMessageHistory");
-        var job = steamUnified.SendMessage<CChatRoom_GetMessageHistory_Request, CChatRoom_GetMessageHistory_Response>(
-            "ChatRoom.GetMessageHistory#1", historyRequest);
-
-        _logger.LogDebug("Awaiting Steam API response for ChatRoom.GetMessageHistory");
-        var result = await job.ToTask();
-        _logger.LogDebug("Received Steam API response for ChatRoom.GetMessageHistory");
-
-        if (result == null || result.Result != EResult.OK)
-        {
-            _logger.LogWarning("Failed to get chat room history: result={Result}", result?.Result);
-            return new ChatMessageHistoryResponse
-            {
-                Success = false,
-                ErrorMessage = $"Steam API returned error: {result?.Result}"
-            };
-        }
-
-        var response = result.Body;
-        _logger.LogDebug("Received {MessageCount} chat room messages from Steam API", response.messages?.Count ?? 0);
-
-        var historyResponse = new ChatMessageHistoryResponse
-        {
-            Success = true,
-            HasMore = response.more_available,
-            Messages = { }
-        };
-
-        if (response.messages != null)
-        {
-            // Get the universe from our own Steam ID for constructing sender IDs.
-            // msg.sender from CChatRoom_GetMessageHistory_Response is a 32-bit account ID,
-            // not a full SteamID64. Convert it exactly as GetFriendMessageHistory does.
-            var myUniverse = _steamClientManager.SteamClient.SteamID?.AccountUniverse ?? EUniverse.Public;
-
-            foreach (var msg in response.messages)
-            {
-                // Convert 32-bit account ID to full 64-bit Steam ID using SteamKit's constructor
-                var senderSteamId = new SteamID(msg.sender, myUniverse, EAccountType.Individual);
-
-                var historyMessage = new ChatHistoryMessage
-                {
-                    SenderSteamId = senderSteamId.ConvertToUInt64(),
-                    Timestamp = msg.server_timestamp,
-                    Ordinal = msg.ordinal,
-                    MessageContent = msg.message ?? string.Empty,
-                    MessageType = Proto.MessageType.ChatMessage // Default to chat message for now
-                };
-
-                // Parse image messages if present
-                var (imageUrl, caption) = ParseImageMessage(historyMessage.MessageContent);
-                if (!string.IsNullOrEmpty(imageUrl))
-                {
-                    historyMessage.ImageUrl = imageUrl;
-                    historyMessage.MessageContent = caption;
-                }
-
-                historyResponse.Messages.Add(historyMessage);
-            }
-
-            // Set next cursor for pagination
-            if (response.messages.Count > 0)
-            {
-                var lastMessage = response.messages.Last();
-                historyResponse.NextTime = lastMessage.server_timestamp;
-                historyResponse.NextOrdinal = lastMessage.ordinal;
-            }
-        }
-
-        _logger.LogDebug("Returning {MessageCount} processed chat room messages, HasMore={HasMore}",
-            historyResponse.Messages.Count, historyResponse.HasMore);
-
-        return historyResponse;
-    }
-
-    private static Proto.MessageType ConvertSteamMessageType(uint steamMessageType)
-    {
-        // Steam message type constants from SteamKit2
-        return steamMessageType switch
-        {
-            1 => Proto.MessageType.ChatMessage, // k_EChatEntryType_ChatMsg
-            2 => Proto.MessageType.Typing,       // k_EChatEntryType_Typing
-            3 => Proto.MessageType.Emote,        // k_EChatEntryType_Emote
-            4 => Proto.MessageType.InviteGame,   // k_EChatEntryType_InviteGame
-            _ => Proto.MessageType.ChatMessage   // Default to chat message
+            MessageType.ChatMessage => EChatEntryType.ChatMsg,
+            MessageType.Typing => EChatEntryType.Typing,
+            MessageType.Emote => EChatEntryType.ChatMsg,
+            MessageType.InviteGame => EChatEntryType.InviteGame,
+            _ => EChatEntryType.ChatMsg
         };
     }
 
-    /// <summary>
-    /// Processes a raw history message body, detecting invite BBCode tags and converting
-    /// them to human-readable plain text with the appropriate message type.
-    /// </summary>
-    private static (string content, Proto.MessageType type) ProcessHistoryMessageContent(string raw)
+    private static MessageType MapFromChatEntryType(EChatEntryType entryType)
     {
-        if (raw.StartsWith("[lobbyinvite", StringComparison.OrdinalIgnoreCase))
+        return entryType switch
         {
-            var appIdMatch = Regex.Match(raw, @"appid=""?(\d+)""?", RegexOptions.IgnoreCase);
-            if (appIdMatch.Success)
-                return ($"Invited you to play a game (App ID: {appIdMatch.Groups[1].Value})", Proto.MessageType.InviteGame);
-            return ("Invited you to play a game", Proto.MessageType.InviteGame);
-        }
-
-        if (raw.StartsWith("[joingame", StringComparison.OrdinalIgnoreCase))
-            return ("Invited you to join a game", Proto.MessageType.InviteGame);
-
-        return (raw, Proto.MessageType.ChatMessage);
+            EChatEntryType.ChatMsg => MessageType.ChatMessage,
+            EChatEntryType.Typing => MessageType.Typing,
+            EChatEntryType.InviteGame => MessageType.InviteGame,
+            _ => MessageType.ChatMessage
+        };
     }
+}
+
+public class SendMessageResult
+{
+    public bool Success { get; set; }
+    public string? ErrorMessage { get; set; }
+    public long Timestamp { get; set; }
+}
+
+public class MessageEvent
+{
+    public ulong SenderSteamId { get; set; }
+    public ulong TargetSteamId { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public MessageType MessageType { get; set; }
+    public long Timestamp { get; set; }
+    public bool IsEcho { get; set; }
+    public string ImageUrl { get; set; } = string.Empty;
+    public ulong ChatGroupId { get; set; }
+    public ulong ChatId { get; set; }
+    public uint Ordinal { get; set; }
+}
+
+public enum MessageType
+{
+    ChatMessage,
+    Typing,
+    Emote,
+    InviteGame
 }

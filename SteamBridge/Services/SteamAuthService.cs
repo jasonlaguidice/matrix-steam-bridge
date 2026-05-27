@@ -28,6 +28,7 @@ public class SteamAuthService : Proto.SteamAuthService.SteamAuthServiceBase
             var result = await _authService.LoginWithCredentialsAsync(
                 request.Username,
                 request.Password,
+                request.LoginSessionKey,
                 string.IsNullOrEmpty(request.GuardCode) ? null : request.GuardCode,
                 request.RememberPassword,
                 string.IsNullOrEmpty(request.EmailCode) ? null : request.EmailCode);
@@ -69,7 +70,7 @@ public class SteamAuthService : Proto.SteamAuthService.SteamAuthServiceBase
 
         try
         {
-            var result = await _authService.StartQRLoginAsync();
+            var result = await _authService.StartQRLoginAsync(request.LoginSessionKey);
 
             return new QRLoginResponse
             {
@@ -180,7 +181,8 @@ public class SteamAuthService : Proto.SteamAuthService.SteamAuthServiceBase
             var result = await _authService.ReAuthenticateWithTokensAsync(
                 request.AccessToken,
                 request.RefreshToken,
-                request.Username);
+                request.Username,
+                request.SteamId);
 
             var response = new TokenReAuthResponse
             {
@@ -214,11 +216,11 @@ public class SteamAuthService : Proto.SteamAuthService.SteamAuthServiceBase
         LogoutRequest request, 
         ServerCallContext context)
     {
-        _logger.LogInformation("Received logout request");
+        _logger.LogInformation("Received logout request for steam_id: {SteamId}", request.SteamId);
 
         try
         {
-            var result = await _authService.LogoutAsync();
+            var result = await _authService.LogoutAsync(request.SteamId);
             return new LogoutResponse
             {
                 Success = result

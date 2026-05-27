@@ -194,8 +194,9 @@ type SteamLoginPassword struct {
 	User       *bridgev2.User
 	cancelFunc context.CancelFunc
 	// Store session info for 2FA continuation
-	SessionID string
-	Username  string // Store username for UserLogin creation
+	SessionID       string
+	Username        string // Store username for UserLogin creation
+	LoginSessionKey string // Client-generated UUID for routing to per-user SteamClientManager
 }
 
 // SteamLoginQR implements QR code-based login flow
@@ -208,10 +209,11 @@ type SteamLoginQR struct {
 	cancelFunc context.CancelFunc
 
 	// Steam QR authentication data
-	ChallengeID  string
-	QRCodeData   string
-	PollInterval time.Duration
-	PollTimeout  time.Duration
+	ChallengeID     string
+	QRCodeData      string
+	PollInterval    time.Duration
+	PollTimeout     time.Duration
+	LoginSessionKey string // Client-generated UUID for routing to per-user SteamClientManager
 
 	// Matrix UI management
 	QRMessageID      id.EventID   // For redacting QR messages

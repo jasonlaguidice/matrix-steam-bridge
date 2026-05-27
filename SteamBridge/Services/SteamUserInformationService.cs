@@ -8,7 +8,7 @@ namespace SteamBridge.Services;
 public class SteamUserInformationService
 {
     private readonly ILogger<SteamUserInformationService> _logger;
-    private readonly SteamClientManager _steamClientManager;
+    private readonly SteamClientRegistry _registry;
     private readonly HttpClient _httpClient;
 
     // Steam Web API key - in production, this should be from configuration
@@ -16,26 +16,27 @@ public class SteamUserInformationService
 
     public SteamUserInformationService(
         ILogger<SteamUserInformationService> logger,
-        SteamClientManager steamClientManager,
+        SteamClientRegistry registry,
         HttpClient httpClient)
     {
         _logger = logger;
-        _steamClientManager = steamClientManager;
+        _registry = registry;
         _httpClient = httpClient;
     }
 
-    public async Task<UserInfo?> GetUserInfoAsync(ulong? steamId = null)
+    public async Task<UserInfo?> GetUserInfoAsync(ulong callerSteamId, ulong? steamId = null)
     {
-        if (!_steamClientManager.IsLoggedOn)
+        var manager = _registry.Get(callerSteamId.ToString());
+        if (manager == null || !manager.IsLoggedOn)
         {
-            _logger.LogWarning("Cannot get user info - not logged on to Steam");
+            _logger.LogWarning("Cannot get user info - no session or not logged on for steam_id: {SteamId}", callerSteamId);
             return null;
         }
 
-        var steamFriends = _steamClientManager.SteamFriends;
-        var targetSteamId = steamId.HasValue 
-            ? new SteamID(steamId.Value) 
-            : _steamClientManager.SteamClient.SteamID;
+        var steamFriends = manager.SteamFriends;
+        var targetSteamId = steamId.HasValue
+            ? new SteamID(steamId.Value)
+            : manager.SteamClient.SteamID;
 
         if (targetSteamId == null)
         {
@@ -45,9 +46,9 @@ public class SteamUserInformationService
 
         try
         {
-            var avatarHash = GetAvatarHash(targetSteamId);
+            var avatarHash = GetAvatarHash(targetSteamId, manager);
             var avatarHashString = string.Empty;
-            
+
             if (avatarHash != null && avatarHash.Length > 0)
             {
                 // Check if it's a zero-filled array (SHA-1 hash should be 20 bytes, all zeros means no avatar)
@@ -61,10 +62,10 @@ public class SteamUserInformationService
                     _logger.LogWarning("Avatar hash is all zeros for Steam ID {SteamId}, treating as no avatar", targetSteamId);
                 }
             }
-            
-            _logger.LogDebug("Avatar info for SteamID {SteamId}: avatarHash is null={IsNull}, avatarHashString='{AvatarHashString}'", 
+
+            _logger.LogDebug("Avatar info for SteamID {SteamId}: avatarHash is null={IsNull}, avatarHashString='{AvatarHashString}'",
                 targetSteamId, avatarHash == null, avatarHashString);
-            
+
             var userInfo = new UserInfo
             {
                 SteamId = targetSteamId.ConvertToUInt64(),
@@ -73,7 +74,7 @@ public class SteamUserInformationService
                 Status = MapPersonaState(steamFriends.GetFriendPersonaState(targetSteamId)),
                 CurrentGame = steamFriends.GetFriendGamePlayedName(targetSteamId) ?? string.Empty,
                 ProfileUrl = $"https://steamcommunity.com/profiles/{targetSteamId.ConvertToUInt64()}",
-                AvatarUrl = GetAvatarUrl(targetSteamId),
+                AvatarUrl = GetAvatarUrl(targetSteamId, manager),
                 AvatarHash = avatarHashString
             };
 
@@ -87,15 +88,16 @@ public class SteamUserInformationService
         }
     }
 
-    public async Task<List<Friend>> GetFriendsListAsync()
+    public async Task<List<Friend>> GetFriendsListAsync(ulong callerSteamId)
     {
-        if (!_steamClientManager.IsLoggedOn)
+        var manager = _registry.Get(callerSteamId.ToString());
+        if (manager == null || !manager.IsLoggedOn)
         {
-            _logger.LogWarning("Cannot get friends list - not logged on to Steam");
+            _logger.LogWarning("Cannot get friends list - no session or not logged on for steam_id: {SteamId}", callerSteamId);
             return new List<Friend>();
         }
 
-        var steamFriends = _steamClientManager.SteamFriends;
+        var steamFriends = manager.SteamFriends;
         var friends = new List<Friend>();
 
         try
@@ -110,7 +112,7 @@ public class SteamUserInformationService
 
                 var relationship = steamFriends.GetFriendRelationship(friendSteamId);
                 
-                var avatarHash = GetAvatarHash(friendSteamId);
+                var avatarHash = GetAvatarHash(friendSteamId, manager);
                 var avatarHashString = string.Empty;
                 
                 if (avatarHash != null && avatarHash.Length > 0)
@@ -134,7 +136,7 @@ public class SteamUserInformationService
                     Status = MapPersonaState(steamFriends.GetFriendPersonaState(friendSteamId)),
                     CurrentGame = steamFriends.GetFriendGamePlayedName(friendSteamId) ?? string.Empty,
                     Relationship = MapFriendRelationship(relationship),
-                    AvatarUrl = GetAvatarUrl(friendSteamId),
+                    AvatarUrl = GetAvatarUrl(friendSteamId, manager),
                     AvatarHash = avatarHashString
                 };
 
@@ -151,18 +153,19 @@ public class SteamUserInformationService
         }
     }
 
-    public async Task<PersonaState> GetUserStatusAsync(ulong steamId)
+    public async Task<PersonaState> GetUserStatusAsync(ulong callerSteamId, ulong steamId)
     {
-        if (!_steamClientManager.IsLoggedOn)
+        var manager = _registry.Get(callerSteamId.ToString());
+        if (manager == null || !manager.IsLoggedOn)
         {
-            _logger.LogWarning("Cannot get user status - not logged on to Steam");
+            _logger.LogWarning("Cannot get user status - no session or not logged on for steam_id: {SteamId}", callerSteamId);
             return PersonaState.Offline;
         }
 
         try
         {
             var targetSteamId = new SteamID(steamId);
-            var steamFriends = _steamClientManager.SteamFriends;
+            var steamFriends = manager.SteamFriends;
             var status = steamFriends.GetFriendPersonaState(targetSteamId);
             
             return MapPersonaState(status);
@@ -174,7 +177,7 @@ public class SteamUserInformationService
         }
     }
 
-    public async Task<(bool Success, string? SteamId, string? ErrorMessage)> ResolveVanityUrlAsync(string vanityUrl)
+    public async Task<(bool Success, string? SteamId, string? ErrorMessage)> ResolveVanityUrlAsync(string vanityUrl, ulong callerSteamId)
     {
         _logger.LogInformation("Resolving vanity URL: {VanityUrl}", vanityUrl);
 
@@ -291,11 +294,11 @@ public class SteamUserInformationService
         };
     }
 
-    private string GetAvatarUrl(SteamID steamId)
+    private string GetAvatarUrl(SteamID steamId, SteamClientManager manager)
     {
-        try 
+        try
         {
-            var steamFriends = _steamClientManager.SteamFriends;
+            var steamFriends = manager.SteamFriends;
             var avatarHash = steamFriends.GetFriendAvatar(steamId);
             
             if (avatarHash != null && avatarHash.Length > 0)
@@ -318,11 +321,11 @@ public class SteamUserInformationService
         }
     }
 
-    private byte[]? GetAvatarHash(SteamID steamId)
+    private byte[]? GetAvatarHash(SteamID steamId, SteamClientManager manager)
     {
-        try 
+        try
         {
-            var steamFriends = _steamClientManager.SteamFriends;
+            var steamFriends = manager.SteamFriends;
             var avatarBytes = steamFriends.GetFriendAvatar(steamId);
             
             if (avatarBytes == null)
