@@ -865,7 +865,7 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 				Sender:    eventSender,
 				Timestamp: time.Unix(msgEvent.Timestamp, 0),
 			},
-			Timeout: 5 * time.Second,
+			Timeout: 15 * time.Second,
 			Type:    bridgev2.TypingTypeText,
 		}
 		sc.br.QueueRemoteEvent(sc.UserLogin, typingEvent)
@@ -1086,9 +1086,15 @@ func (sc *SteamClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.Mat
 		return nil
 	}
 
+	sc.typingMu.Lock()
+	if cancel, ok := sc.typingCancels[msg.Portal.ID]; ok {
+		cancel()
+		delete(sc.typingCancels, msg.Portal.ID)
+	}
+	sc.typingMu.Unlock()
+
 	if !msg.IsTyping {
-		// Steam doesn't support explicit "stop typing" notifications
-		// Steam typing notifications automatically timeout
+		// Ticker cancelled above; Steam's indicator will expire on its own.
 		return nil
 	}
 
@@ -1097,25 +1103,53 @@ func (sc *SteamClient) HandleMatrixTyping(ctx context.Context, msg *bridgev2.Mat
 		sc.presenceManager.HandleActivity(ctx)
 	}
 
-	// Parse the Steam ID from the portal ID (safe: we already confirmed this is a DM portal)
 	steamID, err := parseSteamIDFromPortalID(msg.Portal.ID)
 	if err != nil {
 		return fmt.Errorf("failed to parse Steam ID from portal ID %q: %w", msg.Portal.ID, err)
 	}
 
-	// Send typing notification to Steam via gRPC
-	resp, err := sc.msgClient.SendTypingNotification(ctx, &steamapi.TypingNotificationRequest{
-		TargetSteamId: steamID,
-		IsTyping:      true,
-		CallerSteamId: sc.steamID(),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to send typing notification to Steam: %w", err)
+	sendTyping := func() error {
+		resp, err := sc.msgClient.SendTypingNotification(sc.connectionCtx, &steamapi.TypingNotificationRequest{
+			TargetSteamId: steamID,
+			IsTyping:      true,
+			CallerSteamId: sc.steamID(),
+		})
+		if err != nil {
+			return fmt.Errorf("failed to send typing notification to Steam: %w", err)
+		}
+		if !resp.Success {
+			return fmt.Errorf("Steam typing notification failed")
+		}
+		return nil
 	}
 
-	if !resp.Success {
-		return fmt.Errorf("Steam typing notification failed")
+	// Send the first notification immediately.
+	if err := sendTyping(); err != nil {
+		return err
 	}
+
+	// Re-send every 8s so Steam's recipient indicator (~15s timeout) stays alive
+	// until Matrix tells us the user stopped typing.
+	tickerCtx, cancel := context.WithCancel(sc.connectionCtx)
+	sc.typingMu.Lock()
+	sc.typingCancels[msg.Portal.ID] = cancel
+	sc.typingMu.Unlock()
+
+	go func() {
+		ticker := time.NewTicker(8 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-tickerCtx.Done():
+				return
+			case <-ticker.C:
+				if err := sendTyping(); err != nil {
+					sc.br.Log.Debug().Err(err).Msg("Failed to re-send typing notification to Steam")
+					return
+				}
+			}
+		}
+	}()
 
 	return nil
 }

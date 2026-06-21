@@ -187,6 +187,10 @@ type SteamClient struct {
 	// Presence management
 	presenceManager *PresenceManager
 
+	// Per-portal typing re-send tickers (Matrix → Steam direction)
+	typingCancels map[networkid.PortalID]context.CancelFunc
+	typingMu      sync.Mutex
+
 	// Emote image cache: CDN URL → mxc:// URI (in-process, resets on restart)
 	emoteCache sync.Map
 }
@@ -457,6 +461,7 @@ func (sc *SteamConnector) LoadUserLogin(ctx context.Context, login *bridgev2.Use
 		presenceClient: sc.presenceClient,
 		groupClient:    sc.groupClient,
 		br:             sc.br,
+		typingCancels:  make(map[networkid.PortalID]context.CancelFunc),
 	}
 
 	// Auto-connect the login - mautrix-go bridgev2 doesn't automatically call Connect()

@@ -174,12 +174,13 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
         {
             try
             {
-                if (notification.chat_entry_type != 1) return;
-
-                var msgRaw = notification.message?.TrimEnd('\0');
-                var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
-
-                var (text, msgType) = ProcessMessageContent(msgRaw ?? string.Empty, msgNoBbCode ?? string.Empty);
+                // chat_entry_type: 1 = ChatMsg, 2 = Typing, 3 = InviteGame
+                if (notification.chat_entry_type != 1 && notification.chat_entry_type != 2 && notification.chat_entry_type != 3)
+                {
+                    _logger.LogDebug("Ignoring direct message notification with unhandled chat_entry_type={ChatEntryType} from {SteamId}",
+                        notification.chat_entry_type, notification.steamid_friend);
+                    return;
+                }
 
                 var botSteamId = manager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
 
@@ -196,17 +197,53 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                     targetSteamId = notification.steamid_friend;
                 }
 
-                var messageEvent = new MessageEvent
+                MessageEvent messageEvent;
+                if (notification.chat_entry_type == 2)
                 {
-                    SenderSteamId = senderSteamId,
-                    TargetSteamId = targetSteamId,
-                    Message = text,
-                    MessageType = msgType,
-                    Timestamp = (long)notification.rtime32_server_timestamp,
-                    IsEcho = notification.local_echo,
-                    ChatGroupId = 0,
-                    ChatId = 0,
-                };
+                    messageEvent = new MessageEvent
+                    {
+                        SenderSteamId = senderSteamId,
+                        TargetSteamId = targetSteamId,
+                        Message = string.Empty,
+                        MessageType = MessageType.Typing,
+                        Timestamp = (long)notification.rtime32_server_timestamp,
+                        IsEcho = notification.local_echo,
+                        ChatGroupId = 0,
+                        ChatId = 0,
+                    };
+                }
+                else if (notification.chat_entry_type == 3)
+                {
+                    messageEvent = new MessageEvent
+                    {
+                        SenderSteamId = senderSteamId,
+                        TargetSteamId = targetSteamId,
+                        Message = string.Empty,
+                        MessageType = MessageType.InviteGame,
+                        Timestamp = (long)notification.rtime32_server_timestamp,
+                        IsEcho = notification.local_echo,
+                        ChatGroupId = 0,
+                        ChatId = 0,
+                    };
+                }
+                else
+                {
+                    var msgRaw = notification.message?.TrimEnd('\0');
+                    var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
+                    var (text, msgType) = ProcessMessageContent(msgRaw ?? string.Empty, msgNoBbCode ?? string.Empty);
+
+                    messageEvent = new MessageEvent
+                    {
+                        SenderSteamId = senderSteamId,
+                        TargetSteamId = targetSteamId,
+                        Message = text,
+                        MessageType = msgType,
+                        Timestamp = (long)notification.rtime32_server_timestamp,
+                        IsEcho = notification.local_echo,
+                        ChatGroupId = 0,
+                        ChatId = 0,
+                    };
+                }
 
                 await channel.Writer.WriteAsync(messageEvent);
             }
