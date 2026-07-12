@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"maunium.net/go/mautrix/bridgev2"
 	"maunium.net/go/mautrix/bridgev2/database"
+	"maunium.net/go/mautrix/bridgev2/networkid"
 	"maunium.net/go/mautrix/bridgev2/status"
 
 	"go.shadowdrake.org/steam/pkg/steamapi"
@@ -233,6 +234,7 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 				presenceClient: slp.Main.presenceClient,
 				groupClient:    slp.Main.groupClient,
 				br:             slp.Main.br,
+				typingCancels:  make(map[networkid.PortalID]context.CancelFunc),
 			}
 			return nil
 		},
@@ -441,6 +443,7 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 				presenceClient: slq.Main.presenceClient,
 				groupClient:    slq.Main.groupClient,
 				br:             slq.Main.br,
+				typingCancels:  make(map[networkid.PortalID]context.CancelFunc),
 			}
 			return nil
 		},
