@@ -138,7 +138,12 @@ func (sc *SteamClient) updateFriendDMTopic(ctx context.Context, steamID uint64, 
 		Str("new_topic", topic).
 		Msg("Updating DM room topic from Steam presence")
 
-	portal.UpdateInfo(ctx, &bridgev2.ChatInfo{Topic: ptr.Ptr(topic)}, sc.UserLogin, nil, time.Now())
+	// A zero time.Time (not time.Now()) matches mautrix-signal's convention for live info
+	// updates (e.g. groupinfo.go, handlesignal.go) - it omits the Matrix "ts" timestamp
+	// override entirely (only set when > 0), letting the homeserver stamp the event with
+	// its own receipt time. Explicit ts overrides are for backfill/historical events with a
+	// known true origin time, which doesn't apply to a live presence-driven update.
+	portal.UpdateInfo(ctx, &bridgev2.ChatInfo{Topic: ptr.Ptr(topic)}, sc.UserLogin, nil, time.Time{})
 
 	return nil
 }
