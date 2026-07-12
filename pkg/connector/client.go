@@ -179,6 +179,33 @@ func (sc *SteamClient) stopConnectionMonitoring() {
 }
 
 // Connect establishes a connection to Steam and starts message streaming
+// waitForConnectorClients waits up to timeout for the connector's Start() to finish
+// setting up its gRPC clients (signaled by the connector's clientsReady channel being
+// closed), then refreshes this SteamClient's own gRPC client fields from the connector.
+// Returns false if the timeout elapses first. Reading the connector's client fields is
+// only safe after the channel closes - Go's memory model guarantees a happens-before
+// relationship for a channel close, unlike bare field reads against Start()'s writes.
+func (sc *SteamClient) waitForConnectorClients(timeout time.Duration) bool {
+	if sc.connector == nil || sc.connector.clientsReady == nil {
+		return false
+	}
+
+	select {
+	case <-sc.connector.clientsReady:
+	case <-time.After(timeout):
+		return false
+	}
+
+	sc.authClient = sc.connector.authClient
+	sc.userClient = sc.connector.userClient
+	sc.msgClient = sc.connector.msgClient
+	sc.sessionClient = sc.connector.sessionClient
+	sc.presenceClient = sc.connector.presenceClient
+	sc.groupClient = sc.connector.groupClient
+
+	return sc.authClient != nil
+}
+
 func (sc *SteamClient) Connect(ctx context.Context) {
 	// Set connection state to prevent duplicate connections
 	sc.stateMutex.Lock()
@@ -205,9 +232,20 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 	// Steam requires a persistent connection - setup that connection here
 	// using gRPC API. This is missing from other attempts
 	if sc.authClient == nil {
-		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateBadCredentials, "You're not logged into Steam",
-			withUserAction(status.UserActionRelogin)))
-	return
+		// sc.authClient (and its sibling gRPC clients) are snapshotted from the connector
+		// at SteamClient construction time (LoadUserLogin). If the client was constructed
+		// before Start() finished setting up the connector's gRPC clients - a startup
+		// race, since the SteamBridge subprocess can still be starting up - that
+		// snapshot is permanently nil and would never self-heal on its own. This is not
+		// a credentials problem; wait briefly for the connector to finish initializing
+		// and refresh from it before giving up.
+		if !sc.waitForConnectorClients(15 * time.Second) {
+			sc.br.Log.Error().Msg("Timed out waiting for SteamBridge service to become ready")
+			sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,
+				"SteamBridge service failed to become ready",
+				withUserAction(status.UserActionRestart)))
+			return
+		}
 	}
 
 	meta := sc.getUserMetadata()

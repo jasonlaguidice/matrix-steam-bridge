@@ -144,6 +144,13 @@ type SteamConnector struct {
 	processLockFile    string
 	startTime          time.Time
 	log                zerolog.Logger
+
+	// clientsReady is closed once (guarded by clientsReadyOnce) after Start() finishes
+	// setting up the gRPC clients above. SteamClient.Connect() waits on this instead of
+	// busy-polling the fields directly, since they're otherwise unsynchronized between
+	// Start()'s writes and readers on other goroutines (e.g. LoadUserLogin).
+	clientsReady     chan struct{}
+	clientsReadyOnce sync.Once
 }
 
 // SteamClient implements the NetworkAPI for Steam
@@ -260,6 +267,8 @@ func (sc *SteamConnector) Init(bridge *bridgev2.Bridge) {
 	sc.log = log.With().Str("component", "steam_connector").Logger()
 	sc.log.Info().Msg("Initializing Steam connector")
 
+	sc.clientsReady = make(chan struct{})
+
 	// Register presence commands
 	if proc, ok := bridge.Commands.(*commands.Processor); ok {
 		RegisterPresenceCommands(proc)
@@ -318,6 +327,9 @@ func (sc *SteamConnector) Start(ctx context.Context) error {
 	sc.healthClient = grpc_health_v1.NewHealthClient(conn)
 
 	sc.log.Info().Str("address", address).Msg("Successfully connected to SteamBridge service")
+
+	sc.clientsReadyOnce.Do(func() { close(sc.clientsReady) })
+
 	return nil
 }
 

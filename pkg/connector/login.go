@@ -280,6 +280,13 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 		// Sync existing portals for backfill after fresh login
 		go steamClient.syncExistingPortals(ctx)
 
+		// Sync friends' profiles and seed already-open DM room topics with their current
+		// game (Connect()'s reconnect path does this too, via syncFriendsOnStartup - a
+		// fresh login completing via this path skipped it entirely otherwise, so a
+		// friend already mid-game when the user logs in would show no topic until their
+		// next live state change).
+		go steamClient.syncFriendsOnStartup(ctx)
+
 		// Sync Steam chat room groups (create Space + channel portals)
 		go func() {
 			if err := steamClient.syncGroups(context.Background()); err != nil {
@@ -488,6 +495,13 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 
 		// Sync existing portals for backfill after fresh login
 		go steamClient.syncExistingPortals(ctx)
+
+		// Sync friends' profiles and seed already-open DM room topics with their current
+		// game (Connect()'s reconnect path does this too, via syncFriendsOnStartup - a
+		// fresh login completing via this path skipped it entirely otherwise, so a
+		// friend already mid-game when the user logs in would show no topic until their
+		// next live state change).
+		go steamClient.syncFriendsOnStartup(ctx)
 
 		// Sync Steam chat room groups (create Space + channel portals)
 		go func() {
