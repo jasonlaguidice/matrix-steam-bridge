@@ -1,7 +1,7 @@
 using SteamKit2;
 using SteamKit2.Authentication;
 using Microsoft.Extensions.Logging;
-using System.Collections.Concurrent;
+using System.Linq;
 
 namespace SteamBridge.Services;
 
@@ -15,10 +15,11 @@ public class SteamClientManager : IDisposable
     private readonly SteamUnifiedMessages _steamUnifiedMessages;
     private readonly SteamKit2.Internal.FriendMessages _friendMessagesService;
     private readonly SteamKit2.Internal.ChatRoom _chatRoomService;
+    private readonly RichPresenceHandler _richPresenceHandler;
 
     private readonly CancellationTokenSource _cancellationTokenSource;
     private readonly Task _callbackTask;
-    
+
     private bool _isConnected;
     private bool _isLoggedOn;
     private string? _currentAccessToken;
@@ -36,6 +37,7 @@ public class SteamClientManager : IDisposable
     public event EventHandler<SteamFriends.FriendMsgEchoCallback>? MessageEcho;
     public event EventHandler<SteamKit2.Internal.CChatRoom_IncomingChatMessage_Notification>? GroupMessageReceived;
     public event EventHandler<SteamKit2.Internal.CFriendMessages_IncomingMessage_Notification>? DirectMessageReceived;
+    public event EventHandler<RichPresenceReceivedEventArgs>? RichPresenceReceived;
 
     public bool IsConnected => _isConnected;
     public bool IsLoggedOn => _isLoggedOn;
@@ -56,12 +58,35 @@ public class SteamClientManager : IDisposable
     public SteamKit2.Internal.FriendMessages FriendMessagesService => _friendMessagesService;
     public SteamKit2.Internal.ChatRoom ChatRoomService => _chatRoomService;
 
-    public SteamClientManager(ILogger<SteamClientManager> logger)
+    // Persona state flags requested for friends by default. This mirrors SteamKit2's own
+    // built-in defaults (see SteamConfigurationBuilder.CreateDefaultState) plus RichPresence,
+    // which SteamKit2 does NOT request by default - without it, Steam never sends rich presence
+    // data at all, regardless of what RichPresenceHandler asks for.
+    //
+    // GameDataBlob (distinct from GameExtraInfo - verified in SteamFriends.HandlePersonaState)
+    // is what actually populates the FriendCache's GameName/GameID/GameAppID fields read by
+    // GetFriendGamePlayedName()/GetFriendGamePlayed(); GameExtraInfo alone does not. Without
+    // it, friends' current game name/AppID never appear even though basic presence and rich
+    // presence flags/data do.
+    private static readonly EClientPersonaStateFlag DefaultPersonaStateFlags =
+        EClientPersonaStateFlag.PlayerName |
+        EClientPersonaStateFlag.Presence |
+        EClientPersonaStateFlag.SourceID |
+        EClientPersonaStateFlag.GameExtraInfo |
+        EClientPersonaStateFlag.GameDataBlob |
+        EClientPersonaStateFlag.LastSeen |
+        EClientPersonaStateFlag.RichPresence;
+
+    public SteamClientManager(ILogger<SteamClientManager> logger, ILoggerFactory loggerFactory)
     {
         _logger = logger;
-        _steamClient = new SteamClient();
+
+        var steamConfiguration = SteamConfiguration.Create(config =>
+            config.WithDefaultPersonaStateFlags(DefaultPersonaStateFlags));
+
+        _steamClient = new SteamClient(steamConfiguration);
         _callbackManager = new CallbackManager(_steamClient);
-        
+
         _steamUser = _steamClient.GetHandler<SteamUser>()!;
         _steamFriends = _steamClient.GetHandler<SteamFriends>()!;
         _steamUnifiedMessages = _steamClient.GetHandler<SteamUnifiedMessages>()!;
@@ -70,8 +95,13 @@ public class SteamClientManager : IDisposable
         _friendMessagesService = _steamUnifiedMessages.CreateService<SteamKit2.Internal.FriendMessages>();
         _chatRoomService = _steamUnifiedMessages.CreateService<SteamKit2.Internal.ChatRoom>();
 
+        // Custom handler for raw (unresolved) rich presence tokens - not exposed by SteamFriends.
+        _richPresenceHandler = new RichPresenceHandler(loggerFactory.CreateLogger<RichPresenceHandler>());
+        _richPresenceHandler.RichPresenceReceived += OnRichPresenceReceived;
+        _steamClient.AddHandler(_richPresenceHandler);
+
         _cancellationTokenSource = new CancellationTokenSource();
-        
+
         // Subscribe to callbacks
         _callbackManager.Subscribe<SteamClient.ConnectedCallback>(OnConnected);
         _callbackManager.Subscribe<SteamClient.DisconnectedCallback>(OnDisconnected);
@@ -83,10 +113,10 @@ public class SteamClientManager : IDisposable
         _callbackManager.Subscribe<SteamFriends.FriendMsgEchoCallback>(OnMessageEcho);
         _callbackManager.SubscribeServiceNotification<SteamKit2.Internal.ChatRoomClient, SteamKit2.Internal.CChatRoom_IncomingChatMessage_Notification>(OnGroupMessageNotification);
         _callbackManager.SubscribeServiceNotification<SteamKit2.Internal.FriendMessagesClient, SteamKit2.Internal.CFriendMessages_IncomingMessage_Notification>(OnDirectMessageNotification);
-        
+
         // Start callback processing task
         _callbackTask = Task.Run(ProcessCallbacks, _cancellationTokenSource.Token);
-        
+
         _logger.LogInformation("SteamClientManager initialized");
     }
 
@@ -253,7 +283,7 @@ public class SteamClientManager : IDisposable
         {
             _logger.LogError("Failed to log on to Steam: {Result}", callback.Result);
         }
-        
+
         LoggedOn?.Invoke(this, callback);
     }
 
@@ -271,13 +301,47 @@ public class SteamClientManager : IDisposable
             _friendsListReceived = true;
         }
         _logger.LogInformation("Friends list received");
+
+        // SteamFriends' own automatic friend-info request (sent internally by SteamKit2 when
+        // the friends list arrives, using SteamConfiguration.DefaultPersonaStateFlags) can
+        // return a stale initial snapshot for some friends in a large friends list - e.g.
+        // reporting a friend as fully offline when they're actually online and in-game. The
+        // modern Unified Messages "Chat.RequestFriendPersonaStates" call is what real Steam
+        // clients use instead, and reliably corrects this: a fresh, accurate
+        // CMsgClientPersonaState push arrives shortly after calling it, through the same
+        // EMsg.ClientPersonaState pipeline RichPresenceHandler/OnPersonaStateChange already
+        // handle, so no separate response-handling logic is needed here.
+        _ = Task.Delay(TimeSpan.FromSeconds(3)).ContinueWith(async _ =>
+        {
+            try
+            {
+                var chatService = _steamUnifiedMessages.CreateService<SteamKit2.Internal.Chat>();
+                await chatService.RequestFriendPersonaStates(
+                    new SteamKit2.Internal.CChat_RequestFriendPersonaStates_Request()).ToTask().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to request fresh friend persona states via Chat.RequestFriendPersonaStates");
+            }
+        });
+
         FriendsListReceived?.Invoke(this, callback);
     }
 
     private void OnPersonaStateChange(SteamFriends.PersonaStateCallback callback)
     {
         _logger.LogDebug("Persona state change for {SteamID}: {State}", callback.FriendID, callback.State);
+
         PersonaStateChange?.Invoke(this, callback);
+    }
+
+    // RichPresenceHandler intercepts the same underlying packets directly (see its own doc
+    // comment) and raises RichPresenceReceived on its own whenever Steam includes rich presence
+    // data - no explicit request/trigger is needed here.
+    private void OnRichPresenceReceived(object? sender, RichPresenceReceivedEventArgs args)
+    {
+        _logger.LogDebug("Received rich presence data for {SteamID}: {TokenCount} token(s)", args.SteamId, args.Tokens.Count);
+        RichPresenceReceived?.Invoke(this, args);
     }
 
     private void OnMessageReceived(SteamFriends.FriendMsgCallback callback)
@@ -305,6 +369,8 @@ public class SteamClientManager : IDisposable
     public void Dispose()
     {
         _logger.LogInformation("Disposing SteamClientManager");
+
+        _richPresenceHandler.RichPresenceReceived -= OnRichPresenceReceived;
 
         _cancellationTokenSource.Cancel();
 

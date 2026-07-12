@@ -42,6 +42,7 @@ service SteamSessionService {
 // Presence Management Service
 service SteamPresenceService {
   rpc SetPersonaState(SetPersonaStateRequest) returns (SetPersonaStateResponse);
+  rpc SubscribeToPresence(PresenceSubscriptionRequest) returns (stream PresenceEvent);
 }
 
 // Group Service
@@ -388,4 +389,20 @@ message SetPersonaStateRequest {
 message SetPersonaStateResponse {
   bool success = 1;
   string error_message = 2;
+}
+
+message PresenceSubscriptionRequest {
+  uint64 steam_id = 1; // Caller's Steam ID for routing to per-user SteamClientManager
+  bool rich_presence_enabled = 2; // Whether the caller wants rich presence tokens/resolution at all
+}
+
+message PresenceEvent {
+  uint64 steam_id = 1;
+  PersonaState status = 2;    // Used to detect "stopped playing" / offline, to clear the topic
+  string current_game = 3;
+  uint32 game_app_id = 4;
+  int64 timestamp = 5;
+  bool has_rich_presence = 6;
+  map<string, string> rich_presence_tokens = 7; // Raw, unresolved key/value pairs from Steam
+  string rich_presence_status_text = 8; // Resolved, human-readable text (empty if unresolved)
 }

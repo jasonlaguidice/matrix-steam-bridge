@@ -982,7 +982,8 @@ var SteamSessionService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	SteamPresenceService_SetPersonaState_FullMethodName = "/steambridge.SteamPresenceService/SetPersonaState"
+	SteamPresenceService_SetPersonaState_FullMethodName     = "/steambridge.SteamPresenceService/SetPersonaState"
+	SteamPresenceService_SubscribeToPresence_FullMethodName = "/steambridge.SteamPresenceService/SubscribeToPresence"
 )
 
 // SteamPresenceServiceClient is the client API for SteamPresenceService service.
@@ -992,6 +993,7 @@ const (
 // Presence Management Service
 type SteamPresenceServiceClient interface {
 	SetPersonaState(ctx context.Context, in *SetPersonaStateRequest, opts ...grpc.CallOption) (*SetPersonaStateResponse, error)
+	SubscribeToPresence(ctx context.Context, in *PresenceSubscriptionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[PresenceEvent], error)
 }
 
 type steamPresenceServiceClient struct {
@@ -1012,6 +1014,25 @@ func (c *steamPresenceServiceClient) SetPersonaState(ctx context.Context, in *Se
 	return out, nil
 }
 
+func (c *steamPresenceServiceClient) SubscribeToPresence(ctx context.Context, in *PresenceSubscriptionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[PresenceEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &SteamPresenceService_ServiceDesc.Streams[0], SteamPresenceService_SubscribeToPresence_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[PresenceSubscriptionRequest, PresenceEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type SteamPresenceService_SubscribeToPresenceClient = grpc.ServerStreamingClient[PresenceEvent]
+
 // SteamPresenceServiceServer is the server API for SteamPresenceService service.
 // All implementations must embed UnimplementedSteamPresenceServiceServer
 // for forward compatibility.
@@ -1019,6 +1040,7 @@ func (c *steamPresenceServiceClient) SetPersonaState(ctx context.Context, in *Se
 // Presence Management Service
 type SteamPresenceServiceServer interface {
 	SetPersonaState(context.Context, *SetPersonaStateRequest) (*SetPersonaStateResponse, error)
+	SubscribeToPresence(*PresenceSubscriptionRequest, grpc.ServerStreamingServer[PresenceEvent]) error
 	mustEmbedUnimplementedSteamPresenceServiceServer()
 }
 
@@ -1031,6 +1053,9 @@ type UnimplementedSteamPresenceServiceServer struct{}
 
 func (UnimplementedSteamPresenceServiceServer) SetPersonaState(context.Context, *SetPersonaStateRequest) (*SetPersonaStateResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SetPersonaState not implemented")
+}
+func (UnimplementedSteamPresenceServiceServer) SubscribeToPresence(*PresenceSubscriptionRequest, grpc.ServerStreamingServer[PresenceEvent]) error {
+	return status.Errorf(codes.Unimplemented, "method SubscribeToPresence not implemented")
 }
 func (UnimplementedSteamPresenceServiceServer) mustEmbedUnimplementedSteamPresenceServiceServer() {}
 func (UnimplementedSteamPresenceServiceServer) testEmbeddedByValue()                              {}
@@ -1071,6 +1096,17 @@ func _SteamPresenceService_SetPersonaState_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SteamPresenceService_SubscribeToPresence_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(PresenceSubscriptionRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(SteamPresenceServiceServer).SubscribeToPresence(m, &grpc.GenericServerStream[PresenceSubscriptionRequest, PresenceEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type SteamPresenceService_SubscribeToPresenceServer = grpc.ServerStreamingServer[PresenceEvent]
+
 // SteamPresenceService_ServiceDesc is the grpc.ServiceDesc for SteamPresenceService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1083,7 +1119,13 @@ var SteamPresenceService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _SteamPresenceService_SetPersonaState_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "SubscribeToPresence",
+			Handler:       _SteamPresenceService_SubscribeToPresence_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "Proto/steam_bridge.proto",
 }
 

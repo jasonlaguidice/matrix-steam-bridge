@@ -28,7 +28,7 @@ public class SteamClientRegistry : IDisposable
         return _managers.GetOrAdd(key, k =>
         {
             _logger.LogInformation("Creating new SteamClientManager for key: {Key}", k);
-            return new SteamClientManager(_loggerFactory.CreateLogger<SteamClientManager>());
+            return new SteamClientManager(_loggerFactory.CreateLogger<SteamClientManager>(), _loggerFactory);
         });
     }
 

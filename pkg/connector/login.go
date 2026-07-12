@@ -277,6 +277,14 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 			steamClient.presenceManager.Start(ctx)
 		}
 
+		// Initialize presence topic stream (Steam friend presence -> DM room topic).
+		// Presence topic loss is not fatal, so this runs independently and only logs on failure.
+		go func() {
+			if err := steamClient.initializePresenceStream(ctx); err != nil {
+				steamClient.br.Log.Warn().Err(err).Msg("Failed to initialize presence topic stream")
+			}
+		}()
+
 		// Sync existing portals for backfill after fresh login
 		go steamClient.syncExistingPortals(ctx)
 
@@ -492,6 +500,14 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		if steamClient.presenceManager != nil {
 			steamClient.presenceManager.Start(ctx)
 		}
+
+		// Initialize presence topic stream (Steam friend presence -> DM room topic).
+		// Presence topic loss is not fatal, so this runs independently and only logs on failure.
+		go func() {
+			if err := steamClient.initializePresenceStream(ctx); err != nil {
+				steamClient.br.Log.Warn().Err(err).Msg("Failed to initialize presence topic stream")
+			}
+		}()
 
 		// Sync existing portals for backfill after fresh login
 		go steamClient.syncExistingPortals(ctx)

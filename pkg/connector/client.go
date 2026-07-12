@@ -459,6 +459,14 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		sc.presenceManager.Start(ctx)
 	}
 
+	// Initialize presence topic stream (Steam friend presence -> DM room topic).
+	// Presence topic loss is not fatal, so this runs independently and only logs on failure.
+	go func() {
+		if err := sc.initializePresenceStream(ctx); err != nil {
+			sc.br.Log.Warn().Err(err).Msg("Failed to initialize presence topic stream")
+		}
+	}()
+
 	// Sync existing portals for backfill after re-authentication
 	go sc.syncExistingPortals(ctx)
 

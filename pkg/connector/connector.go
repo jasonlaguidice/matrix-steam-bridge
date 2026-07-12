@@ -53,8 +53,11 @@ type Config struct {
 	// Friend sync configuration
 	SyncFriendsOnStartup bool `yaml:"sync_friends_on_startup"`
 
-	// Presence tracking configuration
+	// Presence tracking configuration (Matrix -> Steam)
 	Presence PresenceConfig `yaml:"presence"`
+
+	// Presence topic configuration (Steam friend presence -> DM room topic)
+	PresenceTopic PresenceTopicConfig `yaml:"presence_topic"`
 
 	displaynameTemplate *template.Template `yaml:"-"`
 }
@@ -80,6 +83,27 @@ type PresenceConfig struct {
 	// Track read receipts as activity (default: false)
 	// When enabled, sending read receipts in Matrix will reset the inactivity timer
 	ReadReceiptsResetPresence bool `yaml:"read_receipts_reset_presence"`
+}
+
+// PresenceTopicConfig contains configuration for Steam friend presence -> DM room topic
+// synchronization. This is the opposite direction from PresenceConfig: it reflects a
+// friend's current game as the Matrix DM room's topic (m.room.topic), rather than
+// syncing the local user's own presence to Steam.
+type PresenceTopicConfig struct {
+	// Enable setting DM room topics from Steam friend presence.
+	Enabled bool `yaml:"enabled"`
+
+	// Enable fetching and resolving Steam Rich Presence (the second line of flavor text
+	// some games show under a friend's name, e.g. "Street Brawl: Paige (12 min)").
+	// This requires extra Steam-side round trips (a rich-presence request per friend,
+	// plus per-game localization lookups) beyond the basic game name. Sub-toggle of
+	// Enabled - has no effect unless Enabled is also true.
+	RichPresenceEnabled bool `yaml:"rich_presence_enabled"`
+
+	// Show raw, unresolved rich-presence tokens (e.g. "#DeadlockRP_HideoutSnack") in the
+	// topic as a best-effort fallback when RichPresenceEnabled is on but resolved,
+	// human-readable text isn't available for a given game. Off by default
+	ShowRawTokens bool `yaml:"show_raw_tokens"`
 }
 
 // DisplaynameParams contains the template parameters for formatting Steam ghost display names
@@ -259,6 +283,7 @@ func upgradeConfig(helper configupgrade.Helper) {
 	helper.Copy(configupgrade.Str, "presence", "inactivity_status")
 	helper.Copy(configupgrade.Bool, "presence", "typing_resets_presence")
 	helper.Copy(configupgrade.Bool, "presence", "read_receipts_reset_presence")
+	helper.Copy(configupgrade.Bool, "presence_topic", "enabled")
 }
 
 // Init implements bridgev2.NetworkConnector.
@@ -580,6 +605,10 @@ func (sc *SteamConnector) startSteamBridgeService(ctx context.Context) error {
 	cmd.Env = append(os.Environ(),
 		fmt.Sprintf("PARENT_PID=%d", os.Getpid()),
 		fmt.Sprintf("STEAM_BRIDGE_ADDRESS=%s", sc.Config.Address),
+		// Propagate the Go bridge's own effective log level (config.yaml's logging.min_level)
+		// so the C# service's minimum log level tracks it automatically, rather than needing
+		// its own separately-maintained setting - see Program.cs for the mapping.
+		fmt.Sprintf("STEAM_BRIDGE_LOG_LEVEL=%s", sc.log.GetLevel().String()),
 	)
 
 	// Create bridge log writers for the steamkit service

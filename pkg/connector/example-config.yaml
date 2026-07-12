@@ -56,3 +56,35 @@ presence:
   # When true, reading messages will count as activity and keep you marked as online
   # Default: false (reading is passive, doesn't indicate active presence)
   read_receipts_reset_presence: false
+
+# Presence topic settings (Steam friend presence -> DM room topic)
+# This is the opposite direction from the "presence" section above: instead of syncing
+# your own presence to Steam, this sets the topic (m.room.topic) of a friend's DM room
+# to their current game, e.g. so it's visible in room-list previews. The topic is
+# cleared when the friend stops playing or goes offline/invisible.
+# Note: only DM rooms that already exist (i.e. you've opened a chat with that friend
+# before) are updated - a friend's presence change never creates a new room by itself.
+presence_topic:
+  # Enable setting DM room topics from Steam friend presence.
+  # This is a low-risk feature since it only sets a normal persisted room topic, but
+  # be aware the topic (friend's current game) is visible to anyone who can see the
+  # room, e.g. other room members or server admins with room access.
+  # Default: true
+  enabled: true
+
+  # Enable Steam Rich Presence lookups, appending a second line of live flavor text to
+  # the topic when a game provides one (e.g. "Deadlock — Street Brawl: Paige (12 min)"
+  # instead of just "Deadlock"). This requires extra Steam-side round trips beyond the
+  # basic game name: a rich-presence request per friend, plus a one-time-per-game
+  # localization lookup to turn Steam's raw internal tokens into human-readable text.
+  # Has no effect unless "enabled" above is also true.
+  # Default: true
+  rich_presence_enabled: true
+
+  # Best-effort fallback: if rich_presence_enabled is true but resolved, human-readable
+  # text isn't available for a given game (e.g. localization lookup failed or the game
+  # isn't supported yet), show the raw, unresolved rich-presence token instead (e.g.
+  # "Deadlock — #DeadlockRP_HideoutSnack"). Has no effect if rich_presence_enabled is
+  # false.
+  # Default: false
+  show_raw_tokens: false

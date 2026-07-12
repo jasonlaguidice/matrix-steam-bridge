@@ -159,6 +159,20 @@ func (sc *SteamClient) syncFriendsOnStartup(ctx context.Context) {
 			continue
 		}
 
+		// Seed the DM room topic (if a room already exists) from the friend's current
+		// presence/game, so already-open DMs show the correct topic immediately on
+		// startup rather than waiting for a live presence event. GetFriendsList's Friend
+		// message doesn't carry rich-presence fields (only SubscribeToPresence's
+		// PresenceEvent does), so this seed path only has basic game-name data; live
+		// rich-presence text will follow shortly after via the presence stream.
+		if err := sc.updateFriendDMTopic(ctx, friend.SteamId, friend.Status, friend.CurrentGame, "", nil); err != nil {
+			sc.br.Log.Warn().
+				Err(err).
+				Uint64("steam_id", friend.SteamId).
+				Str("persona_name", friend.PersonaName).
+				Msg("Failed to seed DM room topic for friend")
+		}
+
 		successCount++
 		sc.br.Log.Debug().
 			Uint64("steam_id", friend.SteamId).
