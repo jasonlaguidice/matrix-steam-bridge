@@ -198,7 +198,21 @@ public class RichPresenceLocalizationService
             template = rawValue;
         }
 
-        // One level of nested {#Token} re-resolution. Same with/without-"#" lookup as above.
+        // %Variable% substitution runs BEFORE nested {#Token} resolution. Some games (e.g.
+        // Dota 2) embed a %variable% inside the {#Token} braces themselves, e.g.
+        // "{#game_mode_%mode%}" - the token name is only complete once %mode% is filled in.
+        // NestedTokenPattern's character class ([A-Za-z0-9_]+) doesn't match "%", so running
+        // nested resolution first (the original order) never matches these at all, leaving
+        // literal unresolved "{#game_mode_23}"-style text in the final output even after
+        // variable substitution fills in the "23" - the token name is complete too late.
+        template = VariablePattern.Replace(template, m =>
+        {
+            var varKey = m.Groups[1].Value;
+            return rawTokensCI.TryGetValue(varKey, out var varValue) ? varValue : m.Value;
+        });
+
+        // One level of nested {#Token} re-resolution, now that any %variable% placeholders
+        // inside the braces have been filled in above. Same with/without-"#" lookup as above.
         template = NestedTokenPattern.Replace(template, m =>
         {
             var nestedKey = m.Groups[1].Value;
@@ -207,13 +221,6 @@ public class RichPresenceLocalizationService
                 return nestedValue;
             }
             return m.Value;
-        });
-
-        // %Variable% substitution from the friend's other raw rich-presence key/value pairs.
-        template = VariablePattern.Replace(template, m =>
-        {
-            var varKey = m.Groups[1].Value;
-            return rawTokensCI.TryGetValue(varKey, out var varValue) ? varValue : m.Value;
         });
 
         return string.IsNullOrWhiteSpace(template) ? null : template;

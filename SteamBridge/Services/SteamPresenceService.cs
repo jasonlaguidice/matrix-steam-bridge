@@ -111,6 +111,24 @@ public class SteamPresenceService : Proto.SteamPresenceService.SteamPresenceServ
         {
             try
             {
+                // PersonaStateChange and RichPresenceReceived (below) both fire off the exact
+                // same underlying EMsg.ClientPersonaState packet - SteamKit dispatches each
+                // incoming packet to every registered handler, so SteamFriends' own callback
+                // and the custom RichPresenceHandler both process it. When this packet carries
+                // rich presence data, OnRichPresenceReceived will publish a complete event for
+                // it (including resolved status text); publishing here too would race it with
+                // an event that never sets RichPresenceStatusText, and whichever arrived last
+                // at the Go side would win - observed in production as the DM room topic
+                // flickering between the real text and blank roughly twice a minute. Skip
+                // publishing here for these packets and let OnRichPresenceReceived alone speak
+                // for them.
+                var hasRichPresence =
+                    (callback.StateFlags & EPersonaStateFlag.HasRichPresence) == EPersonaStateFlag.HasRichPresence;
+                if (richPresenceEnabled && hasRichPresence)
+                {
+                    return;
+                }
+
                 var steamFriends = manager.SteamFriends;
                 var friendId = callback.FriendID;
 
@@ -125,14 +143,6 @@ public class SteamPresenceService : Proto.SteamPresenceService.SteamPresenceServ
                     GameAppId = cachedGameId.AppID,
                     Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
                 };
-
-                // Phase 2/3 fields are only ever set when the caller opted in - when disabled,
-                // this callback is otherwise byte-for-byte identical to Phase 1 behavior.
-                if (richPresenceEnabled)
-                {
-                    presenceEvent.HasRichPresence =
-                        (callback.StateFlags & EPersonaStateFlag.HasRichPresence) == EPersonaStateFlag.HasRichPresence;
-                }
 
                 await channel.Writer.WriteAsync(presenceEvent);
             }
