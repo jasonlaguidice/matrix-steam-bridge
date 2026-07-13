@@ -63,6 +63,7 @@ builder.Services.AddSingleton<SteamAuthenticationService>();
 builder.Services.AddSingleton<SteamUserInformationService>();
 builder.Services.AddSingleton<SteamImageService>();
 builder.Services.AddSingleton<RichPresenceLocalizationService>();
+builder.Services.AddSingleton<SteamAppInfoService>();
 
 // Add parent process monitoring service
 builder.Services.AddHostedService<ParentProcessMonitorService>();

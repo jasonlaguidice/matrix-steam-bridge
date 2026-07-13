@@ -12,6 +12,7 @@ public class SteamClientManager : IDisposable
     private readonly CallbackManager _callbackManager;
     private readonly SteamUser _steamUser;
     private readonly SteamFriends _steamFriends;
+    private readonly SteamApps _steamApps;
     private readonly SteamUnifiedMessages _steamUnifiedMessages;
     private readonly SteamKit2.Internal.FriendMessages _friendMessagesService;
     private readonly SteamKit2.Internal.ChatRoom _chatRoomService;
@@ -53,6 +54,7 @@ public class SteamClientManager : IDisposable
     }
     public SteamUser SteamUser => _steamUser;
     public SteamFriends SteamFriends => _steamFriends;
+    public SteamApps SteamApps => _steamApps;
     public SteamClient SteamClient => _steamClient;
     public SteamUnifiedMessages SteamUnifiedMessages => _steamUnifiedMessages;
     public SteamKit2.Internal.FriendMessages FriendMessagesService => _friendMessagesService;
@@ -89,6 +91,7 @@ public class SteamClientManager : IDisposable
 
         _steamUser = _steamClient.GetHandler<SteamUser>()!;
         _steamFriends = _steamClient.GetHandler<SteamFriends>()!;
+        _steamApps = _steamClient.GetHandler<SteamApps>()!;
         _steamUnifiedMessages = _steamClient.GetHandler<SteamUnifiedMessages>()!;
 
         // Create FriendMessages service to enable proper callback handling for DM message history

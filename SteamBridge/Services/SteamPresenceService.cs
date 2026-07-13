@@ -16,15 +16,18 @@ public class SteamPresenceService : Proto.SteamPresenceService.SteamPresenceServ
     private readonly ILogger<SteamPresenceService> _logger;
     private readonly SteamClientRegistry _registry;
     private readonly RichPresenceLocalizationService _richPresenceLocalization;
+    private readonly SteamAppInfoService _appInfo;
 
     public SteamPresenceService(
         ILogger<SteamPresenceService> logger,
         SteamClientRegistry registry,
-        RichPresenceLocalizationService richPresenceLocalization)
+        RichPresenceLocalizationService richPresenceLocalization,
+        SteamAppInfoService appInfo)
     {
         _logger = logger;
         _registry = registry;
         _richPresenceLocalization = richPresenceLocalization;
+        _appInfo = appInfo;
     }
 
     public override Task<SetPersonaStateResponse> SetPersonaState(
@@ -135,11 +138,20 @@ public class SteamPresenceService : Proto.SteamPresenceService.SteamPresenceServ
                 var cachedGameName = steamFriends.GetFriendGamePlayedName(friendId) ?? string.Empty;
                 var cachedGameId = steamFriends.GetFriendGamePlayed(friendId);
 
+                // Fall back to a PICS-resolved app name when Steam doesn't push friend.game_name
+                // for this friend at all - the numeric AppID still comes through reliably even
+                // when the human-readable name doesn't (see SteamAppInfoService's doc comment).
+                var currentGame = cachedGameName;
+                if (string.IsNullOrEmpty(currentGame) && cachedGameId.AppID != 0)
+                {
+                    currentGame = await _appInfo.GetAppNameAsync(manager.SteamApps, cachedGameId.AppID) ?? string.Empty;
+                }
+
                 var presenceEvent = new Proto.PresenceEvent
                 {
                     SteamId = friendId.ConvertToUInt64(),
                     Status = MapPersonaState(callback.State),
-                    CurrentGame = cachedGameName,
+                    CurrentGame = currentGame,
                     GameAppId = cachedGameId.AppID,
                     Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
                 };
@@ -171,6 +183,14 @@ public class SteamPresenceService : Proto.SteamPresenceService.SteamPresenceServ
                 var gameAppId = args.GameAppId != 0
                     ? args.GameAppId
                     : steamFriends.GetFriendGamePlayed(friendId).AppID;
+
+                // Same PICS fallback as OnPersonaStateChange - Steam doesn't always push a game
+                // name on packets that DO carry rich presence data, so a friend can have real,
+                // resolved flavor text but still show no game name without this.
+                if (string.IsNullOrEmpty(currentGame) && gameAppId != 0)
+                {
+                    currentGame = await _appInfo.GetAppNameAsync(manager.SteamApps, gameAppId) ?? string.Empty;
+                }
 
                 var presenceEvent = new Proto.PresenceEvent
                 {
