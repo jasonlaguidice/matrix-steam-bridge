@@ -54,7 +54,7 @@ func NewPresenceManager(client *SteamClient, config *PresenceConfig) *PresenceMa
 		typingResets = true
 	}
 
-	return &PresenceManager{
+	pm := &PresenceManager{
 		client:                    client,
 		currentState:              steamapi.PersonaState_OFFLINE, // Start as OFFLINE so first state change is sent
 		inactivityTimeout:         timeout,
@@ -64,6 +64,13 @@ func NewPresenceManager(client *SteamClient, config *PresenceConfig) *PresenceMa
 		readReceiptsResetPresence: config.ReadReceiptsResetPresence,
 		lastActivity:              time.Now(),
 	}
+
+	// Restore manual invisible mode from persisted metadata
+	if meta := client.getUserMetadata(); meta != nil {
+		pm.manualInvisible = meta.ManualInvisible
+	}
+
+	return pm
 }
 
 // Start begins presence tracking
@@ -71,6 +78,13 @@ func (pm *PresenceManager) Start(ctx context.Context) {
 	if !pm.enabled {
 		pm.client.br.Log.Info().Msg("Presence tracking disabled, setting status to inactivityState")
 		pm.setPersonaState(ctx, pm.inactivityState)
+		return
+	}
+
+	// Respect a manual invisible mode carried over from a previous session
+	if pm.manualInvisible {
+		pm.client.br.Log.Info().Msg("Restoring manual invisible mode from persisted state")
+		pm.setPersonaState(ctx, steamapi.PersonaState_INVISIBLE)
 		return
 	}
 
