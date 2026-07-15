@@ -118,6 +118,16 @@ Notes:
    - `login password` - Username/password login
 3. **Start chatting** - The bridge will automatically create portals for your Steam friends as messages are received
 
+## Optional Features
+### Enhanced Rich Presence (Steam -> Matrix)
+The bridge is capable of displaying the currently-played game and any additional status that is displayed underneath using for games which support Steam's [Enhanced Rich Presence](https://partner.steamgames.com/doc/features/enhancedrichpresence) feature. This places the status in the DM room's `m.topic` field. On supported clients, it looks like this:
+
+[placeholder for screenshot]
+
+To enable this feature set `presence_topic.enabled` in your config.yaml to `true`
+
+However, most clients _also_ will bump the conversation to the top of the conversation list on every update. Games, such as Deadlock, which will update the status with the match timer every minute will continually bump the affected conversation to the top of the chat list
+
 ## Development
 
 ### Project Structure

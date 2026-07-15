@@ -29,24 +29,24 @@
       * [x] Images
       * [x] Gifs
       * [x] Stickers
-      * [ ] Steam Emoji
+      * [x] Steam Emoji
     * [ ] Game Invites
       * [x] Invite message
       * [ ] Rich invite details
       * [ ] Invite acceptance
   * [ ] Network presence/status
     * [ ] Online/Offline/Away
-    * [ ] Rich in-game presence
+    * [x] Rich in-game presence
   * [x] Initial profile/contact info
     * [x] Display name
     * [x] Avatar
-  * [ ] Profile/contact info changes
-    * [ ] When restarting bridge or syncing
-        * [ ] Display name
-        * [ ] Avatar
-    * [ ] Real time
-        * [ ] Display name
-        * [ ] Avatar
+  * [x] Profile/contact info changes
+    * [x] When restarting bridge or syncing
+        * [x] Display name
+        * [x] Avatar
+    * [x] Real time
+        * [x] Display name
+        * [x] Avatar
   * [ ] Group info
     * [ ] Name
     * [ ] Avatar
@@ -70,10 +70,10 @@
   * [ ] Session Management
     * [x] Logout command
     * [x] Relogin command
-    * [ ] Automatic session expiry
-  * [ ] Automatic Session Recovery
+    * [x] Automatic session expiry
+  * [x] Automatic Session Recovery
     * [x] On start
-    * [ ] After token expiry
+    * [x] After token expiry
   * [x] Automatic portal creation
     * [x] After `start-chat`
     * [x] When receiving message
