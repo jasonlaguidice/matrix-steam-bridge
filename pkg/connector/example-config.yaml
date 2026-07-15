@@ -28,7 +28,7 @@ displayname_template: '{{.PersonaName}}'
 # Set to false to only update ghost profiles when they send messages to you.
 sync_friends_on_startup: true
 
-# Presence synchronization settings
+# Presence synchronization settings (Matrix->Steam)
 presence:
   # Enable presence tracking from Matrix to Steam
   # When enabled, your Steam status will automatically change based on
@@ -62,21 +62,17 @@ presence:
 # your own presence to Steam, this sets the topic (m.room.topic) of a friend's DM room
 # to their current game, e.g. so it's visible in room-list previews. The topic is
 # cleared when the friend stops playing or goes offline/invisible.
-# Note: only DM rooms that already exist (i.e. you've opened a chat with that friend
-# before) are updated - a friend's presence change never creates a new room by itself.
 presence_topic:
   # Enable setting DM room topics from Steam friend presence.
-  # This is a low-risk feature since it only sets a normal persisted room topic, but
-  # be aware the topic (friend's current game) is visible to anyone who can see the
-  # room, e.g. other room members or server admins with room access.
-  # Default: true
-  enabled: true
+  # This setting may cause DM rooms to appear on top of your conversation list  when
+  # the topic is updated. Most clients have this behavior so this is disabled by
+  # default
+  # Default: false
+  enabled: false
 
   # Enable Steam Rich Presence lookups, appending a second line of live flavor text to
   # the topic when a game provides one (e.g. "Deadlock — Street Brawl: Paige (12 min)"
-  # instead of just "Deadlock"). This requires extra Steam-side round trips beyond the
-  # basic game name: a rich-presence request per friend, plus a one-time-per-game
-  # localization lookup to turn Steam's raw internal tokens into human-readable text.
+  # instead of just "Deadlock").
   # Has no effect unless "enabled" above is also true.
   # Default: true
   rich_presence_enabled: true
