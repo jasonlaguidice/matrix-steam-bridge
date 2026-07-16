@@ -5,6 +5,12 @@ on:
     workflows: ["Version Bump"]
     types:
       - completed
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing git tag to build and publish (e.g. v1.3.0)'
+        required: true
+        type: string
 
 jobs:
   build-binaries:
@@ -27,7 +33,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v6
       with:
-        ref: main
+        ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || 'main' }}
 
     - name: Set up Go
       uses: actions/setup-go@v6
@@ -52,7 +58,16 @@ jobs:
         # Build olm library from source for Matrix encryption
         git clone https://gitlab.matrix.org/matrix-org/olm.git C:\olm
         cd C:\olm
-        cmake -S . -B build -DCMAKE_INSTALL_PREFIX=C:\olm-install -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+        # Use an argument array + splatting so PowerShell passes each -D flag through
+        # to cmake.exe untouched (inline args were getting mangled, splitting
+        # "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" into "...=3" and a stray ".5")
+        $cmakeConfigureArgs = @(
+          "-S", ".",
+          "-B", "build",
+          "-DCMAKE_INSTALL_PREFIX=C:\olm-install",
+          "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+        )
+        cmake @cmakeConfigureArgs
         cmake --build build --config Release
         cmake --install build
 
@@ -175,17 +190,33 @@ jobs:
         ref: main
         fetch-depth: 0
 
-    - name: Get tag from triggering workflow
+    - name: Get tag to release
       id: get_tag
+      env:
+        DISPATCH_TAG: ${{ inputs.tag }}
+        HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
       run: |
-        # Get the tag that points to the head commit of the triggering workflow
-        TAG=$(git describe --tags --exact-match ${{ github.event.workflow_run.head_sha }} 2>/dev/null || echo "")
-        if [ -z "$TAG" ]; then
-          echo "Error: No tag found for commit ${{ github.event.workflow_run.head_sha }}"
-          exit 1
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          TAG="$DISPATCH_TAG"
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "Error: tag '$TAG' must look like vX.Y.Z or vX.Y.Z-suffix"
+            exit 1
+          fi
+          if ! git rev-parse --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Error: tag $TAG does not exist in this repository"
+            exit 1
+          fi
+          echo "Using manually dispatched tag: $TAG"
+        else
+          # Get the tag that points to the head commit of the triggering workflow
+          TAG=$(git describe --tags --exact-match "$HEAD_SHA" 2>/dev/null || echo "")
+          if [ -z "$TAG" ]; then
+            echo "Error: No tag found for commit $HEAD_SHA"
+            exit 1
+          fi
+          echo "Found tag: $TAG for commit $HEAD_SHA"
         fi
         echo "tag=$TAG" >> $GITHUB_OUTPUT
-        echo "Found tag: $TAG for commit ${{ github.event.workflow_run.head_sha }}"
 
         # Detect pre-release tags (e.g. v1.2.0-beta.1, v1.2.0-rc.1, v1.2.0-alpha.1)
         if echo "$TAG" | grep -qE '\-(alpha|beta|rc)([0-9]+)?(\.[0-9]+)?$'; then
