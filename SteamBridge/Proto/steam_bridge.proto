@@ -79,6 +79,7 @@ message LoginResponse {
   bool requires_guard = 6;
   bool requires_email_verification = 7;
   string session_id = 8; // For continuing 2FA authentication
+  bool requires_device_confirmation = 9; // Steam Mobile App "Approve" prompt pending; poll GetAuthStatus with session_id
 }
 
 message ContinueAuthRequest {

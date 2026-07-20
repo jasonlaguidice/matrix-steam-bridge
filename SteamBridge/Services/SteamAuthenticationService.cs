@@ -14,6 +14,7 @@ public class SteamAuthenticationService
     private readonly ConcurrentDictionary<string, QRAuthSessionInfo> _qrAuthSessions;
     private readonly ConcurrentDictionary<string, string> _sessionUsernames;
     private readonly ConcurrentDictionary<string, string> _sessionIdToLoginKey;
+    private readonly ConcurrentDictionary<string, Task<AuthPollResult>> _deviceConfirmationSessions;
 
     public SteamAuthenticationService(
         ILogger<SteamAuthenticationService> logger,
@@ -25,6 +26,7 @@ public class SteamAuthenticationService
         _qrAuthSessions = new ConcurrentDictionary<string, QRAuthSessionInfo>();
         _sessionUsernames = new ConcurrentDictionary<string, string>();
         _sessionIdToLoginKey = new ConcurrentDictionary<string, string>();
+        _deviceConfirmationSessions = new ConcurrentDictionary<string, Task<AuthPollResult>>();
     }
 
     public async Task<CredentialsLoginResult> LoginWithCredentialsAsync(
@@ -59,11 +61,12 @@ public class SteamAuthenticationService
             }
 
             // Begin authentication session
+            var bridgeAuthenticator = new BridgeAuthenticator(_logger, username, guardCode, emailCode);
             var authSessionDetails = new AuthSessionDetails
             {
                 Username = username,
                 Password = password,
-                Authenticator = new BridgeAuthenticator(guardCode, emailCode),
+                Authenticator = bridgeAuthenticator,
                 PlatformType = (SteamKit2.Internal.EAuthTokenPlatformType)1, // SteamClient platform
                 ClientOSType = EOSType.Win11,
                 WebsiteID = "Unknown"
@@ -88,11 +91,33 @@ public class SteamAuthenticationService
                 try
                 {
                     _logger.LogInformation("Starting authentication polling for user: {Username}", username);
-                    
+
                     // PollingWaitForResultAsync handles all the polling logic internally
                     // Don't pass cancellation token - let SteamKit2 handle timeouts and 2FA detection
-                    var pollResult = await authSession.PollingWaitForResultAsync();
-                    
+                    var pollTask = authSession.PollingWaitForResultAsync();
+
+                    // SteamKit invokes IAuthenticator.AcceptDeviceConfirmationAsync() synchronously, from inside
+                    // pollTask's own execution, before pollTask can complete - so DeviceConfirmationRequested is
+                    // guaranteed to resolve first whenever the account needs a Steam Mobile App approval, and never
+                    // resolves at all otherwise. This lets us stop blocking the caller on that approval instead of
+                    // waiting out however long it takes the user to accept it on their phone.
+                    var firstCompleted = await Task.WhenAny(pollTask, bridgeAuthenticator.DeviceConfirmationRequested);
+
+                    if (firstCompleted == bridgeAuthenticator.DeviceConfirmationRequested)
+                    {
+                        _deviceConfirmationSessions[sessionId] = pollTask;
+                        shouldCleanupSession = false; // Preserve session so GetAuthStatusAsync can observe pollTask
+                        return new CredentialsLoginResult
+                        {
+                            Success = false,
+                            RequiresDeviceConfirmation = true,
+                            ErrorMessage = "SteamGuard mobile confirmation required",
+                            SessionId = sessionId
+                        };
+                    }
+
+                    var pollResult = await pollTask;
+
                     _logger.LogInformation("Authentication polling completed successfully for user: {Username}", username);
 
                     // Log on with the access token, including username for SteamKit2 compatibility
@@ -333,6 +358,11 @@ public class SteamAuthenticationService
 
     public async Task<AuthStatusResult> GetAuthStatusAsync(string sessionId)
     {
+        if (_deviceConfirmationSessions.TryGetValue(sessionId, out var pollTask))
+        {
+            return await GetDeviceConfirmationStatusAsync(sessionId, pollTask);
+        }
+
         if (!_qrAuthSessions.TryGetValue(sessionId, out var sessionInfo))
         {
             return new AuthStatusResult
@@ -470,6 +500,128 @@ public class SteamAuthenticationService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error checking auth status for session: {SessionId}", sessionId);
+            return new AuthStatusResult
+            {
+                State = AuthState.Failed,
+                ErrorMessage = $"Authentication failed: {ex.Message}"
+            };
+        }
+    }
+
+    /// <summary>
+    /// Checks whether a credentials login pending Steam Mobile App confirmation has resolved yet.
+    /// Mirrors the QR status check above, but observes the background poll task started in
+    /// LoginWithCredentialsAsync instead of a QrAuthSession.
+    /// </summary>
+    private async Task<AuthStatusResult> GetDeviceConfirmationStatusAsync(string sessionId, Task<AuthPollResult> pollTask)
+    {
+        if (!pollTask.IsCompleted)
+        {
+            return new AuthStatusResult { State = AuthState.Pending };
+        }
+
+        _sessionUsernames.TryGetValue(sessionId, out var username);
+
+        if (!_sessionIdToLoginKey.TryGetValue(sessionId, out var loginSessionKey))
+        {
+            _deviceConfirmationSessions.TryRemove(sessionId, out _);
+            return new AuthStatusResult
+            {
+                State = AuthState.Failed,
+                ErrorMessage = "Auth session routing key not found"
+            };
+        }
+
+        var manager = _registry.Get(loginSessionKey);
+        if (manager == null)
+        {
+            _deviceConfirmationSessions.TryRemove(sessionId, out _);
+            return new AuthStatusResult
+            {
+                State = AuthState.Failed,
+                ErrorMessage = "Steam client manager not found for session"
+            };
+        }
+
+        try
+        {
+            var pollResult = await pollTask; // Already completed; rethrows if the poll itself faulted
+
+            manager.LogOn(pollResult.AccessToken, pollResult.RefreshToken, username ?? pollResult.AccountName);
+            var logonSuccess = await WaitForLogonAsync(manager);
+
+            _deviceConfirmationSessions.TryRemove(sessionId, out _);
+            _activeAuthSessions.TryRemove(sessionId, out _);
+            _sessionUsernames.TryRemove(sessionId, out _);
+            _sessionIdToLoginKey.TryRemove(sessionId, out _);
+
+            var steamId = manager.SteamClient.SteamID?.ConvertToUInt64() ?? 0;
+            if (steamId != 0)
+                _registry.TransitionKey(loginSessionKey, steamId.ToString());
+
+            if (!logonSuccess || !manager.IsLoggedOn)
+            {
+                _logger.LogWarning("Mobile confirmation logon failed for user: {Username} - LogonSuccess: {LogonSuccess}, IsLoggedOn: {IsLoggedOn}",
+                    username, logonSuccess, manager.IsLoggedOn);
+
+                bool steamConnected = manager.IsConnected && manager.IsLoggedOn;
+                return new AuthStatusResult
+                {
+                    State = steamConnected ? AuthState.Failed : AuthState.Expired,
+                    ErrorMessage = steamConnected ?
+                        "Steam logon failed - authentication incomplete" :
+                        "Steam connection lost during authentication"
+                };
+            }
+
+            if (!manager.IsConnected)
+            {
+                _logger.LogError("Steam client not connected after mobile confirmation logon for user: {Username}", username);
+                return new AuthStatusResult
+                {
+                    State = AuthState.Failed,
+                    ErrorMessage = "Steam client disconnected after authentication"
+                };
+            }
+
+            _logger.LogInformation("Mobile confirmation authentication successful for user: {Username}", username);
+
+            var userInfo = await GetCurrentUserInfoAsync(manager);
+            if (userInfo != null && !string.IsNullOrEmpty(pollResult.AccountName))
+            {
+                userInfo.AccountName = pollResult.AccountName;
+            }
+
+            return new AuthStatusResult
+            {
+                State = AuthState.Authenticated,
+                AccessToken = pollResult.AccessToken,
+                RefreshToken = pollResult.RefreshToken,
+                UserInfo = userInfo
+            };
+        }
+        catch (AuthenticationException authEx)
+        {
+            _deviceConfirmationSessions.TryRemove(sessionId, out _);
+            _activeAuthSessions.TryRemove(sessionId, out _);
+            _sessionUsernames.TryRemove(sessionId, out _);
+            _sessionIdToLoginKey.TryRemove(sessionId, out _);
+
+            _logger.LogWarning("Mobile confirmation authentication failed for user {Username}: {Message}", username, authEx.Message);
+            return new AuthStatusResult
+            {
+                State = authEx.Result == EResult.Expired ? AuthState.Expired : AuthState.Failed,
+                ErrorMessage = authEx.Message
+            };
+        }
+        catch (Exception ex)
+        {
+            _deviceConfirmationSessions.TryRemove(sessionId, out _);
+            _activeAuthSessions.TryRemove(sessionId, out _);
+            _sessionUsernames.TryRemove(sessionId, out _);
+            _sessionIdToLoginKey.TryRemove(sessionId, out _);
+
+            _logger.LogError(ex, "Error checking mobile confirmation status for session: {SessionId}", sessionId);
             return new AuthStatusResult
             {
                 State = AuthState.Failed,
@@ -912,6 +1064,7 @@ public class CredentialsLoginResult
     public UserInfo? UserInfo { get; set; }
     public bool RequiresGuard { get; set; }
     public bool RequiresEmailVerification { get; set; }
+    public bool RequiresDeviceConfirmation { get; set; }
     public string? SessionId { get; set; }
 }
 
@@ -982,20 +1135,34 @@ public class UserInfo
 public class BridgeAuthenticator : IAuthenticator
 {
     private readonly object _lock = new object();
+    private readonly ILogger _logger;
+    private readonly string _username;
     private string? _guardCode;
     private string? _emailCode;
     private readonly TaskCompletionSource<string>? _guardCodeTcs;
     private readonly TaskCompletionSource<string>? _emailCodeTcs;
+    private readonly TaskCompletionSource<bool> _deviceConfirmationRequestedTcs = new TaskCompletionSource<bool>();
     private readonly bool _waitForCodes;
-    
-    public BridgeAuthenticator(string? guardCode = null, string? emailCode = null, bool waitForCodes = false)
+
+    /// <summary>
+    /// Resolves the moment SteamKit calls <see cref="AcceptDeviceConfirmationAsync"/> - i.e. as soon as it
+    /// determines the account needs a Steam Mobile App approval rather than a typed code. Callers can race
+    /// this against the overall polling task to find out which 2FA type is required without waiting for the
+    /// whole login to finish.
+    /// </summary>
+    public Task DeviceConfirmationRequested => _deviceConfirmationRequestedTcs.Task;
+
+    public BridgeAuthenticator(ILogger logger, string username, string? guardCode = null, string? emailCode = null, bool waitForCodes = false)
     {
+        _logger = logger;
+        _username = username;
+
         lock (_lock)
         {
             _guardCode = guardCode;
             _emailCode = emailCode;
             _waitForCodes = waitForCodes;
-            
+
             if (_waitForCodes)
             {
                 _guardCodeTcs = new TaskCompletionSource<string>();
@@ -1024,6 +1191,8 @@ public class BridgeAuthenticator : IAuthenticator
     
     public async Task<string> GetDeviceCodeAsync(bool previousCodeWasIncorrect)
     {
+        _logger.LogInformation("Steam requires authenticator app code for user: {Username}", _username);
+
         lock (_lock)
         {
             if (!string.IsNullOrEmpty(_guardCode))
@@ -1048,6 +1217,8 @@ public class BridgeAuthenticator : IAuthenticator
     
     public async Task<string> GetEmailCodeAsync(string email, bool previousCodeWasIncorrect)
     {
+        _logger.LogInformation("Steam requires email code for user: {Username}", _username);
+
         lock (_lock)
         {
             if (!string.IsNullOrEmpty(_emailCode))
@@ -1069,9 +1240,11 @@ public class BridgeAuthenticator : IAuthenticator
         
         throw new InvalidOperationException("No email code was provided for authentication");
     }
-    
+
     public Task<bool> AcceptDeviceConfirmationAsync()
     {
+        _logger.LogInformation("Steam requires mobile app confirmation for user: {Username}", _username);
+        _deviceConfirmationRequestedTcs.TrySetResult(true);
         return Task.FromResult(true);
     }
 }

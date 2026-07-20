@@ -499,17 +499,18 @@ func (x *QRLoginResponse) GetSessionId() string {
 }
 
 type LoginResponse struct {
-	state                     protoimpl.MessageState `protogen:"open.v1"`
-	Success                   bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
-	ErrorMessage              string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	AccessToken               string                 `protobuf:"bytes,3,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
-	RefreshToken              string                 `protobuf:"bytes,4,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
-	UserInfo                  *UserInfo              `protobuf:"bytes,5,opt,name=user_info,json=userInfo,proto3" json:"user_info,omitempty"`
-	RequiresGuard             bool                   `protobuf:"varint,6,opt,name=requires_guard,json=requiresGuard,proto3" json:"requires_guard,omitempty"`
-	RequiresEmailVerification bool                   `protobuf:"varint,7,opt,name=requires_email_verification,json=requiresEmailVerification,proto3" json:"requires_email_verification,omitempty"`
-	SessionId                 string                 `protobuf:"bytes,8,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"` // For continuing 2FA authentication
-	unknownFields             protoimpl.UnknownFields
-	sizeCache                 protoimpl.SizeCache
+	state                      protoimpl.MessageState `protogen:"open.v1"`
+	Success                    bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage               string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	AccessToken                string                 `protobuf:"bytes,3,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`
+	RefreshToken               string                 `protobuf:"bytes,4,opt,name=refresh_token,json=refreshToken,proto3" json:"refresh_token,omitempty"`
+	UserInfo                   *UserInfo              `protobuf:"bytes,5,opt,name=user_info,json=userInfo,proto3" json:"user_info,omitempty"`
+	RequiresGuard              bool                   `protobuf:"varint,6,opt,name=requires_guard,json=requiresGuard,proto3" json:"requires_guard,omitempty"`
+	RequiresEmailVerification  bool                   `protobuf:"varint,7,opt,name=requires_email_verification,json=requiresEmailVerification,proto3" json:"requires_email_verification,omitempty"`
+	SessionId                  string                 `protobuf:"bytes,8,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`                                                       // For continuing 2FA authentication
+	RequiresDeviceConfirmation bool                   `protobuf:"varint,9,opt,name=requires_device_confirmation,json=requiresDeviceConfirmation,proto3" json:"requires_device_confirmation,omitempty"` // Steam Mobile App "Approve" prompt pending; poll GetAuthStatus with session_id
+	unknownFields              protoimpl.UnknownFields
+	sizeCache                  protoimpl.SizeCache
 }
 
 func (x *LoginResponse) Reset() {
@@ -596,6 +597,13 @@ func (x *LoginResponse) GetSessionId() string {
 		return x.SessionId
 	}
 	return ""
+}
+
+func (x *LoginResponse) GetRequiresDeviceConfirmation() bool {
+	if x != nil {
+		return x.RequiresDeviceConfirmation
+	}
+	return false
 }
 
 type ContinueAuthRequest struct {
@@ -3322,7 +3330,7 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\rchallenge_url\x18\x01 \x01(\tR\fchallengeUrl\x12(\n" +
 	"\x10qr_code_fallback\x18\x03 \x01(\tR\x0eqrCodeFallback\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x04 \x01(\tR\tsessionId\"\xd0\x02\n" +
+	"session_id\x18\x04 \x01(\tR\tsessionId\"\x92\x03\n" +
 	"\rLoginResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12!\n" +
@@ -3332,7 +3340,8 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\x0erequires_guard\x18\x06 \x01(\bR\rrequiresGuard\x12>\n" +
 	"\x1brequires_email_verification\x18\a \x01(\bR\x19requiresEmailVerification\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\b \x01(\tR\tsessionId\"r\n" +
+	"session_id\x18\b \x01(\tR\tsessionId\x12@\n" +
+	"\x1crequires_device_confirmation\x18\t \x01(\bR\x1arequiresDeviceConfirmation\"r\n" +
 	"\x13ContinueAuthRequest\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12\x1d\n" +
