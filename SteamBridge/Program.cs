@@ -10,7 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 // Configure Kestrel to use HTTP/2 for gRPC
 builder.Services.Configure<KestrelServerOptions>(options =>
 {
-    options.ListenLocalhost(50051, listenOptions =>
+    options.ListenAnyIP(50051, listenOptions =>
     {
         listenOptions.Protocols = HttpProtocols.Http2;
     });
@@ -86,11 +86,11 @@ app.MapGet("/", () => "Steam Bridge gRPC Service is running. Use a gRPC client t
 var parentPid = Environment.GetEnvironmentVariable("PARENT_PID");
 if (!string.IsNullOrEmpty(parentPid))
 {
-    Console.WriteLine($"Steam Bridge starting on localhost:50051 (HTTP/2) with parent process monitoring (PID: {parentPid})");
+    Console.WriteLine($"Steam Bridge starting on 0.0.0.0:50051 (HTTP/2) with parent process monitoring (PID: {parentPid})");
 }
 else
 {
-    Console.WriteLine("Steam Bridge starting on localhost:50051 (HTTP/2)");
+    Console.WriteLine("Steam Bridge starting on 0.0.0.0:50051 (HTTP/2)");
 }
 
 app.Run();
