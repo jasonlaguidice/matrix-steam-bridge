@@ -935,29 +935,34 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 
 	switch data.MessageType {
 	case steamapi.MessageType_CHAT_MESSAGE:
-		// Detect any inline emote tokens — convert to m.text with data-mx-emoticon HTML
-		if data.ImageUrl == "" {
-			if inlineEmoticon.MatchString(data.Message) ||
-				inlineEmoticonBBCode.MatchString(data.Message) ||
-				inlineSticker.MatchString(data.Message) {
-				return sc.convertInlineEmotesMessage(ctx, portal, intent, data.Message)
-			}
-		}
-
-		// Auto-detect image URLs in Steam messages if not already set
+		// Auto-detect image URLs in Steam messages if not already set. This must run
+		// before emoticon detection: native Steam image-share messages are raw
+		// "[img src=... thumbnail_src=...][url=...][/url][/img]" markup containing
+		// multiple "https://" URLs, and inlineEmoticon's `:([^:\s][^:]*):` pattern
+		// will otherwise match across two unrelated colons in that markup and mangle
+		// it into broken emoticon HTML instead of an embedded image.
 		if data.ImageUrl == "" {
 			if detectedURL := detectImageURL(data.Message); detectedURL != "" {
-				data.ImageUrl = detectedURL
 				sc.br.Log.Info().
 					Str("detected_image_url", detectedURL).
 					Str("original_message", data.Message).
 					Msg("Auto-detected image URL in Steam message")
+				data.ImageUrl = detectedURL
+				// The raw message is markup soup, not a real caption.
+				data.Message = ""
 			}
 		}
 
 		// Check if this message contains an image URL
 		if data.ImageUrl != "" {
 			return sc.convertImageMessage(ctx, portal, intent, data)
+		}
+
+		// Detect any inline emote tokens — convert to m.text with data-mx-emoticon HTML
+		if inlineEmoticon.MatchString(data.Message) ||
+			inlineEmoticonBBCode.MatchString(data.Message) ||
+			inlineSticker.MatchString(data.Message) {
+			return sc.convertInlineEmotesMessage(ctx, portal, intent, data.Message)
 		}
 
 		content = &event.MessageEventContent{
