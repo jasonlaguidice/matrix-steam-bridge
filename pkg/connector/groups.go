@@ -73,7 +73,7 @@ func (sc *SteamClient) syncChannel(_ context.Context, group *steamapi.ChatGroup,
 	}
 
 	spacePortalID := makeSpacePortalID(group.ChatGroupId)
-	chatInfo := buildChannelChatInfo(group, channel, spacePortalID)
+	chatInfo := buildChannelChatInfo(channel, spacePortalID)
 	channelName := channel.Name
 	if channelName == "" {
 		channelName = fmt.Sprintf("channel-%d", channel.ChatId)
@@ -103,13 +103,11 @@ func (sc *SteamClient) syncChannel(_ context.Context, group *steamapi.ChatGroup,
 }
 
 // buildChannelChatInfo constructs a ChatInfo for a Steam chat channel portal.
-func buildChannelChatInfo(group *steamapi.ChatGroup, channel *steamapi.ChatChannel, parentSpaceID networkid.PortalID) *bridgev2.ChatInfo {
+func buildChannelChatInfo(channel *steamapi.ChatChannel, parentSpaceID networkid.PortalID) *bridgev2.ChatInfo {
 	name := channel.Name
 	if name == "" {
 		name = fmt.Sprintf("channel-%d", channel.ChatId)
 	}
-
-	_ = group // group may be used for additional context in the future
 
 	return &bridgev2.ChatInfo{
 		Type:        ptr.Ptr(database.RoomTypeDefault),

@@ -41,37 +41,6 @@ var (
 	inlineSticker        = regexp.MustCompile(`\[sticker\s+type="([^"]+)"[^\]]*\]\[/sticker\]`)
 )
 
-// convertCDNImageMessage downloads an image from a public CDN URL and uploads it to Matrix,
-// returning a ConvertedMessage with m.image event type.
-func (sc *SteamClient) convertCDNImageMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, cdnURL, body string) (*bridgev2.ConvertedMessage, error) {
-	imageData, err := sc.downloadImageFromURL(ctx, cdnURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to download CDN image %s: %w", cdnURL, err)
-	}
-	mimeType := http.DetectContentType(imageData)
-	parts := strings.Split(cdnURL, "/")
-	filename := parts[len(parts)-1]
-	if !strings.Contains(filename, ".") {
-		filename += ".png"
-	}
-	mxcURI, encryptedFile, err := intent.UploadMedia(ctx, portal.MXID, imageData, filename, mimeType)
-	if err != nil {
-		return nil, fmt.Errorf("failed to upload CDN image to Matrix: %w", err)
-	}
-	content := &event.MessageEventContent{
-		MsgType: event.MsgImage,
-		Body:    body,
-		URL:     mxcURI,
-		File:    encryptedFile,
-	}
-	return &bridgev2.ConvertedMessage{
-		Parts: []*bridgev2.ConvertedMessagePart{{
-			Type:    event.EventMessage,
-			Content: content,
-		}},
-	}, nil
-}
-
 type emoteToken struct {
 	start, end int
 	name       string
@@ -104,7 +73,6 @@ func findAllEmoteTokens(msg string) []emoteToken {
 // used if available; otherwise CDN URLs are used directly in the img src.
 func (sc *SteamClient) convertInlineEmotesMessage(
 	ctx context.Context,
-	portal *bridgev2.Portal,
 	intent bridgev2.MatrixAPI,
 	rawMessage string,
 ) (*bridgev2.ConvertedMessage, error) {
@@ -250,13 +218,6 @@ func (sc *SteamClient) startMessageSubscription(ctx context.Context) {
 			}
 		}
 	}
-}
-
-// subscribeWithStream handles a single stream connection lifecycle
-func (sc *SteamClient) subscribeWithStream(ctx context.Context) error {
-	// This method is now only used for initial connection setup
-	// Don't send state updates here as they may overwrite the main connection state
-	return sc.subscribeWithStreamRetry(ctx)
 }
 
 // subscribeWithStreamRetry handles stream connection attempts during reconnection
@@ -962,7 +923,7 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 		if inlineEmoticon.MatchString(data.Message) ||
 			inlineEmoticonBBCode.MatchString(data.Message) ||
 			inlineSticker.MatchString(data.Message) {
-			return sc.convertInlineEmotesMessage(ctx, portal, intent, data.Message)
+			return sc.convertInlineEmotesMessage(ctx, intent, data.Message)
 		}
 
 		content = &event.MessageEventContent{

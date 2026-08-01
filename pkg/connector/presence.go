@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"go.shadowdrake.org/steam/pkg/steamapi"
-	"maunium.net/go/mautrix/event"
 )
 
 // PresenceManager handles Matrix→Steam presence synchronization
@@ -106,47 +105,6 @@ func (pm *PresenceManager) Stop() {
 		pm.inactivityTimer.Stop()
 		pm.inactivityTimer = nil
 	}
-}
-
-// HandlePresenceEvent processes Matrix presence events
-func (pm *PresenceManager) HandlePresenceEvent(ctx context.Context, presence event.PresenceEventContent) {
-	if !pm.enabled {
-		return
-	}
-
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	// Don't change state if manually invisible
-	if pm.manualInvisible {
-		pm.client.br.Log.Debug().Msg("Ignoring presence event - manual invisible mode active")
-		return
-	}
-
-	// Map Matrix presence to Steam PersonaState
-	var targetState steamapi.PersonaState
-	switch presence.Presence {
-	case event.PresenceOnline:
-		targetState = steamapi.PersonaState_ONLINE
-		pm.resetInactivityTimerLocked(ctx)
-		pm.client.br.Log.Debug().Msg("Matrix presence: online → Steam ONLINE")
-
-	case event.PresenceUnavailable:
-		targetState = steamapi.PersonaState_SNOOZE
-		pm.stopInactivityTimerLocked()
-		pm.client.br.Log.Debug().Msg("Matrix presence: unavailable → Steam SNOOZE")
-
-	case event.PresenceOffline:
-		// Don't change state for offline - user may still be connected via other clients
-		pm.client.br.Log.Debug().Msg("Matrix presence: offline → Steam no change")
-		return
-
-	default:
-		pm.client.br.Log.Warn().Str("presence", string(presence.Presence)).Msg("Unknown Matrix presence state")
-		return
-	}
-
-	pm.setPersonaStateLocked(ctx, targetState)
 }
 
 // HandleActivity is called on any Matrix activity (messages, sync events)

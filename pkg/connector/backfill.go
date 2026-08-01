@@ -177,7 +177,7 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 		(inlineEmoticon.MatchString(content) ||
 			inlineEmoticonBBCode.MatchString(content) ||
 			inlineSticker.MatchString(content)) {
-		convertedMsg, err = sc.convertInlineEmotesMessage(ctx, portal, nil, content)
+		convertedMsg, err = sc.convertInlineEmotesMessage(ctx, nil, content)
 	} else {
 		// Auto-detect image URLs in historical messages if not already set
 		if steamMsg.ImageUrl == "" {

@@ -177,17 +177,4 @@ public class SteamImageService
             _ => false
         };
     }
-
-
-    private string GetFileExtension(string mimeType)
-    {
-        return mimeType?.ToLowerInvariant() switch
-        {
-            "image/jpeg" => "jpg",
-            "image/png" => "png", 
-            "image/gif" => "gif",
-            "image/webp" => "webp",
-            _ => "jpg"
-        };
-    }
 }

@@ -153,15 +153,6 @@ public class SteamClientManager : IDisposable
         return true;
     }
 
-    public void Disconnect()
-    {
-        if (_isConnected)
-        {
-            _logger.LogInformation("Disconnecting from Steam...");
-            _steamClient.Disconnect();
-        }
-    }
-
     public async Task<AuthSession> BeginAuthSessionViaCredentialsAsync(AuthSessionDetails details)
     {
         if (!_isConnected)
