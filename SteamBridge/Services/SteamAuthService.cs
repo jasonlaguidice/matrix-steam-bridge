@@ -41,6 +41,7 @@ public class SteamAuthService : Proto.SteamAuthService.SteamAuthServiceBase
                 RefreshToken = result.RefreshToken ?? string.Empty,
                 RequiresGuard = result.RequiresGuard,
                 RequiresEmailVerification = result.RequiresEmailVerification,
+                RequiresDeviceConfirmation = result.RequiresDeviceConfirmation,
                 SessionId = result.SessionId ?? string.Empty
             };
 

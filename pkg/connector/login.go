@@ -186,11 +186,65 @@ func (slp *SteamLoginPassword) SubmitUserInput(ctx context.Context, input map[st
 			}, nil
 		}
 
+		if resp.RequiresDeviceConfirmation {
+			return &bridgev2.LoginStep{
+				Type:         bridgev2.LoginStepTypeDisplayAndWait,
+				StepID:       "device_confirmation",
+				Instructions: "Open the Steam Mobile app and tap **Approve** on the Steam Guard prompt. Send `cancel` to cancel the login",
+				DisplayAndWaitParams: &bridgev2.LoginDisplayAndWaitParams{
+					Type: bridgev2.LoginDisplayTypeNothing,
+				},
+			}, nil
+		}
+
 		return nil, fmt.Errorf("Steam authentication failed: %s", resp.ErrorMessage)
 	}
 
 	// Authentication successful, create user login
 	return slp.finishLogin(ctx, resp)
+}
+
+// Wait implements bridgev2.LoginProcessDisplayAndWait for password login. It's only reached when
+// SubmitUserInput returned a device_confirmation step, i.e. Steam wants the user to approve the
+// login from the Steam Mobile app rather than type a code. Mirrors SteamLoginQR.Wait below, polling
+// the same GetAuthStatus RPC by session ID until Steam reports a result.
+func (slp *SteamLoginPassword) Wait(ctx context.Context) (*bridgev2.LoginStep, error) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	timeout := time.After(5 * time.Minute)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timeout:
+			return nil, fmt.Errorf("Steam Guard mobile confirmation timed out after 5 minutes. Run `login` to try again")
+		case <-ticker.C:
+			resp, err := slp.Main.authClient.GetAuthStatus(ctx, &steamapi.AuthStatusRequest{
+				SessionId: slp.SessionID,
+			})
+			if err != nil {
+				slp.Main.br.Log.Err(err).Msg("Failed to check Steam Guard confirmation status")
+				continue
+			}
+
+			switch resp.State {
+			case steamapi.AuthStatusResponse_AUTHENTICATED:
+				return finishAuthStatusLogin(ctx, slp.Main, slp.User, resp, "password", "fresh_login_device_confirmation")
+
+			case steamapi.AuthStatusResponse_FAILED:
+				return nil, fmt.Errorf("Steam login failed: %s", resp.ErrorMessage)
+
+			case steamapi.AuthStatusResponse_EXPIRED:
+				return nil, fmt.Errorf("Steam Guard confirmation expired. Run `login` to try again")
+
+			case steamapi.AuthStatusResponse_PENDING:
+				// Still waiting, continue polling
+				continue
+			}
+		}
+	}
 }
 
 // finishLogin completes the login process by creating UserLogin and metadata
@@ -400,7 +454,7 @@ func (slq *SteamLoginQR) Wait(ctx context.Context) (*bridgev2.LoginStep, error) 
 			switch resp.State {
 			case steamapi.AuthStatusResponse_AUTHENTICATED:
 				// Authentication successful - create user login with LoadUserLogin
-				return slq.finishQRLoginStep(ctx, resp)
+				return finishAuthStatusLogin(ctx, slq.Main, slq.User, resp, "qr", "fresh_qr_login")
 
 			case steamapi.AuthStatusResponse_FAILED:
 				return nil, fmt.Errorf("QR authentication failed: %s", resp.ErrorMessage)
@@ -416,8 +470,10 @@ func (slq *SteamLoginQR) Wait(ctx context.Context) (*bridgev2.LoginStep, error) 
 	}
 }
 
-// finishQRLoginStep completes the QR login process and returns the completion step
-func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.AuthStatusResponse) (*bridgev2.LoginStep, error) {
+// finishAuthStatusLogin completes a login from a resolved AuthStatusResponse. It's shared by the QR
+// flow and the password flow's Steam Guard mobile confirmation wait, since both resolve the same way:
+// polling GetAuthStatus until it reports AUTHENTICATED.
+func finishAuthStatusLogin(ctx context.Context, main *SteamConnector, user *bridgev2.User, resp *steamapi.AuthStatusResponse, sessionType string, connectionType string) (*bridgev2.LoginStep, error) {
 	// Create user login metadata
 	userLoginID := makeUserLoginID(resp.UserInfo.SteamId)
 
@@ -432,13 +488,13 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		AccessToken:      resp.AccessToken,
 		RefreshToken:     resp.RefreshToken,
 		SessionTimestamp: time.Now().Unix(),
-		SessionType:      "qr",
+		SessionType:      sessionType,
 		IsValid:          true,
 		RecentlyCreated:  time.Now(),
 	}
 
 	// Create user login in database WITH LoadUserLogin function
-	userLogin, err := slq.User.NewLogin(ctx, &database.UserLogin{
+	userLogin, err := user.NewLogin(ctx, &database.UserLogin{
 		ID:         userLoginID,
 		RemoteName: resp.UserInfo.PersonaName,
 		RemoteProfile: status.RemoteProfile{
@@ -450,14 +506,14 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		LoadUserLogin: func(ctx context.Context, login *bridgev2.UserLogin) error {
 			login.Client = &SteamClient{
 				UserLogin:      login,
-				connector:      slq.Main,
-				authClient:     slq.Main.authClient,
-				userClient:     slq.Main.userClient,
-				msgClient:      slq.Main.msgClient,
-				sessionClient:  slq.Main.sessionClient,
-				presenceClient: slq.Main.presenceClient,
-				groupClient:    slq.Main.groupClient,
-				br:             slq.Main.br,
+				connector:      main,
+				authClient:     main.authClient,
+				userClient:     main.userClient,
+				msgClient:      main.msgClient,
+				sessionClient:  main.sessionClient,
+				presenceClient: main.presenceClient,
+				groupClient:    main.groupClient,
+				br:             main.br,
 				typingCancels:  make(map[networkid.PortalID]context.CancelFunc),
 			}
 			return nil
@@ -467,7 +523,7 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		return nil, fmt.Errorf("failed to create user login: %w", err)
 	}
 
-	// After fresh QR login, mark as connected since Steam session is already active
+	// After a fresh login, mark as connected since Steam session is already active
 	// Do NOT call Connect() as that would re-authenticate and cause session replacement
 	if steamClient, ok := userLogin.Client.(*SteamClient); ok {
 		// Set connection state - Steam is already connected via the login process
@@ -480,10 +536,10 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 		steamClient.UserLogin.BridgeState.Send(steamClient.buildBridgeState(status.StateConnected,
 			"Connected to Steam",
 			withInfo(map[string]interface{}{
-				"connection_type": "fresh_qr_login",
+				"connection_type": connectionType,
 			})))
 
-		// Start connection monitoring and message subscriptions for fresh QR login
+		// Start connection monitoring and message subscriptions for the fresh login
 		ctx := context.Background()
 		steamClient.startConnectionMonitoring(ctx)
 
@@ -543,4 +599,5 @@ func (slq *SteamLoginQR) finishQRLoginStep(ctx context.Context, resp *steamapi.A
 
 // Implement required interfaces
 var _ bridgev2.LoginProcessUserInput = (*SteamLoginPassword)(nil)
+var _ bridgev2.LoginProcessDisplayAndWait = (*SteamLoginPassword)(nil)
 var _ bridgev2.LoginProcessDisplayAndWait = (*SteamLoginQR)(nil)
