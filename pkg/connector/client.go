@@ -298,18 +298,14 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		if !resp.Success || resp.State != steamapi.AuthStatusResponse_AUTHENTICATED {
 			sc.br.Log.Warn().Str("auth_state", resp.State.String()).Str("error", resp.ErrorMessage).Msg("Token re-authentication failed")
 
-			// Check if the failure is due to network connectivity rather than bad credentials
-			if strings.Contains(resp.ErrorMessage, "Failed to connect to Steam network") ||
-			   strings.Contains(resp.ErrorMessage, "Failed to connect to Steam within timeout") ||
-			   strings.Contains(resp.ErrorMessage, "network") ||
-			   strings.Contains(resp.ErrorMessage, "timeout") ||
-			   strings.Contains(resp.ErrorMessage, "connection") {
-				// Network connectivity issue - treat as transient disconnect
-				sc.br.Log.Warn().Msg("Network connectivity issue in auth response, treating as transient disconnect")
-				go sc.handleTransientDisconnect(ctx, "Steam network connectivity issue", resp.ErrorMessage)
-				return
-			}
-
+			// resp.State here is a definitive classification from the C# auth service (the RPC
+			// itself succeeded - err == nil above), not a guess: EXPIRED/FAILED always means the
+			// logon was rejected, whatever the reason (bad token, rate limit, etc). Treat it as
+			// terminal rather than re-testing resp.ErrorMessage for connectivity-sounding words -
+			// that previously misrouted every failure into the infinite auto-reconnect loop below,
+			// because the C# service used the same "connection" wording for every failure reason,
+			// masking genuinely expired credentials as a transient blip and hammering Steam's
+			// login rate limiter until the account got blocked.
 			var userAction status.BridgeStateUserAction = status.UserActionRelogin
 			var message string
 

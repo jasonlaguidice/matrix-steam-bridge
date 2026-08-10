@@ -42,6 +42,7 @@ public class SteamClientManager : IDisposable
 
     public bool IsConnected => _isConnected;
     public bool IsLoggedOn => _isLoggedOn;
+    public EResult LastLogOnResult { get; private set; } = EResult.Invalid;
     public bool IsFriendsListLoaded
     {
         get
@@ -264,6 +265,8 @@ public class SteamClientManager : IDisposable
 
     private void OnLoggedOn(SteamUser.LoggedOnCallback callback)
     {
+        LastLogOnResult = callback.Result;
+
         if (callback.Result == EResult.OK)
         {
             _isLoggedOn = true;

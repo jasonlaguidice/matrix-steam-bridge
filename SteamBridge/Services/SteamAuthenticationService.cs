@@ -144,9 +144,9 @@ public class SteamAuthenticationService
                         return new CredentialsLoginResult
                         {
                             Success = false,
-                            ErrorMessage = steamConnected ? 
-                                "Steam logon failed - credentials may be invalid" : 
-                                "Steam connection lost during authentication"
+                            ErrorMessage = steamConnected ?
+                                "Steam logon failed - credentials may be invalid" :
+                                DescribeLogOnFailure(manager)
                         };
                     }
 
@@ -458,13 +458,13 @@ public class SteamAuthenticationService
 
                 // Additional verification - check if Steam is actually connected
                 bool steamConnected = manager.IsConnected && manager.IsLoggedOn;
-                
+
                 return new AuthStatusResult
                 {
                     State = steamConnected ? AuthState.Failed : AuthState.Expired,
-                    ErrorMessage = steamConnected ? 
-                        "Steam logon failed - authentication incomplete" : 
-                        "Steam connection lost during authentication"
+                    ErrorMessage = steamConnected ?
+                        "Steam logon failed - authentication incomplete" :
+                        DescribeLogOnFailure(manager)
                 };
             }
 
@@ -570,7 +570,7 @@ public class SteamAuthenticationService
                     State = steamConnected ? AuthState.Failed : AuthState.Expired,
                     ErrorMessage = steamConnected ?
                         "Steam logon failed - authentication incomplete" :
-                        "Steam connection lost during authentication"
+                        DescribeLogOnFailure(manager)
                 };
             }
 
@@ -701,9 +701,9 @@ public class SteamAuthenticationService
                 {
                     Success = false,
                     State = steamConnected ? AuthState.Failed : AuthState.Expired,
-                    ErrorMessage = steamConnected ? 
-                        "Steam logon failed - credentials may be invalid" : 
-                        "Steam connection lost during authentication"
+                    ErrorMessage = steamConnected ?
+                        "Steam logon failed - credentials may be invalid" :
+                        DescribeLogOnFailure(manager)
                 };
             }
 
@@ -770,6 +770,18 @@ public class SteamAuthenticationService
         }
 
         return manager.IsFriendsListLoaded;
+    }
+
+    /// <summary>
+    /// Describes a failed manager.LogOn() outcome using the real EResult SteamKit2 reported
+    /// (via manager.LastLogOnResult), instead of a generic message that can't tell a caller
+    /// apart from a rate limit, an actually-expired token, or a transient CM handoff.
+    /// </summary>
+    private static string DescribeLogOnFailure(SteamClientManager manager)
+    {
+        return manager.LastLogOnResult == EResult.Invalid
+            ? "Steam connection lost during authentication"
+            : $"Steam rejected the login: {manager.LastLogOnResult}";
     }
 
     private async Task<UserInfo?> GetCurrentUserInfoAsync(SteamClientManager manager)
@@ -953,7 +965,7 @@ public class SteamAuthenticationService
                         Success = false,
                         ErrorMessage = manager.IsConnected ?
                             "Steam logon failed - please verify your credentials" :
-                            "Steam connection lost during authentication"
+                            DescribeLogOnFailure(manager)
                     };
                 }
 
