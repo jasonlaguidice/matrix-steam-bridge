@@ -264,6 +264,7 @@ const (
 	AuthStatusResponse_AUTHENTICATED AuthStatusResponse_AuthState = 1
 	AuthStatusResponse_FAILED        AuthStatusResponse_AuthState = 2
 	AuthStatusResponse_EXPIRED       AuthStatusResponse_AuthState = 3
+	AuthStatusResponse_NETWORK_ERROR AuthStatusResponse_AuthState = 4
 )
 
 // Enum value maps for AuthStatusResponse_AuthState.
@@ -273,12 +274,14 @@ var (
 		1: "AUTHENTICATED",
 		2: "FAILED",
 		3: "EXPIRED",
+		4: "NETWORK_ERROR",
 	}
 	AuthStatusResponse_AuthState_value = map[string]int32{
 		"PENDING":       0,
 		"AUTHENTICATED": 1,
 		"FAILED":        2,
 		"EXPIRED":       3,
+		"NETWORK_ERROR": 4,
 	}
 )
 
@@ -3351,19 +3354,20 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"email_code\x18\x03 \x01(\tR\temailCode\"2\n" +
 	"\x11AuthStatusRequest\x12\x1d\n" +
 	"\n" +
-	"session_id\x18\x01 \x01(\tR\tsessionId\"\xbc\x02\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"\xcf\x02\n" +
 	"\x12AuthStatusResponse\x12?\n" +
 	"\x05state\x18\x01 \x01(\x0e2).steambridge.AuthStatusResponse.AuthStateR\x05state\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12!\n" +
 	"\faccess_token\x18\x03 \x01(\tR\vaccessToken\x12#\n" +
 	"\rrefresh_token\x18\x04 \x01(\tR\frefreshToken\x122\n" +
-	"\tuser_info\x18\x05 \x01(\v2\x15.steambridge.UserInfoR\buserInfo\"D\n" +
+	"\tuser_info\x18\x05 \x01(\v2\x15.steambridge.UserInfoR\buserInfo\"W\n" +
 	"\tAuthState\x12\v\n" +
 	"\aPENDING\x10\x00\x12\x11\n" +
 	"\rAUTHENTICATED\x10\x01\x12\n" +
 	"\n" +
 	"\x06FAILED\x10\x02\x12\v\n" +
-	"\aEXPIRED\x10\x03\"*\n" +
+	"\aEXPIRED\x10\x03\x12\x11\n" +
+	"\rNETWORK_ERROR\x10\x04\"*\n" +
 	"\rLogoutRequest\x12\x19\n" +
 	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\"\x93\x01\n" +
 	"\x12TokenReAuthRequest\x12!\n" +

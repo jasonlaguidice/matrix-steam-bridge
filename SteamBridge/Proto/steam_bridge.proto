@@ -98,6 +98,7 @@ message AuthStatusResponse {
     AUTHENTICATED = 1;
     FAILED = 2;
     EXPIRED = 3;
+    NETWORK_ERROR = 4;
   }
   AuthState state = 1;
   string error_message = 2;

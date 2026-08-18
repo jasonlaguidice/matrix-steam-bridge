@@ -47,6 +47,13 @@ func (sc *SteamClient) buildBridgeState(state status.BridgeStateEvent, message s
 		opt(&bridgeState)
 	}
 
+	// Any state that tells the user to relogin or restart means an automatic
+	// retry can't fix this - stop any in-flight reconnection loop here so
+	// every call site gets this for free instead of having to remember it.
+	if bridgeState.UserAction == status.UserActionRelogin || bridgeState.UserAction == status.UserActionRestart {
+		sc.stopReconnectionLoop()
+	}
+
 	// Add remote profile information if available
 	if meta := sc.getUserMetadata(); meta != nil {
 		bridgeState.RemoteID = meta.RemoteID
@@ -298,14 +305,26 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		if !resp.Success || resp.State != steamapi.AuthStatusResponse_AUTHENTICATED {
 			sc.br.Log.Warn().Str("auth_state", resp.State.String()).Str("error", resp.ErrorMessage).Msg("Token re-authentication failed")
 
+			// NETWORK_ERROR means the C# service's pre-login connect() to Steam's CM servers
+			// itself failed/timed out - it never got far enough to submit the stored tokens,
+			// so this says nothing about whether those tokens are valid. Route it through the
+			// same transient-disconnect handling as an RPC-level network error instead of
+			// treating it like a rejected login.
+			if resp.State == steamapi.AuthStatusResponse_NETWORK_ERROR {
+				sc.br.Log.Warn().Msg("Steam network unreachable during re-authentication, treating as transient disconnect")
+				go sc.handleTransientDisconnect(ctx, "Steam network connectivity issue during login", resp.ErrorMessage)
+				return
+			}
+
 			// resp.State here is a definitive classification from the C# auth service (the RPC
-			// itself succeeded - err == nil above), not a guess: EXPIRED/FAILED always means the
-			// logon was rejected, whatever the reason (bad token, rate limit, etc). Treat it as
-			// terminal rather than re-testing resp.ErrorMessage for connectivity-sounding words -
-			// that previously misrouted every failure into the infinite auto-reconnect loop below,
-			// because the C# service used the same "connection" wording for every failure reason,
-			// masking genuinely expired credentials as a transient blip and hammering Steam's
-			// login rate limiter until the account got blocked.
+			// itself succeeded - err == nil above): EXPIRED/FAILED both mean Steam was reached
+			// and rejected the logon, whatever the reason (bad token, rate limit, etc) - genuine
+			// connectivity failures are reported as NETWORK_ERROR above, not FAILED. Treat these
+			// as terminal rather than re-testing resp.ErrorMessage for connectivity-sounding
+			// words - that previously misrouted every failure into the infinite auto-reconnect
+			// loop below, because the C# service used the same "connection" wording for every
+			// failure reason, masking genuinely expired credentials as a transient blip and
+			// hammering Steam's login rate limiter until the account got blocked.
 			var userAction status.BridgeStateUserAction = status.UserActionRelogin
 			var message string
 
@@ -397,16 +416,7 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 	sc.stateMutex.Unlock()
 
 	// Clean up any ongoing reconnection process
-	sc.reconnectionMutex.Lock()
-	if sc.isReconnecting {
-		if sc.reconnectionCancel != nil {
-			sc.reconnectionCancel()
-		}
-		sc.isReconnecting = false
-		sc.reconnectionCancel = nil
-		sc.reconnectionAttempts = 0
-	}
-	sc.reconnectionMutex.Unlock()
+	sc.stopReconnectionLoop()
 
 	// Start connection monitoring
 	sc.startConnectionMonitoring(ctx)

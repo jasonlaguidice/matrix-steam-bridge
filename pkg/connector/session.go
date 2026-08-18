@@ -118,6 +118,23 @@ func (sc *SteamClient) handleSessionEvent(ctx context.Context, event *steamapi.S
 	}
 }
 
+// stopReconnectionLoop cancels any in-progress automatic reconnection attempt.
+// Call this whenever a code path determines the current failure is terminal
+// (e.g. genuinely bad/expired credentials) so the connector stops retrying
+// with tokens Steam has already rejected and waits for the user to relogin
+// instead. Safe to call even when no reconnection loop is running.
+func (sc *SteamClient) stopReconnectionLoop() {
+	sc.reconnectionMutex.Lock()
+	defer sc.reconnectionMutex.Unlock()
+
+	if sc.reconnectionCancel != nil {
+		sc.reconnectionCancel()
+	}
+	sc.isReconnecting = false
+	sc.reconnectionCancel = nil
+	sc.reconnectionAttempts = 0
+}
+
 // handleTransientDisconnect manages automatic reconnection for transient disconnects
 func (sc *SteamClient) handleTransientDisconnect(ctx context.Context, message, reason string) {
 	sc.reconnectionMutex.Lock()

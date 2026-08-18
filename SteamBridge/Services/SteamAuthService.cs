@@ -275,6 +275,7 @@ public class SteamAuthService : Proto.SteamAuthService.SteamAuthServiceBase
             Services.AuthState.Authenticated => AuthStatusResponse.Types.AuthState.Authenticated,
             Services.AuthState.Failed => AuthStatusResponse.Types.AuthState.Failed,
             Services.AuthState.Expired => AuthStatusResponse.Types.AuthState.Expired,
+            Services.AuthState.NetworkError => AuthStatusResponse.Types.AuthState.NetworkError,
             _ => AuthStatusResponse.Types.AuthState.Failed
         };
     }

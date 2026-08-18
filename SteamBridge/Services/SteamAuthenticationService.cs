@@ -674,7 +674,7 @@ public class SteamAuthenticationService
                     return new TokenReAuthResult
                     {
                         Success = false,
-                        State = AuthState.Failed,
+                        State = AuthState.NetworkError,
                         ErrorMessage = "Failed to connect to Steam network"
                     };
                 }
@@ -1103,7 +1103,8 @@ public enum AuthState
     Pending,
     Authenticated,
     Failed,
-    Expired
+    Expired,
+    NetworkError
 }
 
 public enum PersonaState
