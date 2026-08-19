@@ -695,6 +695,12 @@ func getFileExtensionFromMimeType(mimeType string) string {
 		return "gif"
 	case "image/webp":
 		return "webp"
+	case "video/mp4":
+		return "mp4"
+	case "video/webm":
+		return "webm"
+	case "video/quicktime":
+		return "mov"
 	default:
 		return ""
 	}
@@ -886,7 +892,31 @@ func detectImageURL(message string) string {
 			}
 		}
 	}
-	
+
+	return ""
+}
+
+// detectVideoURL scans a message for video URLs and returns the first one found
+func detectVideoURL(message string) string {
+	if message == "" {
+		return ""
+	}
+
+	videoPatterns := []string{
+		// Steam's native video uploads (e.g. clips shared from the Steam client)
+		`https://cdn\.steamusercontent\.com/ugc/\d+/[A-F0-9]+/?`,
+		// Direct video URLs
+		`https?://.*\.(mp4|webm|mov|m4v)(?:\?.*)?$`,
+	}
+
+	for _, pattern := range videoPatterns {
+		if re, err := regexp.Compile("(?i)" + pattern); err == nil {
+			if match := re.FindString(message); match != "" {
+				return match
+			}
+		}
+	}
+
 	return ""
 }
 
@@ -917,6 +947,17 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 		// Check if this message contains an image URL
 		if data.ImageUrl != "" {
 			return sc.convertImageMessage(ctx, portal, intent, data)
+		}
+
+		// Same reasoning as image auto-detection above: native Steam video-share
+		// messages are "[video src=... type=video/mp4][url=...][/url][/video]" markup
+		// with multiple URLs, so this must also run before emoticon detection.
+		if detectedURL := detectVideoURL(data.Message); detectedURL != "" {
+			sc.br.Log.Info().
+				Str("detected_video_url", detectedURL).
+				Str("original_message", data.Message).
+				Msg("Auto-detected video URL in Steam message")
+			return sc.convertVideoMessage(ctx, portal, intent, detectedURL, "")
 		}
 
 		// Detect any inline emote tokens — convert to m.text with data-mx-emoticon HTML
@@ -969,8 +1010,8 @@ func (sc *SteamClient) convertImageMessage(ctx context.Context, portal *bridgev2
 		Msg("Converting Steam image message to Matrix")
 
 	// Download image from Steam
-	downloadResp, err := sc.msgClient.DownloadImageFromSteam(ctx, &steamapi.DownloadImageRequest{
-		ImageUrl: imageURL,
+	downloadResp, err := sc.msgClient.DownloadMediaFromSteam(ctx, &steamapi.DownloadMediaRequest{
+		MediaUrl: imageURL,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to download image from Steam: %w", err)
@@ -992,7 +1033,7 @@ func (sc *SteamClient) convertImageMessage(ctx context.Context, portal *bridgev2
 	}
 
 	// Upload image to Matrix
-	mxcURL, encryptedFile, err := intent.UploadMedia(ctx, portal.MXID, downloadResp.ImageData, filename, downloadResp.MimeType)
+	mxcURL, encryptedFile, err := intent.UploadMedia(ctx, portal.MXID, downloadResp.MediaData, filename, downloadResp.MimeType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to upload image to Matrix: %w", err)
 	}
@@ -1005,7 +1046,7 @@ func (sc *SteamClient) convertImageMessage(ctx context.Context, portal *bridgev2
 		File:    encryptedFile,
 		Info: &event.FileInfo{
 			MimeType: downloadResp.MimeType,
-			Size:     len(downloadResp.ImageData),
+			Size:     len(downloadResp.MediaData),
 		},
 	}
 
@@ -1017,8 +1058,74 @@ func (sc *SteamClient) convertImageMessage(ctx context.Context, portal *bridgev2
 	sc.br.Log.Info().
 		Str("matrix_mxc_url", string(mxcURL)).
 		Str("filename", filename).
-		Int("size", len(downloadResp.ImageData)).
+		Int("size", len(downloadResp.MediaData)).
 		Msg("Image converted and uploaded to Matrix successfully")
+
+	return &bridgev2.ConvertedMessage{
+		Parts: []*bridgev2.ConvertedMessagePart{{
+			Type:    event.EventMessage,
+			Content: content,
+		}},
+	}, nil
+}
+
+// convertVideoMessage converts a Steam video message to a Matrix video message.
+func (sc *SteamClient) convertVideoMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, videoURL, caption string) (*bridgev2.ConvertedMessage, error) {
+	sc.br.Log.Info().
+		Str("video_url", videoURL).
+		Str("caption", caption).
+		Msg("Converting Steam video message to Matrix")
+
+	downloadResp, err := sc.msgClient.DownloadMediaFromSteam(ctx, &steamapi.DownloadMediaRequest{
+		MediaUrl: videoURL,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to download video from Steam: %w", err)
+	}
+
+	if !downloadResp.Success {
+		return nil, fmt.Errorf("steam video download failed: %s", downloadResp.ErrorMessage)
+	}
+
+	// Extract filename from URL or use default
+	filename := extractFilenameFromURL(videoURL)
+	if filename == "" {
+		filename = "video"
+	}
+
+	// Add file extension based on MIME type
+	if ext := getFileExtensionFromMimeType(downloadResp.MimeType); ext != "" {
+		filename += "." + ext
+	}
+
+	// Upload video to Matrix
+	mxcURL, encryptedFile, err := intent.UploadMedia(ctx, portal.MXID, downloadResp.MediaData, filename, downloadResp.MimeType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to upload video to Matrix: %w", err)
+	}
+
+	// Create Matrix video message content
+	content := &event.MessageEventContent{
+		MsgType: event.MsgVideo,
+		Body:    caption,
+		URL:     mxcURL,
+		File:    encryptedFile,
+		Info: &event.FileInfo{
+			MimeType: downloadResp.MimeType,
+			Size:     len(downloadResp.MediaData),
+		},
+	}
+
+	// If caption is empty, use filename as body
+	if content.Body == "" {
+		content.Body = filename
+	}
+
+	sc.br.Log.Info().
+		Str("matrix_mxc_url", string(mxcURL)).
+		Str("filename", filename).
+		Int("size", len(downloadResp.MediaData)).
+		Msg("Video converted and uploaded to Matrix successfully")
 
 	return &bridgev2.ConvertedMessage{
 		Parts: []*bridgev2.ConvertedMessagePart{{

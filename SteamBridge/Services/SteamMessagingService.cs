@@ -356,27 +356,27 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
         });
     }
 
-    public override async Task<DownloadImageResponse> DownloadImageFromSteam(
-        DownloadImageRequest request,
+    public override async Task<DownloadMediaResponse> DownloadMediaFromSteam(
+        DownloadMediaRequest request,
         ServerCallContext context)
     {
-        _logger.LogInformation("Received image download request: {Url}", request.ImageUrl);
+        _logger.LogInformation("Received media download request: {Url}", request.MediaUrl);
 
         try
         {
-            var (imageData, mimeType) = await _imageService.DownloadImageAsync(request.ImageUrl);
+            var (imageData, mimeType) = await _imageService.DownloadImageAsync(request.MediaUrl);
 
-            return new DownloadImageResponse
+            return new DownloadMediaResponse
             {
                 Success = true,
-                ImageData = Google.Protobuf.ByteString.CopyFrom(imageData),
+                MediaData = Google.Protobuf.ByteString.CopyFrom(imageData),
                 MimeType = mimeType
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error downloading image: {Url}", request.ImageUrl);
-            return new DownloadImageResponse
+            _logger.LogError(ex, "Error downloading media: {Url}", request.MediaUrl);
+            return new DownloadMediaResponse
             {
                 Success = false,
                 ErrorMessage = $"Download failed: {ex.Message}"

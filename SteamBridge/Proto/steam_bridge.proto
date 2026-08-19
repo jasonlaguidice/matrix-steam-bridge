@@ -29,7 +29,7 @@ service SteamMessagingService {
   rpc SubscribeToMessages(MessageSubscriptionRequest) returns (stream MessageEvent);
   rpc SendTypingNotification(TypingNotificationRequest) returns (TypingNotificationResponse);
   rpc UploadImageToSteam(UploadImageRequest) returns (UploadImageResponse);
-  rpc DownloadImageFromSteam(DownloadImageRequest) returns (DownloadImageResponse);
+  rpc DownloadMediaFromSteam(DownloadMediaRequest) returns (DownloadMediaResponse);
   rpc GetUserAvatarData(GetUserAvatarDataRequest) returns (GetUserAvatarDataResponse);
   rpc GetChatMessageHistory(ChatMessageHistoryRequest) returns (ChatMessageHistoryResponse);
 }
@@ -250,14 +250,14 @@ message UploadImageResponse {
   string image_url = 3; // Steam UFS/CDN URL
 }
 
-message DownloadImageRequest {
-  string image_url = 1;
+message DownloadMediaRequest {
+  string media_url = 1;
 }
 
-message DownloadImageResponse {
+message DownloadMediaResponse {
   bool success = 1;
   string error_message = 2;
-  bytes image_data = 3;
+  bytes media_data = 3;
   string mime_type = 4;
 }
 

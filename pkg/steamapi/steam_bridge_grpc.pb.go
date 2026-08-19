@@ -539,7 +539,7 @@ const (
 	SteamMessagingService_SubscribeToMessages_FullMethodName    = "/steambridge.SteamMessagingService/SubscribeToMessages"
 	SteamMessagingService_SendTypingNotification_FullMethodName = "/steambridge.SteamMessagingService/SendTypingNotification"
 	SteamMessagingService_UploadImageToSteam_FullMethodName     = "/steambridge.SteamMessagingService/UploadImageToSteam"
-	SteamMessagingService_DownloadImageFromSteam_FullMethodName = "/steambridge.SteamMessagingService/DownloadImageFromSteam"
+	SteamMessagingService_DownloadMediaFromSteam_FullMethodName = "/steambridge.SteamMessagingService/DownloadMediaFromSteam"
 	SteamMessagingService_GetUserAvatarData_FullMethodName      = "/steambridge.SteamMessagingService/GetUserAvatarData"
 	SteamMessagingService_GetChatMessageHistory_FullMethodName  = "/steambridge.SteamMessagingService/GetChatMessageHistory"
 )
@@ -554,7 +554,7 @@ type SteamMessagingServiceClient interface {
 	SubscribeToMessages(ctx context.Context, in *MessageSubscriptionRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[MessageEvent], error)
 	SendTypingNotification(ctx context.Context, in *TypingNotificationRequest, opts ...grpc.CallOption) (*TypingNotificationResponse, error)
 	UploadImageToSteam(ctx context.Context, in *UploadImageRequest, opts ...grpc.CallOption) (*UploadImageResponse, error)
-	DownloadImageFromSteam(ctx context.Context, in *DownloadImageRequest, opts ...grpc.CallOption) (*DownloadImageResponse, error)
+	DownloadMediaFromSteam(ctx context.Context, in *DownloadMediaRequest, opts ...grpc.CallOption) (*DownloadMediaResponse, error)
 	GetUserAvatarData(ctx context.Context, in *GetUserAvatarDataRequest, opts ...grpc.CallOption) (*GetUserAvatarDataResponse, error)
 	GetChatMessageHistory(ctx context.Context, in *ChatMessageHistoryRequest, opts ...grpc.CallOption) (*ChatMessageHistoryResponse, error)
 }
@@ -616,10 +616,10 @@ func (c *steamMessagingServiceClient) UploadImageToSteam(ctx context.Context, in
 	return out, nil
 }
 
-func (c *steamMessagingServiceClient) DownloadImageFromSteam(ctx context.Context, in *DownloadImageRequest, opts ...grpc.CallOption) (*DownloadImageResponse, error) {
+func (c *steamMessagingServiceClient) DownloadMediaFromSteam(ctx context.Context, in *DownloadMediaRequest, opts ...grpc.CallOption) (*DownloadMediaResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(DownloadImageResponse)
-	err := c.cc.Invoke(ctx, SteamMessagingService_DownloadImageFromSteam_FullMethodName, in, out, cOpts...)
+	out := new(DownloadMediaResponse)
+	err := c.cc.Invoke(ctx, SteamMessagingService_DownloadMediaFromSteam_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -656,7 +656,7 @@ type SteamMessagingServiceServer interface {
 	SubscribeToMessages(*MessageSubscriptionRequest, grpc.ServerStreamingServer[MessageEvent]) error
 	SendTypingNotification(context.Context, *TypingNotificationRequest) (*TypingNotificationResponse, error)
 	UploadImageToSteam(context.Context, *UploadImageRequest) (*UploadImageResponse, error)
-	DownloadImageFromSteam(context.Context, *DownloadImageRequest) (*DownloadImageResponse, error)
+	DownloadMediaFromSteam(context.Context, *DownloadMediaRequest) (*DownloadMediaResponse, error)
 	GetUserAvatarData(context.Context, *GetUserAvatarDataRequest) (*GetUserAvatarDataResponse, error)
 	GetChatMessageHistory(context.Context, *ChatMessageHistoryRequest) (*ChatMessageHistoryResponse, error)
 	mustEmbedUnimplementedSteamMessagingServiceServer()
@@ -681,8 +681,8 @@ func (UnimplementedSteamMessagingServiceServer) SendTypingNotification(context.C
 func (UnimplementedSteamMessagingServiceServer) UploadImageToSteam(context.Context, *UploadImageRequest) (*UploadImageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UploadImageToSteam not implemented")
 }
-func (UnimplementedSteamMessagingServiceServer) DownloadImageFromSteam(context.Context, *DownloadImageRequest) (*DownloadImageResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method DownloadImageFromSteam not implemented")
+func (UnimplementedSteamMessagingServiceServer) DownloadMediaFromSteam(context.Context, *DownloadMediaRequest) (*DownloadMediaResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DownloadMediaFromSteam not implemented")
 }
 func (UnimplementedSteamMessagingServiceServer) GetUserAvatarData(context.Context, *GetUserAvatarDataRequest) (*GetUserAvatarDataResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetUserAvatarData not implemented")
@@ -776,20 +776,20 @@ func _SteamMessagingService_UploadImageToSteam_Handler(srv interface{}, ctx cont
 	return interceptor(ctx, in, info, handler)
 }
 
-func _SteamMessagingService_DownloadImageFromSteam_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(DownloadImageRequest)
+func _SteamMessagingService_DownloadMediaFromSteam_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DownloadMediaRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SteamMessagingServiceServer).DownloadImageFromSteam(ctx, in)
+		return srv.(SteamMessagingServiceServer).DownloadMediaFromSteam(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SteamMessagingService_DownloadImageFromSteam_FullMethodName,
+		FullMethod: SteamMessagingService_DownloadMediaFromSteam_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SteamMessagingServiceServer).DownloadImageFromSteam(ctx, req.(*DownloadImageRequest))
+		return srv.(SteamMessagingServiceServer).DownloadMediaFromSteam(ctx, req.(*DownloadMediaRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -850,8 +850,8 @@ var SteamMessagingService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _SteamMessagingService_UploadImageToSteam_Handler,
 		},
 		{
-			MethodName: "DownloadImageFromSteam",
-			Handler:    _SteamMessagingService_DownloadImageFromSteam_Handler,
+			MethodName: "DownloadMediaFromSteam",
+			Handler:    _SteamMessagingService_DownloadMediaFromSteam_Handler,
 		},
 		{
 			MethodName: "GetUserAvatarData",

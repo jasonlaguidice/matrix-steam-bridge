@@ -171,50 +171,66 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 	var convertedMsg *bridgev2.ConvertedMessage
 	var err error
 
-	// Detect any inline emote tokens — convert to m.text with data-mx-emoticon HTML
 	content := steamMsg.MessageContent
-	if steamMsg.ImageUrl == "" &&
-		(inlineEmoticon.MatchString(content) ||
-			inlineEmoticonBBCode.MatchString(content) ||
-			inlineSticker.MatchString(content)) {
-		convertedMsg, err = sc.convertInlineEmotesMessage(ctx, nil, content)
-	} else {
-		// Auto-detect image URLs in historical messages if not already set
-		if steamMsg.ImageUrl == "" {
-			if detectedURL := detectImageURL(content); detectedURL != "" {
-				steamMsg.ImageUrl = detectedURL
-				sc.br.Log.Info().
-					Str("detected_image_url", detectedURL).
-					Str("original_message", content).
-					Msg("Auto-detected image URL in historical Steam message")
-			}
-		}
 
-		if steamMsg.MessageType == steamapi.MessageType_INVITE_GAME {
-			// Game invite: render as a notice with the plain-text body from C#
-			body := content
-			if body == "" {
-				body = "Invited you to play a game"
-			}
-			convertedMsg = &bridgev2.ConvertedMessage{
-				Parts: []*bridgev2.ConvertedMessagePart{
-					{
-						Type: event.EventMessage,
-						Content: &event.MessageEventContent{
-							MsgType: event.MsgNotice,
-							Body:    "🎮 Game Invite: " + body,
-						},
-						ID: networkid.PartID("text"),
-					},
-				},
-			}
-		} else if steamMsg.ImageUrl != "" {
-			// Handle image message
-			convertedMsg, err = sc.convertImageMessageFromHistory(ctx, content, steamMsg.ImageUrl, portal)
-		} else {
-			// Handle text message — strip BBCode tags before sending to Matrix
-			convertedMsg, err = sc.convertTextMessageFromHistory(ctx, stripBBCode(content), portal)
+	// Auto-detect image/video URLs in historical messages if not already set. This must
+	// run before emoticon detection for the same reason as the live-message path in
+	// convertSteamMessage: native Steam image/video-share markup contains multiple
+	// "https://" URLs, and the emoticon regex would otherwise mangle it.
+	if steamMsg.ImageUrl == "" {
+		if detectedURL := detectImageURL(content); detectedURL != "" {
+			steamMsg.ImageUrl = detectedURL
+			sc.br.Log.Info().
+				Str("detected_image_url", detectedURL).
+				Str("original_message", content).
+				Msg("Auto-detected image URL in historical Steam message")
 		}
+	}
+
+	var detectedVideoURL string
+	if steamMsg.ImageUrl == "" {
+		if url := detectVideoURL(content); url != "" {
+			detectedVideoURL = url
+			sc.br.Log.Info().
+				Str("detected_video_url", url).
+				Str("original_message", content).
+				Msg("Auto-detected video URL in historical Steam message")
+		}
+	}
+
+	switch {
+	case steamMsg.MessageType == steamapi.MessageType_INVITE_GAME:
+		// Game invite: render as a notice with the plain-text body from C#
+		body := content
+		if body == "" {
+			body = "Invited you to play a game"
+		}
+		convertedMsg = &bridgev2.ConvertedMessage{
+			Parts: []*bridgev2.ConvertedMessagePart{
+				{
+					Type: event.EventMessage,
+					Content: &event.MessageEventContent{
+						MsgType: event.MsgNotice,
+						Body:    "🎮 Game Invite: " + body,
+					},
+					ID: networkid.PartID("text"),
+				},
+			},
+		}
+	case steamMsg.ImageUrl != "":
+		// Handle image message
+		convertedMsg, err = sc.convertImageMessageFromHistory(ctx, content, steamMsg.ImageUrl, portal)
+	case detectedVideoURL != "":
+		// Backfill has no live Matrix intent for the sender, so upload via the bridge bot
+		// (same fallback convertInlineEmotesMessage uses for its nil-intent backfill path).
+		convertedMsg, err = sc.convertVideoMessage(ctx, portal, sc.br.Bot, detectedVideoURL, "")
+	case inlineEmoticon.MatchString(content) ||
+		inlineEmoticonBBCode.MatchString(content) ||
+		inlineSticker.MatchString(content):
+		convertedMsg, err = sc.convertInlineEmotesMessage(ctx, nil, content)
+	default:
+		// Handle text message — strip BBCode tags before sending to Matrix
+		convertedMsg, err = sc.convertTextMessageFromHistory(ctx, stripBBCode(content), portal)
 	}
 
 	if err != nil {

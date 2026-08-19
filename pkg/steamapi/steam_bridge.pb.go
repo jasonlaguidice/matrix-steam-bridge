@@ -2176,27 +2176,27 @@ func (x *UploadImageResponse) GetImageUrl() string {
 	return ""
 }
 
-type DownloadImageRequest struct {
+type DownloadMediaRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	ImageUrl      string                 `protobuf:"bytes,1,opt,name=image_url,json=imageUrl,proto3" json:"image_url,omitempty"`
+	MediaUrl      string                 `protobuf:"bytes,1,opt,name=media_url,json=mediaUrl,proto3" json:"media_url,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DownloadImageRequest) Reset() {
-	*x = DownloadImageRequest{}
+func (x *DownloadMediaRequest) Reset() {
+	*x = DownloadMediaRequest{}
 	mi := &file_Proto_steam_bridge_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DownloadImageRequest) String() string {
+func (x *DownloadMediaRequest) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DownloadImageRequest) ProtoMessage() {}
+func (*DownloadMediaRequest) ProtoMessage() {}
 
-func (x *DownloadImageRequest) ProtoReflect() protoreflect.Message {
+func (x *DownloadMediaRequest) ProtoReflect() protoreflect.Message {
 	mi := &file_Proto_steam_bridge_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2208,42 +2208,42 @@ func (x *DownloadImageRequest) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DownloadImageRequest.ProtoReflect.Descriptor instead.
-func (*DownloadImageRequest) Descriptor() ([]byte, []int) {
+// Deprecated: Use DownloadMediaRequest.ProtoReflect.Descriptor instead.
+func (*DownloadMediaRequest) Descriptor() ([]byte, []int) {
 	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{29}
 }
 
-func (x *DownloadImageRequest) GetImageUrl() string {
+func (x *DownloadMediaRequest) GetMediaUrl() string {
 	if x != nil {
-		return x.ImageUrl
+		return x.MediaUrl
 	}
 	return ""
 }
 
-type DownloadImageResponse struct {
+type DownloadMediaResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	ErrorMessage  string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
-	ImageData     []byte                 `protobuf:"bytes,3,opt,name=image_data,json=imageData,proto3" json:"image_data,omitempty"`
+	MediaData     []byte                 `protobuf:"bytes,3,opt,name=media_data,json=mediaData,proto3" json:"media_data,omitempty"`
 	MimeType      string                 `protobuf:"bytes,4,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
-func (x *DownloadImageResponse) Reset() {
-	*x = DownloadImageResponse{}
+func (x *DownloadMediaResponse) Reset() {
+	*x = DownloadMediaResponse{}
 	mi := &file_Proto_steam_bridge_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
 
-func (x *DownloadImageResponse) String() string {
+func (x *DownloadMediaResponse) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*DownloadImageResponse) ProtoMessage() {}
+func (*DownloadMediaResponse) ProtoMessage() {}
 
-func (x *DownloadImageResponse) ProtoReflect() protoreflect.Message {
+func (x *DownloadMediaResponse) ProtoReflect() protoreflect.Message {
 	mi := &file_Proto_steam_bridge_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -2255,33 +2255,33 @@ func (x *DownloadImageResponse) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use DownloadImageResponse.ProtoReflect.Descriptor instead.
-func (*DownloadImageResponse) Descriptor() ([]byte, []int) {
+// Deprecated: Use DownloadMediaResponse.ProtoReflect.Descriptor instead.
+func (*DownloadMediaResponse) Descriptor() ([]byte, []int) {
 	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{30}
 }
 
-func (x *DownloadImageResponse) GetSuccess() bool {
+func (x *DownloadMediaResponse) GetSuccess() bool {
 	if x != nil {
 		return x.Success
 	}
 	return false
 }
 
-func (x *DownloadImageResponse) GetErrorMessage() string {
+func (x *DownloadMediaResponse) GetErrorMessage() string {
 	if x != nil {
 		return x.ErrorMessage
 	}
 	return ""
 }
 
-func (x *DownloadImageResponse) GetImageData() []byte {
+func (x *DownloadMediaResponse) GetMediaData() []byte {
 	if x != nil {
-		return x.ImageData
+		return x.MediaData
 	}
 	return nil
 }
 
-func (x *DownloadImageResponse) GetMimeType() string {
+func (x *DownloadMediaResponse) GetMimeType() string {
 	if x != nil {
 		return x.MimeType
 	}
@@ -3473,13 +3473,13 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1b\n" +
 	"\timage_url\x18\x03 \x01(\tR\bimageUrl\"3\n" +
-	"\x14DownloadImageRequest\x12\x1b\n" +
-	"\timage_url\x18\x01 \x01(\tR\bimageUrl\"\x92\x01\n" +
-	"\x15DownloadImageResponse\x12\x18\n" +
+	"\x14DownloadMediaRequest\x12\x1b\n" +
+	"\tmedia_url\x18\x01 \x01(\tR\bmediaUrl\"\x92\x01\n" +
+	"\x15DownloadMediaResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1d\n" +
 	"\n" +
-	"image_data\x18\x03 \x01(\fR\timageData\x12\x1b\n" +
+	"media_data\x18\x03 \x01(\fR\tmediaData\x12\x1b\n" +
 	"\tmime_type\x18\x04 \x01(\tR\bmimeType\"]\n" +
 	"\x18GetUserAvatarDataRequest\x12\x19\n" +
 	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\x12&\n" +
@@ -3617,7 +3617,7 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\x13SubscribeToMessages\x12'.steambridge.MessageSubscriptionRequest\x1a\x19.steambridge.MessageEvent0\x01\x12i\n" +
 	"\x16SendTypingNotification\x12&.steambridge.TypingNotificationRequest\x1a'.steambridge.TypingNotificationResponse\x12W\n" +
 	"\x12UploadImageToSteam\x12\x1f.steambridge.UploadImageRequest\x1a .steambridge.UploadImageResponse\x12_\n" +
-	"\x16DownloadImageFromSteam\x12!.steambridge.DownloadImageRequest\x1a\".steambridge.DownloadImageResponse\x12b\n" +
+	"\x16DownloadMediaFromSteam\x12!.steambridge.DownloadMediaRequest\x1a\".steambridge.DownloadMediaResponse\x12b\n" +
 	"\x11GetUserAvatarData\x12%.steambridge.GetUserAvatarDataRequest\x1a&.steambridge.GetUserAvatarDataResponse\x12h\n" +
 	"\x15GetChatMessageHistory\x12&.steambridge.ChatMessageHistoryRequest\x1a'.steambridge.ChatMessageHistoryResponse2w\n" +
 	"\x13SteamSessionService\x12`\n" +
@@ -3677,8 +3677,8 @@ var file_Proto_steam_bridge_proto_goTypes = []any{
 	(*TypingNotificationResponse)(nil),  // 31: steambridge.TypingNotificationResponse
 	(*UploadImageRequest)(nil),          // 32: steambridge.UploadImageRequest
 	(*UploadImageResponse)(nil),         // 33: steambridge.UploadImageResponse
-	(*DownloadImageRequest)(nil),        // 34: steambridge.DownloadImageRequest
-	(*DownloadImageResponse)(nil),       // 35: steambridge.DownloadImageResponse
+	(*DownloadMediaRequest)(nil),        // 34: steambridge.DownloadMediaRequest
+	(*DownloadMediaResponse)(nil),       // 35: steambridge.DownloadMediaResponse
 	(*GetUserAvatarDataRequest)(nil),    // 36: steambridge.GetUserAvatarDataRequest
 	(*GetUserAvatarDataResponse)(nil),   // 37: steambridge.GetUserAvatarDataResponse
 	(*ChatMessageHistoryRequest)(nil),   // 38: steambridge.ChatMessageHistoryRequest
@@ -3732,7 +3732,7 @@ var file_Proto_steam_bridge_proto_depIdxs = []int32{
 	28, // 32: steambridge.SteamMessagingService.SubscribeToMessages:input_type -> steambridge.MessageSubscriptionRequest
 	30, // 33: steambridge.SteamMessagingService.SendTypingNotification:input_type -> steambridge.TypingNotificationRequest
 	32, // 34: steambridge.SteamMessagingService.UploadImageToSteam:input_type -> steambridge.UploadImageRequest
-	34, // 35: steambridge.SteamMessagingService.DownloadImageFromSteam:input_type -> steambridge.DownloadImageRequest
+	34, // 35: steambridge.SteamMessagingService.DownloadMediaFromSteam:input_type -> steambridge.DownloadMediaRequest
 	36, // 36: steambridge.SteamMessagingService.GetUserAvatarData:input_type -> steambridge.GetUserAvatarDataRequest
 	38, // 37: steambridge.SteamMessagingService.GetChatMessageHistory:input_type -> steambridge.ChatMessageHistoryRequest
 	45, // 38: steambridge.SteamSessionService.SubscribeToSessionEvents:input_type -> steambridge.SessionSubscriptionRequest
@@ -3753,7 +3753,7 @@ var file_Proto_steam_bridge_proto_depIdxs = []int32{
 	29, // 53: steambridge.SteamMessagingService.SubscribeToMessages:output_type -> steambridge.MessageEvent
 	31, // 54: steambridge.SteamMessagingService.SendTypingNotification:output_type -> steambridge.TypingNotificationResponse
 	33, // 55: steambridge.SteamMessagingService.UploadImageToSteam:output_type -> steambridge.UploadImageResponse
-	35, // 56: steambridge.SteamMessagingService.DownloadImageFromSteam:output_type -> steambridge.DownloadImageResponse
+	35, // 56: steambridge.SteamMessagingService.DownloadMediaFromSteam:output_type -> steambridge.DownloadMediaResponse
 	37, // 57: steambridge.SteamMessagingService.GetUserAvatarData:output_type -> steambridge.GetUserAvatarDataResponse
 	39, // 58: steambridge.SteamMessagingService.GetChatMessageHistory:output_type -> steambridge.ChatMessageHistoryResponse
 	46, // 59: steambridge.SteamSessionService.SubscribeToSessionEvents:output_type -> steambridge.SessionEvent
