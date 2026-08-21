@@ -36,7 +36,15 @@ func buildStickerURL(name string) string {
 }
 
 var (
-	inlineEmoticon       = regexp.MustCompile(`:([^:\s][^:]*):`)
+	// Excludes "/" from the captured name (in addition to whitespace) so this never spans
+	// across a URL: every URL contains "/", but real Steam emoticon shortcodes never do
+	// (":steamhappy:", ":D", ":/"). This is a safety net for Steam's other structured tags
+	// ("[tweet]", "[econitem]", "[steamstore]", etc.) that this bridge doesn't yet give
+	// dedicated handling like "[img]"/"[video]"/"[og]" — without this, any of them carrying
+	// more than one URL would be misinterpreted as emoticon markup the same way img/video/og
+	// were. With it, an unhandled tag falls through to stripBBCode's plain-text stripping
+	// instead of being garbled into broken emoticon HTML.
+	inlineEmoticon       = regexp.MustCompile(`:([^:\s/][^:/]*):`)
 	inlineEmoticonBBCode = regexp.MustCompile(`\[emoticon\]([^\[]+)\[/emoticon\]`)
 	inlineSticker        = regexp.MustCompile(`\[sticker\s+type="([^"]+)"[^\]]*\]\[/sticker\]`)
 )
@@ -572,9 +580,9 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 			Str("media_url", string(mediaURL)).
 			Bool("is_encrypted", content.File != nil).
 			Msg("Matrix connector supports public media interface, attempting to get public URL")
-		
+
 		publicURL := matrixConn.GetPublicMediaAddress(mediaURL)
-		
+
 		sc.br.Log.Info().
 			Str("input_mxc_url", string(mediaURL)).
 			Str("output_public_url", publicURL).
@@ -582,7 +590,7 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 			Bool("is_encrypted_media", content.File != nil).
 			Int("url_length", len(publicURL)).
 			Msg("MXC URL → GetPublicMediaAddress OUTPUT")
-		
+
 		if publicURL != "" {
 			// Log the exact URL that will be sent to Steam
 			sc.br.Log.Info().
@@ -598,7 +606,7 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 					Str("caption", content.Body).
 					Str("filename", content.FileName).
 					Msg("Sending image caption as separate message")
-				
+
 				captionResp, err = sc.msgClient.SendMessage(ctx, &steamapi.SendMessageRequest{
 					TargetSteamId: targetSteamID,
 					Message:       content.Body,
@@ -868,12 +876,12 @@ func detectImageURL(message string) string {
 	if message == "" {
 		return ""
 	}
-	
+
 	// Steam image URL patterns
 	imagePatterns := []string{
 		// Steam's native image uploads
 		`https://images\.steamusercontent\.com/ugc/\d+/[A-F0-9]+/?`,
-		// Steam community screenshots  
+		// Steam community screenshots
 		`https://steamcommunity\.com/sharedfiles/filedetails/\?id=\d+`,
 		// Steam CDN images
 		`https://steamcdn-a\.akamaihd\.net/.*\.(jpg|jpeg|png|gif|webp)`,
@@ -884,7 +892,7 @@ func detectImageURL(message string) string {
 		// Direct image URLs
 		`https?://.*\.(jpg|jpeg|png|gif|webp)(?:\?.*)?$`,
 	}
-	
+
 	for _, pattern := range imagePatterns {
 		if re, err := regexp.Compile("(?i)" + pattern); err == nil {
 			if match := re.FindString(message); match != "" {
@@ -920,12 +928,66 @@ func detectVideoURL(message string) string {
 	return ""
 }
 
+// ogTagPattern matches Steam's native link-preview markup:
+// [og url="..." img="..." title="..."]linktext[/og]
+var (
+	ogTagPattern = regexp.MustCompile(`(?is)\[og\s+([^\]]*)\](.*?)\[/og\]`)
+	ogAttrURL    = regexp.MustCompile(`\burl="([^"]*)"`)
+	ogAttrImg    = regexp.MustCompile(`\bimg="([^"]*)"`)
+	ogAttrTitle  = regexp.MustCompile(`\btitle="([^"]*)"`)
+)
+
+type ogLink struct {
+	url, imageURL, title, linkText string
+}
+
+func ogAttr(re *regexp.Regexp, attrs string) string {
+	if m := re.FindStringSubmatch(attrs); m != nil {
+		return m[1]
+	}
+	return ""
+}
+
+// detectOGLink scans a message for Steam's native link-preview markup and, if found,
+// returns its url/img/title attributes and the visible link text.
+func detectOGLink(message string) (ogLink, bool) {
+	m := ogTagPattern.FindStringSubmatch(message)
+	if m == nil {
+		return ogLink{}, false
+	}
+	attrs, linkText := m[1], strings.TrimSpace(m[2])
+	url := ogAttr(ogAttrURL, attrs)
+	if url == "" {
+		return ogLink{}, false
+	}
+	return ogLink{
+		url:      url,
+		imageURL: ogAttr(ogAttrImg, attrs),
+		title:    ogAttr(ogAttrTitle, attrs),
+		linkText: linkText,
+	}, true
+}
+
 // convertSteamMessage converts a Steam message event to a Matrix message
 func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, data *steamapi.MessageEvent) (*bridgev2.ConvertedMessage, error) {
 	var content *event.MessageEventContent
 
 	switch data.MessageType {
 	case steamapi.MessageType_CHAT_MESSAGE:
+		// Auto-detect Steam's native link-preview markup before anything else. Like
+		// image/video markup, "[og url=... img=... title=...]linktext[/og]" embeds
+		// multiple "https://" URLs (page URL, preview image, repeated link text), so
+		// it must run before emoticon detection — and before image/video detection
+		// too, since its img= attribute could otherwise be mistaken for a bare image.
+		if link, ok := detectOGLink(data.Message); ok {
+			sc.br.Log.Info().
+				Str("og_url", link.url).
+				Str("og_image_url", link.imageURL).
+				Str("og_title", link.title).
+				Msg("Auto-detected link preview in Steam message")
+			return sc.convertLinkPreviewMessage(ctx, portal, intent, link)
+		}
+
 		// Auto-detect image URLs in Steam messages if not already set. This must run
 		// before emoticon detection: native Steam image-share messages are raw
 		// "[img src=... thumbnail_src=...][url=...][/url][/img]" markup containing
@@ -1126,6 +1188,71 @@ func (sc *SteamClient) convertVideoMessage(ctx context.Context, portal *bridgev2
 		Str("filename", filename).
 		Int("size", len(downloadResp.MediaData)).
 		Msg("Video converted and uploaded to Matrix successfully")
+
+	return &bridgev2.ConvertedMessage{
+		Parts: []*bridgev2.ConvertedMessagePart{{
+			Type:    event.EventMessage,
+			Content: content,
+		}},
+	}, nil
+}
+
+// convertLinkPreviewMessage converts a Steam native link-preview ("[og ...]") message to a
+// Matrix text message carrying a com.beeper.linkpreviews rich preview (MSC4095) — the same
+// mechanism Element/Beeper use to render link cards, so this reproduces the enhanced preview
+// the Steam client itself shows instead of relying on server-side URL preview generation.
+// If the preview image fails to download or upload, the message still sends as a text-only
+// preview rather than failing outright, since the link itself is the essential content.
+func (sc *SteamClient) convertLinkPreviewMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, link ogLink) (*bridgev2.ConvertedMessage, error) {
+	body := link.linkText
+	if body == "" {
+		body = link.url
+	}
+
+	sc.br.Log.Info().
+		Str("url", link.url).
+		Str("title", link.title).
+		Msg("Converting Steam link preview message to Matrix")
+
+	preview := &event.BeeperLinkPreview{
+		MatchedURL: link.url,
+		LinkPreview: event.LinkPreview{
+			CanonicalURL: link.url,
+			Title:        link.title,
+		},
+	}
+
+	if link.imageURL != "" {
+		downloadResp, err := sc.msgClient.DownloadMediaFromSteam(ctx, &steamapi.DownloadMediaRequest{
+			MediaUrl: link.imageURL,
+		})
+		if err != nil || !downloadResp.Success {
+			sc.br.Log.Warn().Str("preview_image_url", link.imageURL).Msg("Failed to download link preview image, sending text-only preview")
+		} else {
+			filename := extractFilenameFromURL(link.imageURL)
+			if filename == "" {
+				filename = "preview"
+			}
+			if ext := getFileExtensionFromMimeType(downloadResp.MimeType); ext != "" {
+				filename += "." + ext
+			}
+			mxcURL, encryptedFile, err := intent.UploadMedia(ctx, portal.MXID, downloadResp.MediaData, filename, downloadResp.MimeType)
+			if err != nil {
+				sc.br.Log.Warn().Err(err).Msg("Failed to upload link preview image to Matrix, sending text-only preview")
+			} else {
+				preview.ImageURL = mxcURL
+				preview.ImageEncryption = encryptedFile
+				preview.ImageType = downloadResp.MimeType
+				preview.ImageSize = event.IntOrString(len(downloadResp.MediaData))
+			}
+		}
+	}
+
+	content := &event.MessageEventContent{
+		MsgType:            event.MsgText,
+		Body:               body,
+		BeeperLinkPreviews: []*event.BeeperLinkPreview{preview},
+	}
 
 	return &bridgev2.ConvertedMessage{
 		Parts: []*bridgev2.ConvertedMessagePart{{

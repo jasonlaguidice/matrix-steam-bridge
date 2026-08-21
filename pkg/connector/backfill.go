@@ -17,7 +17,6 @@ import (
 	"go.shadowdrake.org/steam/pkg/steamapi"
 )
 
-
 // PaginationCursor represents a cursor for message pagination
 type PaginationCursor struct {
 	Time    uint32 `json:"time"`
@@ -173,11 +172,14 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 
 	content := steamMsg.MessageContent
 
-	// Auto-detect image/video URLs in historical messages if not already set. This must
-	// run before emoticon detection for the same reason as the live-message path in
-	// convertSteamMessage: native Steam image/video-share markup contains multiple
-	// "https://" URLs, and the emoticon regex would otherwise mangle it.
-	if steamMsg.ImageUrl == "" {
+	// Auto-detect link-preview/image/video markup in historical messages if not already
+	// set. This must run before emoticon detection for the same reason as the live-message
+	// path in convertSteamMessage: this markup contains multiple "https://" URLs, and the
+	// emoticon regex would otherwise mangle it. Link-preview detection runs first since its
+	// img= attribute could otherwise be mistaken for a bare image URL.
+	ogLinkVal, ogFound := detectOGLink(content)
+
+	if steamMsg.ImageUrl == "" && !ogFound {
 		if detectedURL := detectImageURL(content); detectedURL != "" {
 			steamMsg.ImageUrl = detectedURL
 			sc.br.Log.Info().
@@ -188,7 +190,7 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 	}
 
 	var detectedVideoURL string
-	if steamMsg.ImageUrl == "" {
+	if steamMsg.ImageUrl == "" && !ogFound {
 		if url := detectVideoURL(content); url != "" {
 			detectedVideoURL = url
 			sc.br.Log.Info().
@@ -217,6 +219,10 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 				},
 			},
 		}
+	case ogFound:
+		// Backfill has no live Matrix intent for the sender, so upload via the bridge bot
+		// (same fallback convertInlineEmotesMessage uses for its nil-intent backfill path).
+		convertedMsg, err = sc.convertLinkPreviewMessage(ctx, portal, sc.br.Bot, ogLinkVal)
 	case steamMsg.ImageUrl != "":
 		// Handle image message
 		convertedMsg, err = sc.convertImageMessageFromHistory(ctx, content, steamMsg.ImageUrl, portal)
