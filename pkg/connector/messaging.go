@@ -929,16 +929,17 @@ func detectVideoURL(message string) string {
 }
 
 // ogTagPattern matches Steam's native link-preview markup:
-// [og url="..." img="..." title="..."]linktext[/og]
+// [og url="..." img="..." title="..." desc="..."]linktext[/og]
 var (
 	ogTagPattern = regexp.MustCompile(`(?is)\[og\s+([^\]]*)\](.*?)\[/og\]`)
 	ogAttrURL    = regexp.MustCompile(`\burl="([^"]*)"`)
 	ogAttrImg    = regexp.MustCompile(`\bimg="([^"]*)"`)
 	ogAttrTitle  = regexp.MustCompile(`\btitle="([^"]*)"`)
+	ogAttrDesc   = regexp.MustCompile(`\bdesc="([^"]*)"`)
 )
 
 type ogLink struct {
-	url, imageURL, title, linkText string
+	url, imageURL, title, description, linkText string
 }
 
 func ogAttr(re *regexp.Regexp, attrs string) string {
@@ -949,7 +950,7 @@ func ogAttr(re *regexp.Regexp, attrs string) string {
 }
 
 // detectOGLink scans a message for Steam's native link-preview markup and, if found,
-// returns its url/img/title attributes and the visible link text.
+// returns its url/img/title/desc attributes and the visible link text.
 func detectOGLink(message string) (ogLink, bool) {
 	m := ogTagPattern.FindStringSubmatch(message)
 	if m == nil {
@@ -961,10 +962,11 @@ func detectOGLink(message string) (ogLink, bool) {
 		return ogLink{}, false
 	}
 	return ogLink{
-		url:      url,
-		imageURL: ogAttr(ogAttrImg, attrs),
-		title:    ogAttr(ogAttrTitle, attrs),
-		linkText: linkText,
+		url:         url,
+		imageURL:    ogAttr(ogAttrImg, attrs),
+		title:       ogAttr(ogAttrTitle, attrs),
+		description: ogAttr(ogAttrDesc, attrs),
+		linkText:    linkText,
 	}, true
 }
 
@@ -1219,6 +1221,7 @@ func (sc *SteamClient) convertLinkPreviewMessage(ctx context.Context, portal *br
 		LinkPreview: event.LinkPreview{
 			CanonicalURL: link.url,
 			Title:        link.title,
+			Description:  link.description,
 		},
 	}
 
