@@ -462,7 +462,7 @@ func (sc *SteamClient) handleTextMessage(ctx context.Context, msg *bridgev2.Matr
 
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
-			ID:        networkid.MessageID(fmt.Sprintf("%d:%d", targetSteamID, resp.Timestamp)),
+			ID:        networkid.MessageID(fmt.Sprintf("%d:%d:out", targetSteamID, resp.Timestamp)),
 			MXID:      msg.Event.ID,
 			Timestamp: time.Unix(resp.Timestamp, 0),
 			Metadata:  msgMeta,
@@ -501,7 +501,7 @@ func (sc *SteamClient) handleStickerMessage(ctx context.Context, msg *bridgev2.M
 
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
-			ID:        networkid.MessageID(fmt.Sprintf("%d:%d", targetSteamID, resp.Timestamp)),
+			ID:        networkid.MessageID(fmt.Sprintf("%d:%d:out", targetSteamID, resp.Timestamp)),
 			MXID:      msg.Event.ID,
 			Timestamp: time.Unix(resp.Timestamp, 0),
 			Metadata:  msgMeta,
@@ -651,7 +651,7 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 
 			return &bridgev2.MatrixMessageResponse{
 				DB: &database.Message{
-					ID:        networkid.MessageID(fmt.Sprintf("%d:%d", targetSteamID, resp.Timestamp)),
+					ID:        networkid.MessageID(fmt.Sprintf("%d:%d:out", targetSteamID, resp.Timestamp)),
 					MXID:      msg.Event.ID,
 					Timestamp: time.Unix(resp.Timestamp, 0),
 					Metadata:  msgMeta,
