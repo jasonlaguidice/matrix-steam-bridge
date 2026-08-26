@@ -207,6 +207,7 @@ message SendMessageResponse {
   bool success = 1;
   string error_message = 2;
   int64 timestamp = 3;
+  uint32 ordinal = 4; // Per-message sequence number within the same second; populated by the FriendMessagesService/ChatRoomService unified RPCs (0 for paths that don't yet provide it)
 }
 
 message MessageSubscriptionRequest {

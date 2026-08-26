@@ -394,7 +394,7 @@ func (sc *SteamClient) handleGroupChannelMessage(ctx context.Context, msg *bridg
 		return nil, fmt.Errorf("group message send failed: %s", resp.ErrorMessage)
 	}
 
-	msgID := networkid.MessageID(fmt.Sprintf("%d:%d:%d", chatGroupID, chatID, resp.Timestamp))
+	msgID := networkid.MessageID(fmt.Sprintf("%d:%d:%d_%d", chatGroupID, chatID, resp.Timestamp, resp.Ordinal))
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
 			ID:        msgID,
@@ -462,7 +462,7 @@ func (sc *SteamClient) handleTextMessage(ctx context.Context, msg *bridgev2.Matr
 
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
-			ID:        networkid.MessageID(fmt.Sprintf("%d:%d:out", targetSteamID, resp.Timestamp)),
+			ID:        networkid.MessageID(fmt.Sprintf("%d:%d_%d:out", targetSteamID, resp.Timestamp, resp.Ordinal)),
 			MXID:      msg.Event.ID,
 			Timestamp: time.Unix(resp.Timestamp, 0),
 			Metadata:  msgMeta,
@@ -501,7 +501,7 @@ func (sc *SteamClient) handleStickerMessage(ctx context.Context, msg *bridgev2.M
 
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
-			ID:        networkid.MessageID(fmt.Sprintf("%d:%d:out", targetSteamID, resp.Timestamp)),
+			ID:        networkid.MessageID(fmt.Sprintf("%d:%d_%d:out", targetSteamID, resp.Timestamp, resp.Ordinal)),
 			MXID:      msg.Event.ID,
 			Timestamp: time.Unix(resp.Timestamp, 0),
 			Metadata:  msgMeta,
@@ -651,7 +651,7 @@ func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.Mat
 
 			return &bridgev2.MatrixMessageResponse{
 				DB: &database.Message{
-					ID:        networkid.MessageID(fmt.Sprintf("%d:%d:out", targetSteamID, resp.Timestamp)),
+					ID:        networkid.MessageID(fmt.Sprintf("%d:%d_%d:out", targetSteamID, resp.Timestamp, resp.Ordinal)),
 					MXID:      msg.Event.ID,
 					Timestamp: time.Unix(resp.Timestamp, 0),
 					Metadata:  msgMeta,
@@ -758,9 +758,9 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 	} else {
 		switch msgEvent.MessageType {
 		case steamapi.MessageType_INVITE_GAME:
-			msgID = fmt.Sprintf("%d:%d:invite", msgEvent.SenderSteamId, msgEvent.Timestamp)
+			msgID = fmt.Sprintf("%d:%d_%d:invite", msgEvent.SenderSteamId, msgEvent.Timestamp, msgEvent.Ordinal)
 		default:
-			msgID = fmt.Sprintf("%d:%d", msgEvent.SenderSteamId, msgEvent.Timestamp)
+			msgID = fmt.Sprintf("%d:%d_%d", msgEvent.SenderSteamId, msgEvent.Timestamp, msgEvent.Ordinal)
 		}
 	}
 

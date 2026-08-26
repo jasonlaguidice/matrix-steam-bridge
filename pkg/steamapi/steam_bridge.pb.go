@@ -1728,6 +1728,7 @@ type SendMessageResponse struct {
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
 	ErrorMessage  string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
 	Timestamp     int64                  `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
+	Ordinal       uint32                 `protobuf:"varint,4,opt,name=ordinal,proto3" json:"ordinal,omitempty"` // Per-message sequence number within the same second; populated by the FriendMessagesService/ChatRoomService unified RPCs (0 for paths that don't yet provide it)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1779,6 +1780,13 @@ func (x *SendMessageResponse) GetErrorMessage() string {
 func (x *SendMessageResponse) GetTimestamp() int64 {
 	if x != nil {
 		return x.Timestamp
+	}
+	return 0
+}
+
+func (x *SendMessageResponse) GetOrdinal() uint32 {
+	if x != nil {
+		return x.Ordinal
 	}
 	return 0
 }
@@ -3438,11 +3446,12 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\timage_url\x18\x04 \x01(\tR\bimageUrl\x12\"\n" +
 	"\rchat_group_id\x18\x05 \x01(\x04R\vchatGroupId\x12\x17\n" +
 	"\achat_id\x18\x06 \x01(\x04R\x06chatId\x12&\n" +
-	"\x0fcaller_steam_id\x18\a \x01(\x04R\rcallerSteamId\"r\n" +
+	"\x0fcaller_steam_id\x18\a \x01(\x04R\rcallerSteamId\"\x8c\x01\n" +
 	"\x13SendMessageResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12\x1c\n" +
-	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\"7\n" +
+	"\ttimestamp\x18\x03 \x01(\x03R\ttimestamp\x12\x18\n" +
+	"\aordinal\x18\x04 \x01(\rR\aordinal\"7\n" +
 	"\x1aMessageSubscriptionRequest\x12\x19\n" +
 	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\"\xe0\x02\n" +
 	"\fMessageEvent\x12&\n" +

@@ -255,7 +255,7 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 	var msgID string
 	idType, _, _, _ := parsePortalID(portal.PortalKey.ID)
 	if steamMsg.MessageType == steamapi.MessageType_INVITE_GAME && idType == PortalIDTypeDM {
-		msgID = fmt.Sprintf("%d:%d:invite", steamMsg.SenderSteamId, steamMsg.Timestamp)
+		msgID = fmt.Sprintf("%d:%d_%d:invite", steamMsg.SenderSteamId, steamMsg.Timestamp, steamMsg.Ordinal)
 	} else {
 		msgID = fmt.Sprintf("%d_%d", steamMsg.Timestamp, steamMsg.Ordinal)
 	}

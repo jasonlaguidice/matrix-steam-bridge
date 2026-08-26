@@ -48,6 +48,7 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                     Success = groupResult.Success,
                     ErrorMessage = groupResult.ErrorMessage ?? string.Empty,
                     Timestamp = groupResult.Timestamp,
+                    Ordinal = groupResult.Ordinal,
                 };
             }
 
@@ -67,7 +68,8 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
             {
                 Success = result.Success,
                 ErrorMessage = result.ErrorMessage ?? string.Empty,
-                Timestamp = result.Timestamp
+                Timestamp = result.Timestamp,
+                Ordinal = result.Ordinal
             };
         }
         catch (RpcException)
@@ -210,6 +212,7 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                         IsEcho = notification.local_echo,
                         ChatGroupId = 0,
                         ChatId = 0,
+                        Ordinal = notification.ordinal,
                     };
                 }
                 else if (notification.chat_entry_type == 3)
@@ -224,6 +227,7 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                         IsEcho = notification.local_echo,
                         ChatGroupId = 0,
                         ChatId = 0,
+                        Ordinal = notification.ordinal,
                     };
                 }
                 else
@@ -242,6 +246,7 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                         IsEcho = notification.local_echo,
                         ChatGroupId = 0,
                         ChatId = 0,
+                        Ordinal = notification.ordinal,
                     };
                 }
 
@@ -516,14 +521,23 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
 
         try
         {
-            var targetId = new SteamID(targetSteamId);
-            var steamFriends = manager.SteamFriends;
             var chatEntryType = MapToChatEntryType(messageType);
 
             _logger.LogInformation("Sending message to {SteamID}: {Message}", targetSteamId, message);
-            steamFriends.SendChatMessage(targetId, chatEntryType, message);
 
-            return new SendMessageResult { Success = true, Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
+            var request = new CFriendMessages_SendMessage_Request
+            {
+                steamid = targetSteamId,
+                chat_entry_type = (int)chatEntryType,
+                message = message,
+            };
+            var job = manager.FriendMessagesService.SendMessage(request);
+            var result = await job.ToTask();
+
+            if (result == null || result.Result != EResult.OK)
+                return new SendMessageResult { Success = false, ErrorMessage = $"Steam API: {result?.Result}" };
+
+            return new SendMessageResult { Success = true, Timestamp = result.Body.server_timestamp, Ordinal = result.Body.ordinal };
         }
         catch (Exception ex)
         {
@@ -551,7 +565,7 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
             if (result == null || result.Result != EResult.OK)
                 return new SendMessageResult { Success = false, ErrorMessage = $"Steam API: {result?.Result}" };
 
-            return new SendMessageResult { Success = true, Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
+            return new SendMessageResult { Success = true, Timestamp = result.Body.server_timestamp, Ordinal = result.Body.ordinal };
         }
         catch (Exception ex)
         {
@@ -870,6 +884,7 @@ public class SendMessageResult
     public bool Success { get; set; }
     public string? ErrorMessage { get; set; }
     public long Timestamp { get; set; }
+    public uint Ordinal { get; set; }
 }
 
 public class MessageEvent
