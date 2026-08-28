@@ -3,9 +3,10 @@ package connector
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	grpcstatus "google.golang.org/grpc/status"
 	"maunium.net/go/mautrix/bridgev2/status"
 
 	"go.shadowdrake.org/steam/pkg/steamapi"
@@ -255,6 +256,13 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		}
 	}
 
+
+	if err := sc.connector.waitForServiceReady(ctx); err != nil {
+		sc.br.Log.Warn().Err(err).Msg("SteamBridge service not healthy, deferring to reconnection handling")
+		go sc.handleTransientDisconnect(ctx, "Steam service unavailable", err.Error())
+		return
+	}
+
 	meta := sc.getUserMetadata()
 	if meta == nil {
 		sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateBadCredentials, "No user metadata found",
@@ -285,16 +293,17 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		resp, err := sc.authClient.ReAuthenticateWithTokens(ctx, reAuthReq)
 		if err != nil {
 			sc.br.Log.Err(err).Msg("Failed to re-authenticate with stored tokens")
-			
-			// Check if this is a network connectivity issue
-			if strings.Contains(err.Error(), "connect") || strings.Contains(err.Error(), "connection") || 
-			   strings.Contains(err.Error(), "network") || strings.Contains(err.Error(), "timeout") {
-				// Network issue - trigger transient disconnect handling instead of credential failure
-				sc.br.Log.Warn().Msg("Network connectivity issue during re-authentication, treating as transient disconnect")
-				go sc.handleTransientDisconnect(ctx, "Steam network connectivity issue during login", err.Error())
-				return
+
+			if grpcErr, ok := grpcstatus.FromError(err); ok {
+				switch grpcErr.Code() {
+				case codes.Canceled, codes.DeadlineExceeded, codes.Unavailable:
+					sc.br.Log.Warn().Str("grpc_code", grpcErr.Code().String()).
+						Msg("SteamBridge service connectivity issue during re-authentication, treating as transient disconnect")
+					go sc.handleTransientDisconnect(ctx, "Steam service connectivity issue during login", err.Error())
+					return
+				}
 			}
-			
+
 			sc.UserLogin.BridgeState.Send(sc.buildBridgeState(status.StateUnknownError,
 				"Re-authentication failed - please check Steam service connection",
 				withReason(err.Error()),
