@@ -217,11 +217,23 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                 }
                 else if (notification.chat_entry_type == 3)
                 {
+                    var msgRaw = notification.message?.TrimEnd('\0');
+                    var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
+                    var (text, _) = ProcessMessageContent(msgRaw ?? string.Empty, msgNoBbCode ?? string.Empty);
+
+                    // Diagnostic: the actual wire format of a live InviteGame notification is
+                    // unconfirmed (see STEAM_MESSAGE_TYPES.md — lobbyinvite/gameinvite bbcode
+                    // may be send-side-only and never appear in received messages). Logged at
+                    // Information so it survives with min_level bumped to info/debug for testing,
+                    // to replace assumption with a real captured sample.
+                    _logger.LogInformation("InviteGame notification from {SteamId}: raw={Raw} noBbCode={NoBbCode} parsedText={ParsedText}",
+                        notification.steamid_friend, msgRaw, msgNoBbCode, text);
+
                     messageEvent = new MessageEvent
                     {
                         SenderSteamId = senderSteamId,
                         TargetSteamId = targetSteamId,
-                        Message = string.Empty,
+                        Message = text,
                         MessageType = MessageType.InviteGame,
                         Timestamp = (long)notification.rtime32_server_timestamp,
                         IsEcho = notification.local_echo,
