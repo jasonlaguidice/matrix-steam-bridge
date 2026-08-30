@@ -240,12 +240,6 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                     var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
                     var (text, msgType) = ProcessMessageContent(msgRaw ?? string.Empty, msgNoBbCode ?? string.Empty);
 
-                    if (string.IsNullOrWhiteSpace(text))
-                    {
-                        _logger.LogInformation("ChatMsg notification resolved to empty body from {SteamId}: raw={Raw} noBbCode={NoBbCode} chatEntryType={ChatEntryType}",
-                            notification.steamid_friend, msgRaw, msgNoBbCode, notification.chat_entry_type);
-                    }
-
                     messageEvent = new MessageEvent
                     {
                         SenderSteamId = senderSteamId,

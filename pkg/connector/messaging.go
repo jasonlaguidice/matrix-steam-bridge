@@ -1031,9 +1031,14 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 			return sc.convertInlineEmotesMessage(ctx, intent, data.Message)
 		}
 
+		strippedBody := stripBBCode(data.Message)
+		if strippedBody == "" && data.Message != "" {
+				Str("raw_message", data.Message).
+				Msg("Steam chat message stripped to empty body by stripBBCode")
+		}
 		content = &event.MessageEventContent{
 			MsgType: event.MsgText,
-			Body:    stripBBCode(data.Message),
+			Body:    strippedBody,
 		}
 	case steamapi.MessageType_EMOTE:
 		content = &event.MessageEventContent{
