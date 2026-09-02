@@ -1139,7 +1139,7 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 
 		strippedBody := stripBBCode(data.Message)
 		if strippedBody == "" && data.Message != "" {
-			sc.br.Log.Info().
+			sc.br.Log.Trace().
 				Str("raw_message", data.Message).
 				Msg("Steam chat message stripped to empty body by stripBBCode")
 		}
