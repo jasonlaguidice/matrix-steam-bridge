@@ -542,6 +542,7 @@ const (
 	SteamMessagingService_DownloadMediaFromSteam_FullMethodName = "/steambridge.SteamMessagingService/DownloadMediaFromSteam"
 	SteamMessagingService_GetUserAvatarData_FullMethodName      = "/steambridge.SteamMessagingService/GetUserAvatarData"
 	SteamMessagingService_GetChatMessageHistory_FullMethodName  = "/steambridge.SteamMessagingService/GetChatMessageHistory"
+	SteamMessagingService_GetAppInfo_FullMethodName             = "/steambridge.SteamMessagingService/GetAppInfo"
 )
 
 // SteamMessagingServiceClient is the client API for SteamMessagingService service.
@@ -557,6 +558,7 @@ type SteamMessagingServiceClient interface {
 	DownloadMediaFromSteam(ctx context.Context, in *DownloadMediaRequest, opts ...grpc.CallOption) (*DownloadMediaResponse, error)
 	GetUserAvatarData(ctx context.Context, in *GetUserAvatarDataRequest, opts ...grpc.CallOption) (*GetUserAvatarDataResponse, error)
 	GetChatMessageHistory(ctx context.Context, in *ChatMessageHistoryRequest, opts ...grpc.CallOption) (*ChatMessageHistoryResponse, error)
+	GetAppInfo(ctx context.Context, in *GetAppInfoRequest, opts ...grpc.CallOption) (*GetAppInfoResponse, error)
 }
 
 type steamMessagingServiceClient struct {
@@ -646,6 +648,16 @@ func (c *steamMessagingServiceClient) GetChatMessageHistory(ctx context.Context,
 	return out, nil
 }
 
+func (c *steamMessagingServiceClient) GetAppInfo(ctx context.Context, in *GetAppInfoRequest, opts ...grpc.CallOption) (*GetAppInfoResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAppInfoResponse)
+	err := c.cc.Invoke(ctx, SteamMessagingService_GetAppInfo_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SteamMessagingServiceServer is the server API for SteamMessagingService service.
 // All implementations must embed UnimplementedSteamMessagingServiceServer
 // for forward compatibility.
@@ -659,6 +671,7 @@ type SteamMessagingServiceServer interface {
 	DownloadMediaFromSteam(context.Context, *DownloadMediaRequest) (*DownloadMediaResponse, error)
 	GetUserAvatarData(context.Context, *GetUserAvatarDataRequest) (*GetUserAvatarDataResponse, error)
 	GetChatMessageHistory(context.Context, *ChatMessageHistoryRequest) (*ChatMessageHistoryResponse, error)
+	GetAppInfo(context.Context, *GetAppInfoRequest) (*GetAppInfoResponse, error)
 	mustEmbedUnimplementedSteamMessagingServiceServer()
 }
 
@@ -689,6 +702,9 @@ func (UnimplementedSteamMessagingServiceServer) GetUserAvatarData(context.Contex
 }
 func (UnimplementedSteamMessagingServiceServer) GetChatMessageHistory(context.Context, *ChatMessageHistoryRequest) (*ChatMessageHistoryResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetChatMessageHistory not implemented")
+}
+func (UnimplementedSteamMessagingServiceServer) GetAppInfo(context.Context, *GetAppInfoRequest) (*GetAppInfoResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetAppInfo not implemented")
 }
 func (UnimplementedSteamMessagingServiceServer) mustEmbedUnimplementedSteamMessagingServiceServer() {}
 func (UnimplementedSteamMessagingServiceServer) testEmbeddedByValue()                               {}
@@ -830,6 +846,24 @@ func _SteamMessagingService_GetChatMessageHistory_Handler(srv interface{}, ctx c
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SteamMessagingService_GetAppInfo_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAppInfoRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SteamMessagingServiceServer).GetAppInfo(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SteamMessagingService_GetAppInfo_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SteamMessagingServiceServer).GetAppInfo(ctx, req.(*GetAppInfoRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SteamMessagingService_ServiceDesc is the grpc.ServiceDesc for SteamMessagingService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -860,6 +894,10 @@ var SteamMessagingService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetChatMessageHistory",
 			Handler:    _SteamMessagingService_GetChatMessageHistory_Handler,
+		},
+		{
+			MethodName: "GetAppInfo",
+			Handler:    _SteamMessagingService_GetAppInfo_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

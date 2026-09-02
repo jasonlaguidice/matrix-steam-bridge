@@ -224,6 +224,22 @@ type SteamClient struct {
 
 	// Emote image cache: CDN URL → mxc:// URI (in-process, resets on restart)
 	emoteCache sync.Map
+
+	// Game-invite expiry tracking (live incoming invites only - see inviteexpiry.go).
+	// pendingInvites is keyed by the invite message's networkid.MessageID for direct
+	// removal; friendPresence is the last-known live presence per friend SteamID, used
+	// to decide whether a newly-arrived invite can be presence-tracked. Not persisted -
+	// losing tracking across a restart is acceptable graceful degradation.
+	pendingInvites   map[networkid.MessageID]*pendingInvite
+	pendingInvitesMu sync.Mutex
+	friendPresence   map[uint64]*friendPresenceInfo
+	friendPresenceMu sync.Mutex
+	// inviteSweepStarted ensures the sweep ticker goroutine is spawned at most once per
+	// SteamClient, even though startInviteExpirySweep is called from every Connect()/login
+	// path (including automatic reconnects, which reuse context.Background() and therefore
+	// never cancel the previous sweep goroutine) - without this, each reconnect would leak
+	// another permanently-running ticker.
+	inviteSweepStarted sync.Once
 }
 
 // SteamLoginPassword implements password-based login flow
@@ -499,6 +515,8 @@ func (sc *SteamConnector) LoadUserLogin(ctx context.Context, login *bridgev2.Use
 		groupClient:    sc.groupClient,
 		br:             sc.br,
 		typingCancels:  make(map[networkid.PortalID]context.CancelFunc),
+		pendingInvites: make(map[networkid.MessageID]*pendingInvite),
+		friendPresence: make(map[uint64]*friendPresenceInfo),
 	}
 
 	// Auto-connect the login - mautrix-go bridgev2 doesn't automatically call Connect()

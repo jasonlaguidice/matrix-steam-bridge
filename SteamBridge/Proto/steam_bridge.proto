@@ -32,6 +32,7 @@ service SteamMessagingService {
   rpc DownloadMediaFromSteam(DownloadMediaRequest) returns (DownloadMediaResponse);
   rpc GetUserAvatarData(GetUserAvatarDataRequest) returns (GetUserAvatarDataResponse);
   rpc GetChatMessageHistory(ChatMessageHistoryRequest) returns (ChatMessageHistoryResponse);
+  rpc GetAppInfo(GetAppInfoRequest) returns (GetAppInfoResponse);
 }
 
 // Session Management Service
@@ -225,6 +226,9 @@ message MessageEvent {
   uint64 chat_group_id = 8;  // Non-zero for group messages; 0 for DMs
   uint64 chat_id = 9;        // Non-zero for group messages; 0 for DMs
   uint32 ordinal = 10;       // Message ordinal for deduplication with backfill
+  uint64 invite_app_id = 11;   // Steam App ID being invited to play (0 if not an invite or unparseable)
+  string invite_lobby_id = 12; // Lobby ID from [lobbyinvite] tag's lobbyid attribute (empty if not present)
+  string invite_connect = 13;  // Raw connect string from [gameinvite] tag's connect attribute (empty if not present)
 }
 
 message TypingNotificationRequest {
@@ -304,6 +308,20 @@ message ChatHistoryMessage {
   string message_content = 4;
   MessageType message_type = 5;
   string image_url = 6; // Steam CDN/UFS URL for image messages
+  uint64 invite_app_id = 7;   // Steam App ID being invited to play (0 if not an invite or unparseable)
+  string invite_lobby_id = 8; // Lobby ID from [lobbyinvite] tag's lobbyid attribute (empty if not present)
+  string invite_connect = 9;  // Raw connect string from [gameinvite] tag's connect attribute (empty if not present)
+}
+
+// App Info Messages
+message GetAppInfoRequest {
+  uint64 app_id = 1;
+  uint64 caller_steam_id = 2; // For routing to per-user SteamClientManager, same convention as SendMessageRequest.caller_steam_id
+}
+
+message GetAppInfoResponse {
+  bool found = 1;
+  string name = 2; // Empty if found=false
 }
 
 // Group Messages

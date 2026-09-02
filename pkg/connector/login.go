@@ -289,6 +289,8 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 				groupClient:    slp.Main.groupClient,
 				br:             slp.Main.br,
 				typingCancels:  make(map[networkid.PortalID]context.CancelFunc),
+				pendingInvites: make(map[networkid.MessageID]*pendingInvite),
+				friendPresence: make(map[uint64]*friendPresenceInfo),
 			}
 			return nil
 		},
@@ -338,6 +340,11 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 				steamClient.br.Log.Warn().Err(err).Msg("Failed to initialize presence topic stream")
 			}
 		}()
+
+		// Start the periodic sweep for expiring live game-invite "Join Game" links (see
+		// inviteexpiry.go). Tied to the same connection-scoped ctx as the other
+		// background loops above.
+		steamClient.startInviteExpirySweep(ctx)
 
 		// Sync existing portals for backfill after fresh login
 		go steamClient.syncExistingPortals(ctx)
@@ -515,6 +522,8 @@ func finishAuthStatusLogin(ctx context.Context, main *SteamConnector, user *brid
 				groupClient:    main.groupClient,
 				br:             main.br,
 				typingCancels:  make(map[networkid.PortalID]context.CancelFunc),
+				pendingInvites: make(map[networkid.MessageID]*pendingInvite),
+				friendPresence: make(map[uint64]*friendPresenceInfo),
 			}
 			return nil
 		},
@@ -564,6 +573,11 @@ func finishAuthStatusLogin(ctx context.Context, main *SteamConnector, user *brid
 				steamClient.br.Log.Warn().Err(err).Msg("Failed to initialize presence topic stream")
 			}
 		}()
+
+		// Start the periodic sweep for expiring live game-invite "Join Game" links (see
+		// inviteexpiry.go). Tied to the same connection-scoped ctx as the other
+		// background loops above.
+		steamClient.startInviteExpirySweep(ctx)
 
 		// Sync existing portals for backfill after fresh login
 		go steamClient.syncExistingPortals(ctx)

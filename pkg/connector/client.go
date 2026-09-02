@@ -482,6 +482,11 @@ func (sc *SteamClient) Connect(ctx context.Context) {
 		}
 	}()
 
+	// Start the periodic sweep for expiring live game-invite "Join Game" links (see
+	// inviteexpiry.go). Tied to the same connection-scoped ctx as the other background
+	// loops above, so it stops when this connection does.
+	sc.startInviteExpirySweep(ctx)
+
 	// Sync existing portals for backfill after re-authentication
 	go sc.syncExistingPortals(ctx)
 

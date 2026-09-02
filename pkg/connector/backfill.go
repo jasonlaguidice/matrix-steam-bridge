@@ -202,20 +202,15 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 
 	switch {
 	case steamMsg.MessageType == steamapi.MessageType_INVITE_GAME:
-		// Game invite: render as a notice with the plain-text body from C#
-		body := content
-		if body == "" {
-			body = "Invited you to play a game"
-		}
+		// Game invite: resolve the app name and build a rich join link when possible
+		// (shared with the live-message path in messaging.go so a backfilled invite
+		// renders identically to one received live).
 		convertedMsg = &bridgev2.ConvertedMessage{
 			Parts: []*bridgev2.ConvertedMessagePart{
 				{
-					Type: event.EventMessage,
-					Content: &event.MessageEventContent{
-						MsgType: event.MsgNotice,
-						Body:    "🎮 Game Invite: " + body,
-					},
-					ID: networkid.PartID("text"),
+					Type:    event.EventMessage,
+					Content: sc.buildGameInviteContent(ctx, steamMsg.SenderSteamId, steamMsg.InviteAppId, steamMsg.InviteLobbyId, steamMsg.InviteConnect, content),
+					ID:      networkid.PartID("text"),
 				},
 			},
 		}

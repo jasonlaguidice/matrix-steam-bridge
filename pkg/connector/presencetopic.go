@@ -87,6 +87,15 @@ func (sc *SteamClient) handlePresenceTopicEvent(ctx context.Context, ev *steamap
 		Str("rich_presence_status_text", ev.RichPresenceStatusText).
 		Msg("Received presence event")
 
+	// Keep the last-known-presence cache fresh regardless of whether this friend has a
+	// pending game invite right now - see inviteexpiry.go. Then, if they do have a
+	// presence-tracked pending invite, check whether this fresh presence event shows
+	// they've stopped playing the invited app, so it can be expired immediately instead
+	// of waiting for the periodic sweep or the 6-hour safety net.
+	sc.updateFriendPresenceCache(ev.SteamId, ev.GameAppId, ev.HasRichPresence)
+	stillPlaying := ev.GameAppId != 0 && ev.Status != steamapi.PersonaState_OFFLINE && ev.Status != steamapi.PersonaState_INVISIBLE
+	sc.checkPendingInviteExpiry(ev.SteamId, ev.GameAppId, stillPlaying)
+
 	if err := sc.updateFriendDMTopic(ctx, ev.SteamId, ev.Status, ev.CurrentGame, ev.RichPresenceStatusText, ev.RichPresenceTokens); err != nil {
 		sc.br.Log.Warn().Err(err).
 			Uint64("steam_id", ev.SteamId).

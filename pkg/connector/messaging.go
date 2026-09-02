@@ -866,6 +866,15 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 		}
 		sc.br.QueueRemoteEvent(sc.UserLogin, remoteMsg)
 
+		// Register this invite for expiry tracking (see inviteexpiry.go) - but only if
+		// it actually produced a clickable join link. A plain-text-only invite (legacy
+		// "[joingame]" with no lobby/connect data) has nothing to expire. This only
+		// applies to this live incoming-message path; convertSteamMessageToBackfill in
+		// backfill.go intentionally never registers backfilled invites here.
+		if msgEvent.InviteLobbyId != "" || msgEvent.InviteConnect != "" {
+			sc.registerPendingInvite(portalKey, networkid.MessageID(msgID), eventSender, msgEvent.SenderSteamId, msgEvent.InviteAppId)
+		}
+
 	default:
 		sc.br.Log.Warn().Str("message_type", msgEvent.MessageType.String()).Msg("Unsupported message type")
 	}
@@ -970,6 +979,103 @@ func detectOGLink(message string) (ogLink, bool) {
 	}, true
 }
 
+// buildGameInviteContent constructs a Matrix message for a Steam game invite. It best-effort
+// resolves the invited app's display name via GetAppInfo — a failed lookup or Found == false
+// is logged as a warning and falls back to whatever descriptive text the C# side already
+// parsed out of the invite markup (or "a game" if that's empty too), so the invite is never
+// dropped or turned into an error. When Steam supplied enough information to build a join
+// link (a lobby ID, or a raw connect string), the message is rendered as rich HTML text with
+// a clickable "Join Game" steam:// link, reproducing the exact join-URI construction Valve's
+// own Steam client uses for its "Join Game" button:
+//   - lobby invites:   steam://joinlobby/<appid>/<lobbyid>/<inviterSteamID64>
+//   - connect invites: steam://rungame/<appid>/<inviterSteamID64>/<url-encoded connect string>
+//
+// If neither is present (e.g. legacy "[joingame]" invites), this falls back to the original
+// plain-text notice with no link. Shared between the live-message path (messaging.go) and the
+// backfill path (backfill.go) so an invite renders identically whether it arrives live or is
+// backfilled later.
+// encodeURIComponentGo replicates JavaScript's encodeURIComponent exactly: every character
+// except A-Z a-z 0-9 and - _ . ! ~ * ' ( ) is percent-encoded (including space as "%20", not
+// url.QueryEscape's "+"). This matches what Steam's own client runs on a game invite's connect
+// string when building a steam://rungame/ URL, which Go's stdlib escapers don't reproduce.
+func encodeURIComponentGo(s string) string {
+	var b strings.Builder
+	for _, c := range []byte(s) {
+		switch {
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			b.WriteByte(c)
+		case strings.ContainsRune("-_.!~*'()", rune(c)):
+			b.WriteByte(c)
+		default:
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
+	return b.String()
+}
+
+func (sc *SteamClient) buildGameInviteContent(ctx context.Context, senderSteamID, appID uint64, lobbyID, connectStr, fallbackText string) *event.MessageEventContent {
+	var resolvedName string
+	if appID != 0 {
+		resp, err := sc.msgClient.GetAppInfo(ctx, &steamapi.GetAppInfoRequest{
+			AppId:         appID,
+			CallerSteamId: sc.steamID(),
+		})
+		if err != nil {
+			sc.br.Log.Warn().Err(err).Uint64("app_id", appID).Msg("Failed to resolve game invite app name via GetAppInfo, using fallback text")
+		} else if !resp.Found {
+			sc.br.Log.Warn().Uint64("app_id", appID).Msg("GetAppInfo could not find app for game invite, using fallback text")
+		} else {
+			resolvedName = resp.Name
+		}
+	}
+
+	var joinURL string
+	switch {
+	case lobbyID != "":
+		joinURL = fmt.Sprintf("steam://joinlobby/%d/%s/%d", appID, lobbyID, senderSteamID)
+	case connectStr != "":
+		// Steam's own client builds this exact URL client-side via JavaScript's
+		// encodeURIComponent(connectString) (confirmed by reading the client's own bundle).
+		// Go's url.PathEscape/url.QueryEscape do NOT reproduce that: PathEscape leaves ":"
+		// unescaped entirely (it's a valid pchar per RFC 3986), and QueryEscape uses "+" for
+		// spaces instead of "%20" — so encodeURIComponentGo below replicates encodeURIComponent's
+		// exact unreserved-character set to match Steam's own client byte-for-byte.
+		joinURL = fmt.Sprintf("steam://rungame/%d/%d/%s", appID, senderSteamID, encodeURIComponentGo(connectStr))
+	}
+
+	if joinURL == "" {
+		// No link possible (e.g. legacy "[joingame]" invites) — preserve the original
+		// plain-text-only notice, using the resolved game name when available.
+		inviteBody := resolvedName
+		if inviteBody == "" {
+			inviteBody = fallbackText
+		}
+		if inviteBody == "" {
+			inviteBody = "Invited you to play a game"
+		}
+		return &event.MessageEventContent{
+			MsgType: event.MsgNotice,
+			Body:    fmt.Sprintf("🎮 Game Invite: %s", inviteBody),
+		}
+	}
+
+	gameName := resolvedName
+	if gameName == "" {
+		gameName = fallbackText
+	}
+	if gameName == "" {
+		gameName = "a game"
+	}
+
+	return &event.MessageEventContent{
+		MsgType: event.MsgText,
+		Body:    fmt.Sprintf("🎮 Invited you to play %s — %s", gameName, joinURL),
+		Format:  event.FormatHTML,
+		FormattedBody: fmt.Sprintf(`🎮 Invited you to play <b>%s</b> — <a href="%s">Join Game</a>`,
+			html.EscapeString(gameName), html.EscapeString(joinURL)),
+	}
+}
+
 // convertSteamMessage converts a Steam message event to a Matrix message
 func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, data *steamapi.MessageEvent) (*bridgev2.ConvertedMessage, error) {
 	var content *event.MessageEventContent
@@ -1047,14 +1153,7 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 			Body:    data.Message,
 		}
 	case steamapi.MessageType_INVITE_GAME:
-		inviteBody := data.Message
-		if inviteBody == "" {
-			inviteBody = "Invited you to play a game"
-		}
-		content = &event.MessageEventContent{
-			MsgType: event.MsgNotice,
-			Body:    fmt.Sprintf("🎮 Game Invite: %s", inviteBody),
-		}
+		content = sc.buildGameInviteContent(ctx, data.SenderSteamId, data.InviteAppId, data.InviteLobbyId, data.InviteConnect, data.Message)
 	default:
 		return nil, fmt.Errorf("unsupported message type: %s", data.MessageType.String())
 	}
