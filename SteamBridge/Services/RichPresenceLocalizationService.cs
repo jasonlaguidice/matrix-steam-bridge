@@ -205,14 +205,39 @@ public class RichPresenceLocalizationService
         // nested resolution first (the original order) never matches these at all, leaving
         // literal unresolved "{#game_mode_23}"-style text in the final output even after
         // variable substitution fills in the "23" - the token name is complete too late.
+        //
+        // An unresolved %variable% (the sibling raw rich-presence tokens don't contain a key
+        // matching it) fails the whole resolution rather than leaving the literal "%name%" in
+        // the returned text, matching this method's "never show something broken" contract -
+        // the same contract the top-level rawValue lookup above already honors. Logs the
+        // available raw token keys so a game-specific naming mismatch can be diagnosed from
+        // one occurrence.
+        var unresolvedVariable = false;
         template = VariablePattern.Replace(template, m =>
         {
             var varKey = m.Groups[1].Value;
-            return rawTokensCI.TryGetValue(varKey, out var varValue) ? varValue : m.Value;
+            if (rawTokensCI.TryGetValue(varKey, out var varValue))
+            {
+                return varValue;
+            }
+
+            unresolvedVariable = true;
+            logger.LogDebug(
+                "Rich presence %Variable% '{VarKey}' (from rawValue='{RawValue}') not found in raw tokens - available keys: {Keys}",
+                varKey, rawValue, string.Join(", ", rawTokensCI.Keys));
+            return m.Value;
         });
 
+        if (unresolvedVariable)
+        {
+            return null;
+        }
+
         // One level of nested {#Token} re-resolution, now that any %variable% placeholders
-        // inside the braces have been filled in above. Same with/without-"#" lookup as above.
+        // inside the braces have been filled in above. Same with/without-"#" lookup as above,
+        // and the same "fail rather than leak a raw {#Token}" contract as the variable
+        // substitution above.
+        var unresolvedNestedToken = false;
         template = NestedTokenPattern.Replace(template, m =>
         {
             var nestedKey = m.Groups[1].Value;
@@ -220,8 +245,18 @@ public class RichPresenceLocalizationService
             {
                 return nestedValue;
             }
+
+            unresolvedNestedToken = true;
+            logger.LogDebug(
+                "Nested rich presence token '{{#{NestedKey}}}' (from rawValue='{RawValue}') not found in token map",
+                nestedKey, rawValue);
             return m.Value;
         });
+
+        if (unresolvedNestedToken)
+        {
+            return null;
+        }
 
         return string.IsNullOrWhiteSpace(template) ? null : template;
     }
