@@ -85,6 +85,7 @@ func (sc *SteamClient) handlePresenceTopicEvent(ctx context.Context, ev *steamap
 		Str("current_game", ev.CurrentGame).
 		Bool("has_rich_presence", ev.HasRichPresence).
 		Str("rich_presence_status_text", ev.RichPresenceStatusText).
+		Interface("rich_presence_tokens", ev.RichPresenceTokens).
 		Msg("Received presence event")
 
 	// Keep the last-known-presence cache fresh regardless of whether this friend has a
