@@ -15,7 +15,7 @@ func main() {
 	m := mxmain.BridgeMain{
 		Name:        "steam",
 		Description: "A Matrix-Steam bridge",
-		URL:         "https://github.com/jasonlaguidice/steam",
+		URL:         "https://github.com/jasonlaguidice/matrix-steam-bridge",
 		Version:     "1.3.1",
 		Connector:   &connector.SteamConnector{},
 	}
