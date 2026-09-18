@@ -83,10 +83,6 @@ public class RichPresenceLocalizationService
                 return null;
             }
 
-            _logger.LogDebug(
-                "Resolving rawValue='{RawValue}' for appid {AppId} against rawTokensCI: {RawTokens}",
-                statusValue, appId, string.Join(", ", rawTokensCI.Select(kv => $"{kv.Key}={kv.Value}")));
-
             return ResolveToken(statusValue, tokenMap, rawTokensCI, _logger);
         }
         catch (Exception ex)
@@ -209,23 +205,10 @@ public class RichPresenceLocalizationService
         // nested resolution first (the original order) never matches these at all, leaving
         // literal unresolved "{#game_mode_23}"-style text in the final output even after
         // variable substitution fills in the "23" - the token name is complete too late.
-        //
-        template = VariablePattern.Replace(template, m =>
-        {
-            var varKey = m.Groups[1].Value;
-            if (rawTokensCI.TryGetValue(varKey, out var varValue))
-            {
-                return varValue;
-            }
-
-            logger.LogDebug(
-                "Rich presence %Variable% '{VarKey}' (from rawValue='{RawValue}') not found in raw tokens - available keys: {Keys}",
-                varKey, rawValue, string.Join(", ", rawTokensCI.Keys));
-            return m.Value;
-        });
+        template = VariablePattern.Replace(template, m => SubstituteVariable(m, rawTokensCI, rawValue, logger));
 
         // One level of nested {#Token} re-resolution, now that any %variable% placeholders
-        // inside the braces have been filled in above. Same with/without-"#" lookup as above
+        // inside the braces have been filled in above. Same with/without-"#" lookup as above.
         template = NestedTokenPattern.Replace(template, m =>
         {
             var nestedKey = m.Groups[1].Value;
@@ -240,6 +223,29 @@ public class RichPresenceLocalizationService
             return m.Value;
         });
 
+        // A resolved {#Token}'s own text can carry further %variable% placeholders that
+        // weren't present in the top-level template - observed empirically with WARDOGS:
+        // "#Status_KOTH" itself is "{#Status_%in_profit_or_loss%}", and the nested token that
+        // resolves to (e.g. "#Status_profit") is "+%profit_loss% Profit", introducing a SECOND
+        // %profit_loss% placeholder only after nested resolution ran. The first substitution
+        // pass above never sees it (it only exists once the nested token is expanded), so it
+        // needs its own pass here rather than being left as literal "%profit_loss%" forever.
+        template = VariablePattern.Replace(template, m => SubstituteVariable(m, rawTokensCI, rawValue, logger));
+
         return string.IsNullOrWhiteSpace(template) ? null : template;
+    }
+
+    private static string SubstituteVariable(Match m, Dictionary<string, string> rawTokensCI, string rawValue, ILogger logger)
+    {
+        var varKey = m.Groups[1].Value;
+        if (rawTokensCI.TryGetValue(varKey, out var varValue))
+        {
+            return varValue;
+        }
+
+        logger.LogDebug(
+            "Rich presence %Variable% '{VarKey}' (from rawValue='{RawValue}') not found in raw tokens - available keys: {Keys}",
+            varKey, rawValue, string.Join(", ", rawTokensCI.Keys));
+        return m.Value;
     }
 }
