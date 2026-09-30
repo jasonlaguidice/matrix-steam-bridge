@@ -985,6 +985,118 @@ func (x *TokenReAuthResponse) GetUserInfo() *UserInfo {
 	return nil
 }
 
+type MintAccessTokenRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SteamId       uint64                 `protobuf:"varint,1,opt,name=steam_id,json=steamId,proto3" json:"steam_id,omitempty"` // Caller's Steam ID for routing to per-user SteamClientManager
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MintAccessTokenRequest) Reset() {
+	*x = MintAccessTokenRequest{}
+	mi := &file_Proto_steam_bridge_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MintAccessTokenRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MintAccessTokenRequest) ProtoMessage() {}
+
+func (x *MintAccessTokenRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_Proto_steam_bridge_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MintAccessTokenRequest.ProtoReflect.Descriptor instead.
+func (*MintAccessTokenRequest) Descriptor() ([]byte, []int) {
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *MintAccessTokenRequest) GetSteamId() uint64 {
+	if x != nil {
+		return x.SteamId
+	}
+	return 0
+}
+
+type MintAccessTokenResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
+	ErrorMessage  string                 `protobuf:"bytes,2,opt,name=error_message,json=errorMessage,proto3" json:"error_message,omitempty"`
+	AccessToken   string                 `protobuf:"bytes,3,opt,name=access_token,json=accessToken,proto3" json:"access_token,omitempty"`          // Fresh access token (JWT) minted from the stored refresh token
+	ExpiresAtUnix int64                  `protobuf:"varint,4,opt,name=expires_at_unix,json=expiresAtUnix,proto3" json:"expires_at_unix,omitempty"` // Token expiry as Unix seconds, decoded from the JWT `exp` claim
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MintAccessTokenResponse) Reset() {
+	*x = MintAccessTokenResponse{}
+	mi := &file_Proto_steam_bridge_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MintAccessTokenResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MintAccessTokenResponse) ProtoMessage() {}
+
+func (x *MintAccessTokenResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_Proto_steam_bridge_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MintAccessTokenResponse.ProtoReflect.Descriptor instead.
+func (*MintAccessTokenResponse) Descriptor() ([]byte, []int) {
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *MintAccessTokenResponse) GetSuccess() bool {
+	if x != nil {
+		return x.Success
+	}
+	return false
+}
+
+func (x *MintAccessTokenResponse) GetErrorMessage() string {
+	if x != nil {
+		return x.ErrorMessage
+	}
+	return ""
+}
+
+func (x *MintAccessTokenResponse) GetAccessToken() string {
+	if x != nil {
+		return x.AccessToken
+	}
+	return ""
+}
+
+func (x *MintAccessTokenResponse) GetExpiresAtUnix() int64 {
+	if x != nil {
+		return x.ExpiresAtUnix
+	}
+	return 0
+}
+
 type LogoutResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Success       bool                   `protobuf:"varint,1,opt,name=success,proto3" json:"success,omitempty"`
@@ -994,7 +1106,7 @@ type LogoutResponse struct {
 
 func (x *LogoutResponse) Reset() {
 	*x = LogoutResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[10]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1006,7 +1118,7 @@ func (x *LogoutResponse) String() string {
 func (*LogoutResponse) ProtoMessage() {}
 
 func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[10]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1019,7 +1131,7 @@ func (x *LogoutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogoutResponse.ProtoReflect.Descriptor instead.
 func (*LogoutResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{10}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *LogoutResponse) GetSuccess() bool {
@@ -1040,7 +1152,7 @@ type UserInfoRequest struct {
 
 func (x *UserInfoRequest) Reset() {
 	*x = UserInfoRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[11]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1052,7 +1164,7 @@ func (x *UserInfoRequest) String() string {
 func (*UserInfoRequest) ProtoMessage() {}
 
 func (x *UserInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[11]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1065,7 +1177,7 @@ func (x *UserInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserInfoRequest.ProtoReflect.Descriptor instead.
 func (*UserInfoRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{11}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *UserInfoRequest) GetSteamId() uint64 {
@@ -1091,7 +1203,7 @@ type UserInfoResponse struct {
 
 func (x *UserInfoResponse) Reset() {
 	*x = UserInfoResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[12]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1103,7 +1215,7 @@ func (x *UserInfoResponse) String() string {
 func (*UserInfoResponse) ProtoMessage() {}
 
 func (x *UserInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[12]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1116,7 +1228,7 @@ func (x *UserInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserInfoResponse.ProtoReflect.Descriptor instead.
 func (*UserInfoResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{12}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *UserInfoResponse) GetUserInfo() *UserInfo {
@@ -1142,7 +1254,7 @@ type UserInfo struct {
 
 func (x *UserInfo) Reset() {
 	*x = UserInfo{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[13]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1154,7 +1266,7 @@ func (x *UserInfo) String() string {
 func (*UserInfo) ProtoMessage() {}
 
 func (x *UserInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[13]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1167,7 +1279,7 @@ func (x *UserInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserInfo.ProtoReflect.Descriptor instead.
 func (*UserInfo) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{13}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *UserInfo) GetSteamId() uint64 {
@@ -1235,7 +1347,7 @@ type FriendsListRequest struct {
 
 func (x *FriendsListRequest) Reset() {
 	*x = FriendsListRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[14]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1247,7 +1359,7 @@ func (x *FriendsListRequest) String() string {
 func (*FriendsListRequest) ProtoMessage() {}
 
 func (x *FriendsListRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[14]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1260,7 +1372,7 @@ func (x *FriendsListRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FriendsListRequest.ProtoReflect.Descriptor instead.
 func (*FriendsListRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{14}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *FriendsListRequest) GetSteamId() uint64 {
@@ -1279,7 +1391,7 @@ type FriendsListResponse struct {
 
 func (x *FriendsListResponse) Reset() {
 	*x = FriendsListResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[15]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1291,7 +1403,7 @@ func (x *FriendsListResponse) String() string {
 func (*FriendsListResponse) ProtoMessage() {}
 
 func (x *FriendsListResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[15]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1304,7 +1416,7 @@ func (x *FriendsListResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FriendsListResponse.ProtoReflect.Descriptor instead.
 func (*FriendsListResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{15}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *FriendsListResponse) GetFriends() []*Friend {
@@ -1329,7 +1441,7 @@ type Friend struct {
 
 func (x *Friend) Reset() {
 	*x = Friend{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[16]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1341,7 +1453,7 @@ func (x *Friend) String() string {
 func (*Friend) ProtoMessage() {}
 
 func (x *Friend) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[16]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1354,7 +1466,7 @@ func (x *Friend) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Friend.ProtoReflect.Descriptor instead.
 func (*Friend) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{16}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *Friend) GetSteamId() uint64 {
@@ -1416,7 +1528,7 @@ type UserStatusRequest struct {
 
 func (x *UserStatusRequest) Reset() {
 	*x = UserStatusRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[17]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1428,7 +1540,7 @@ func (x *UserStatusRequest) String() string {
 func (*UserStatusRequest) ProtoMessage() {}
 
 func (x *UserStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[17]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1441,7 +1553,7 @@ func (x *UserStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserStatusRequest.ProtoReflect.Descriptor instead.
 func (*UserStatusRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{17}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *UserStatusRequest) GetSteamId() uint64 {
@@ -1469,7 +1581,7 @@ type UserStatusResponse struct {
 
 func (x *UserStatusResponse) Reset() {
 	*x = UserStatusResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[18]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1481,7 +1593,7 @@ func (x *UserStatusResponse) String() string {
 func (*UserStatusResponse) ProtoMessage() {}
 
 func (x *UserStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[18]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1494,7 +1606,7 @@ func (x *UserStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UserStatusResponse.ProtoReflect.Descriptor instead.
 func (*UserStatusResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{18}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *UserStatusResponse) GetStatus() PersonaState {
@@ -1528,7 +1640,7 @@ type ResolveVanityURLRequest struct {
 
 func (x *ResolveVanityURLRequest) Reset() {
 	*x = ResolveVanityURLRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[19]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1540,7 +1652,7 @@ func (x *ResolveVanityURLRequest) String() string {
 func (*ResolveVanityURLRequest) ProtoMessage() {}
 
 func (x *ResolveVanityURLRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[19]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1553,7 +1665,7 @@ func (x *ResolveVanityURLRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveVanityURLRequest.ProtoReflect.Descriptor instead.
 func (*ResolveVanityURLRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{19}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ResolveVanityURLRequest) GetVanityUrl() string {
@@ -1581,7 +1693,7 @@ type ResolveVanityURLResponse struct {
 
 func (x *ResolveVanityURLResponse) Reset() {
 	*x = ResolveVanityURLResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[20]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1593,7 +1705,7 @@ func (x *ResolveVanityURLResponse) String() string {
 func (*ResolveVanityURLResponse) ProtoMessage() {}
 
 func (x *ResolveVanityURLResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[20]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1606,7 +1718,7 @@ func (x *ResolveVanityURLResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveVanityURLResponse.ProtoReflect.Descriptor instead.
 func (*ResolveVanityURLResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{20}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ResolveVanityURLResponse) GetSuccess() bool {
@@ -1646,7 +1758,7 @@ type SendMessageRequest struct {
 
 func (x *SendMessageRequest) Reset() {
 	*x = SendMessageRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[21]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1658,7 +1770,7 @@ func (x *SendMessageRequest) String() string {
 func (*SendMessageRequest) ProtoMessage() {}
 
 func (x *SendMessageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[21]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1671,7 +1783,7 @@ func (x *SendMessageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendMessageRequest.ProtoReflect.Descriptor instead.
 func (*SendMessageRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{21}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *SendMessageRequest) GetTargetSteamId() uint64 {
@@ -1735,7 +1847,7 @@ type SendMessageResponse struct {
 
 func (x *SendMessageResponse) Reset() {
 	*x = SendMessageResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[22]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1747,7 +1859,7 @@ func (x *SendMessageResponse) String() string {
 func (*SendMessageResponse) ProtoMessage() {}
 
 func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[22]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1760,7 +1872,7 @@ func (x *SendMessageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendMessageResponse.ProtoReflect.Descriptor instead.
 func (*SendMessageResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{22}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *SendMessageResponse) GetSuccess() bool {
@@ -1800,7 +1912,7 @@ type MessageSubscriptionRequest struct {
 
 func (x *MessageSubscriptionRequest) Reset() {
 	*x = MessageSubscriptionRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[23]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1812,7 +1924,7 @@ func (x *MessageSubscriptionRequest) String() string {
 func (*MessageSubscriptionRequest) ProtoMessage() {}
 
 func (x *MessageSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[23]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1825,7 +1937,7 @@ func (x *MessageSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*MessageSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{23}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *MessageSubscriptionRequest) GetSteamId() uint64 {
@@ -1856,7 +1968,7 @@ type MessageEvent struct {
 
 func (x *MessageEvent) Reset() {
 	*x = MessageEvent{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[24]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1868,7 +1980,7 @@ func (x *MessageEvent) String() string {
 func (*MessageEvent) ProtoMessage() {}
 
 func (x *MessageEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[24]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1881,7 +1993,7 @@ func (x *MessageEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MessageEvent.ProtoReflect.Descriptor instead.
 func (*MessageEvent) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{24}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *MessageEvent) GetSenderSteamId() uint64 {
@@ -1986,7 +2098,7 @@ type TypingNotificationRequest struct {
 
 func (x *TypingNotificationRequest) Reset() {
 	*x = TypingNotificationRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[25]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1998,7 +2110,7 @@ func (x *TypingNotificationRequest) String() string {
 func (*TypingNotificationRequest) ProtoMessage() {}
 
 func (x *TypingNotificationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[25]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2011,7 +2123,7 @@ func (x *TypingNotificationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TypingNotificationRequest.ProtoReflect.Descriptor instead.
 func (*TypingNotificationRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{25}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *TypingNotificationRequest) GetTargetSteamId() uint64 {
@@ -2044,7 +2156,7 @@ type TypingNotificationResponse struct {
 
 func (x *TypingNotificationResponse) Reset() {
 	*x = TypingNotificationResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[26]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2056,7 +2168,7 @@ func (x *TypingNotificationResponse) String() string {
 func (*TypingNotificationResponse) ProtoMessage() {}
 
 func (x *TypingNotificationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[26]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2069,7 +2181,7 @@ func (x *TypingNotificationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TypingNotificationResponse.ProtoReflect.Descriptor instead.
 func (*TypingNotificationResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{26}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *TypingNotificationResponse) GetSuccess() bool {
@@ -2092,7 +2204,7 @@ type UploadImageRequest struct {
 
 func (x *UploadImageRequest) Reset() {
 	*x = UploadImageRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[27]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2104,7 +2216,7 @@ func (x *UploadImageRequest) String() string {
 func (*UploadImageRequest) ProtoMessage() {}
 
 func (x *UploadImageRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[27]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2117,7 +2229,7 @@ func (x *UploadImageRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadImageRequest.ProtoReflect.Descriptor instead.
 func (*UploadImageRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{27}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *UploadImageRequest) GetImageData() []byte {
@@ -2159,7 +2271,7 @@ type UploadImageResponse struct {
 
 func (x *UploadImageResponse) Reset() {
 	*x = UploadImageResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[28]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2171,7 +2283,7 @@ func (x *UploadImageResponse) String() string {
 func (*UploadImageResponse) ProtoMessage() {}
 
 func (x *UploadImageResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[28]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2184,7 +2296,7 @@ func (x *UploadImageResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UploadImageResponse.ProtoReflect.Descriptor instead.
 func (*UploadImageResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{28}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *UploadImageResponse) GetSuccess() bool {
@@ -2217,7 +2329,7 @@ type DownloadMediaRequest struct {
 
 func (x *DownloadMediaRequest) Reset() {
 	*x = DownloadMediaRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[29]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2229,7 +2341,7 @@ func (x *DownloadMediaRequest) String() string {
 func (*DownloadMediaRequest) ProtoMessage() {}
 
 func (x *DownloadMediaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[29]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2242,7 +2354,7 @@ func (x *DownloadMediaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadMediaRequest.ProtoReflect.Descriptor instead.
 func (*DownloadMediaRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{29}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *DownloadMediaRequest) GetMediaUrl() string {
@@ -2264,7 +2376,7 @@ type DownloadMediaResponse struct {
 
 func (x *DownloadMediaResponse) Reset() {
 	*x = DownloadMediaResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[30]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2276,7 +2388,7 @@ func (x *DownloadMediaResponse) String() string {
 func (*DownloadMediaResponse) ProtoMessage() {}
 
 func (x *DownloadMediaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[30]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2289,7 +2401,7 @@ func (x *DownloadMediaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DownloadMediaResponse.ProtoReflect.Descriptor instead.
 func (*DownloadMediaResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{30}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DownloadMediaResponse) GetSuccess() bool {
@@ -2331,7 +2443,7 @@ type GetUserAvatarDataRequest struct {
 
 func (x *GetUserAvatarDataRequest) Reset() {
 	*x = GetUserAvatarDataRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[31]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2343,7 +2455,7 @@ func (x *GetUserAvatarDataRequest) String() string {
 func (*GetUserAvatarDataRequest) ProtoMessage() {}
 
 func (x *GetUserAvatarDataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[31]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2356,7 +2468,7 @@ func (x *GetUserAvatarDataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUserAvatarDataRequest.ProtoReflect.Descriptor instead.
 func (*GetUserAvatarDataRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{31}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *GetUserAvatarDataRequest) GetSteamId() uint64 {
@@ -2387,7 +2499,7 @@ type GetUserAvatarDataResponse struct {
 
 func (x *GetUserAvatarDataResponse) Reset() {
 	*x = GetUserAvatarDataResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[32]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2399,7 +2511,7 @@ func (x *GetUserAvatarDataResponse) String() string {
 func (*GetUserAvatarDataResponse) ProtoMessage() {}
 
 func (x *GetUserAvatarDataResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[32]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2412,7 +2524,7 @@ func (x *GetUserAvatarDataResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetUserAvatarDataResponse.ProtoReflect.Descriptor instead.
 func (*GetUserAvatarDataResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{32}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *GetUserAvatarDataResponse) GetSuccess() bool {
@@ -2473,7 +2585,7 @@ type ChatMessageHistoryRequest struct {
 
 func (x *ChatMessageHistoryRequest) Reset() {
 	*x = ChatMessageHistoryRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[33]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2485,7 +2597,7 @@ func (x *ChatMessageHistoryRequest) String() string {
 func (*ChatMessageHistoryRequest) ProtoMessage() {}
 
 func (x *ChatMessageHistoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[33]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2498,7 +2610,7 @@ func (x *ChatMessageHistoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatMessageHistoryRequest.ProtoReflect.Descriptor instead.
 func (*ChatMessageHistoryRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{33}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *ChatMessageHistoryRequest) GetChatGroupId() uint64 {
@@ -2564,7 +2676,7 @@ type ChatMessageHistoryResponse struct {
 
 func (x *ChatMessageHistoryResponse) Reset() {
 	*x = ChatMessageHistoryResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[34]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2576,7 +2688,7 @@ func (x *ChatMessageHistoryResponse) String() string {
 func (*ChatMessageHistoryResponse) ProtoMessage() {}
 
 func (x *ChatMessageHistoryResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[34]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2589,7 +2701,7 @@ func (x *ChatMessageHistoryResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatMessageHistoryResponse.ProtoReflect.Descriptor instead.
 func (*ChatMessageHistoryResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{34}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *ChatMessageHistoryResponse) GetSuccess() bool {
@@ -2651,7 +2763,7 @@ type ChatHistoryMessage struct {
 
 func (x *ChatHistoryMessage) Reset() {
 	*x = ChatHistoryMessage{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[35]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2663,7 +2775,7 @@ func (x *ChatHistoryMessage) String() string {
 func (*ChatHistoryMessage) ProtoMessage() {}
 
 func (x *ChatHistoryMessage) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[35]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2676,7 +2788,7 @@ func (x *ChatHistoryMessage) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatHistoryMessage.ProtoReflect.Descriptor instead.
 func (*ChatHistoryMessage) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{35}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ChatHistoryMessage) GetSenderSteamId() uint64 {
@@ -2753,7 +2865,7 @@ type GetAppInfoRequest struct {
 
 func (x *GetAppInfoRequest) Reset() {
 	*x = GetAppInfoRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[36]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2765,7 +2877,7 @@ func (x *GetAppInfoRequest) String() string {
 func (*GetAppInfoRequest) ProtoMessage() {}
 
 func (x *GetAppInfoRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[36]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2778,7 +2890,7 @@ func (x *GetAppInfoRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAppInfoRequest.ProtoReflect.Descriptor instead.
 func (*GetAppInfoRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{36}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *GetAppInfoRequest) GetAppId() uint64 {
@@ -2805,7 +2917,7 @@ type GetAppInfoResponse struct {
 
 func (x *GetAppInfoResponse) Reset() {
 	*x = GetAppInfoResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[37]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2817,7 +2929,7 @@ func (x *GetAppInfoResponse) String() string {
 func (*GetAppInfoResponse) ProtoMessage() {}
 
 func (x *GetAppInfoResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[37]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2830,7 +2942,7 @@ func (x *GetAppInfoResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetAppInfoResponse.ProtoReflect.Descriptor instead.
 func (*GetAppInfoResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{37}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *GetAppInfoResponse) GetFound() bool {
@@ -2857,7 +2969,7 @@ type GetGroupsRequest struct {
 
 func (x *GetGroupsRequest) Reset() {
 	*x = GetGroupsRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[38]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2869,7 +2981,7 @@ func (x *GetGroupsRequest) String() string {
 func (*GetGroupsRequest) ProtoMessage() {}
 
 func (x *GetGroupsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[38]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2882,7 +2994,7 @@ func (x *GetGroupsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGroupsRequest.ProtoReflect.Descriptor instead.
 func (*GetGroupsRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{38}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *GetGroupsRequest) GetSteamId() uint64 {
@@ -2903,7 +3015,7 @@ type GetGroupsResponse struct {
 
 func (x *GetGroupsResponse) Reset() {
 	*x = GetGroupsResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[39]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2915,7 +3027,7 @@ func (x *GetGroupsResponse) String() string {
 func (*GetGroupsResponse) ProtoMessage() {}
 
 func (x *GetGroupsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[39]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2928,7 +3040,7 @@ func (x *GetGroupsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGroupsResponse.ProtoReflect.Descriptor instead.
 func (*GetGroupsResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{39}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *GetGroupsResponse) GetSuccess() bool {
@@ -2969,7 +3081,7 @@ type ChatGroup struct {
 
 func (x *ChatGroup) Reset() {
 	*x = ChatGroup{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[40]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2981,7 +3093,7 @@ func (x *ChatGroup) String() string {
 func (*ChatGroup) ProtoMessage() {}
 
 func (x *ChatGroup) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[40]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2994,7 +3106,7 @@ func (x *ChatGroup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatGroup.ProtoReflect.Descriptor instead.
 func (*ChatGroup) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{40}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ChatGroup) GetChatGroupId() uint64 {
@@ -3070,7 +3182,7 @@ type ChatChannel struct {
 
 func (x *ChatChannel) Reset() {
 	*x = ChatChannel{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[41]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3082,7 +3194,7 @@ func (x *ChatChannel) String() string {
 func (*ChatChannel) ProtoMessage() {}
 
 func (x *ChatChannel) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[41]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3095,7 +3207,7 @@ func (x *ChatChannel) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChatChannel.ProtoReflect.Descriptor instead.
 func (*ChatChannel) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{41}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *ChatChannel) GetChatId() uint64 {
@@ -3122,7 +3234,7 @@ type SessionSubscriptionRequest struct {
 
 func (x *SessionSubscriptionRequest) Reset() {
 	*x = SessionSubscriptionRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[42]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3134,7 +3246,7 @@ func (x *SessionSubscriptionRequest) String() string {
 func (*SessionSubscriptionRequest) ProtoMessage() {}
 
 func (x *SessionSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[42]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3147,7 +3259,7 @@ func (x *SessionSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*SessionSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{42}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *SessionSubscriptionRequest) GetSteamId() uint64 {
@@ -3168,7 +3280,7 @@ type SessionEvent struct {
 
 func (x *SessionEvent) Reset() {
 	*x = SessionEvent{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[43]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3180,7 +3292,7 @@ func (x *SessionEvent) String() string {
 func (*SessionEvent) ProtoMessage() {}
 
 func (x *SessionEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[43]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3193,7 +3305,7 @@ func (x *SessionEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionEvent.ProtoReflect.Descriptor instead.
 func (*SessionEvent) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{43}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *SessionEvent) GetEventType() SessionEventType {
@@ -3228,7 +3340,7 @@ type SetPersonaStateRequest struct {
 
 func (x *SetPersonaStateRequest) Reset() {
 	*x = SetPersonaStateRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[44]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3240,7 +3352,7 @@ func (x *SetPersonaStateRequest) String() string {
 func (*SetPersonaStateRequest) ProtoMessage() {}
 
 func (x *SetPersonaStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[44]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3253,7 +3365,7 @@ func (x *SetPersonaStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPersonaStateRequest.ProtoReflect.Descriptor instead.
 func (*SetPersonaStateRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{44}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *SetPersonaStateRequest) GetState() PersonaState {
@@ -3280,7 +3392,7 @@ type SetPersonaStateResponse struct {
 
 func (x *SetPersonaStateResponse) Reset() {
 	*x = SetPersonaStateResponse{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[45]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3292,7 +3404,7 @@ func (x *SetPersonaStateResponse) String() string {
 func (*SetPersonaStateResponse) ProtoMessage() {}
 
 func (x *SetPersonaStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[45]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3305,7 +3417,7 @@ func (x *SetPersonaStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SetPersonaStateResponse.ProtoReflect.Descriptor instead.
 func (*SetPersonaStateResponse) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{45}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *SetPersonaStateResponse) GetSuccess() bool {
@@ -3332,7 +3444,7 @@ type PresenceSubscriptionRequest struct {
 
 func (x *PresenceSubscriptionRequest) Reset() {
 	*x = PresenceSubscriptionRequest{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[46]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3344,7 +3456,7 @@ func (x *PresenceSubscriptionRequest) String() string {
 func (*PresenceSubscriptionRequest) ProtoMessage() {}
 
 func (x *PresenceSubscriptionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[46]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3357,7 +3469,7 @@ func (x *PresenceSubscriptionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresenceSubscriptionRequest.ProtoReflect.Descriptor instead.
 func (*PresenceSubscriptionRequest) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{46}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *PresenceSubscriptionRequest) GetSteamId() uint64 {
@@ -3390,7 +3502,7 @@ type PresenceEvent struct {
 
 func (x *PresenceEvent) Reset() {
 	*x = PresenceEvent{}
-	mi := &file_Proto_steam_bridge_proto_msgTypes[47]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3402,7 +3514,7 @@ func (x *PresenceEvent) String() string {
 func (*PresenceEvent) ProtoMessage() {}
 
 func (x *PresenceEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_Proto_steam_bridge_proto_msgTypes[47]
+	mi := &file_Proto_steam_bridge_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3415,7 +3527,7 @@ func (x *PresenceEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PresenceEvent.ProtoReflect.Descriptor instead.
 func (*PresenceEvent) Descriptor() ([]byte, []int) {
-	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{47}
+	return file_Proto_steam_bridge_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *PresenceEvent) GetSteamId() uint64 {
@@ -3542,7 +3654,14 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\x05state\x18\x03 \x01(\x0e2).steambridge.AuthStatusResponse.AuthStateR\x05state\x12(\n" +
 	"\x10new_access_token\x18\x04 \x01(\tR\x0enewAccessToken\x12*\n" +
 	"\x11new_refresh_token\x18\x05 \x01(\tR\x0fnewRefreshToken\x122\n" +
-	"\tuser_info\x18\x06 \x01(\v2\x15.steambridge.UserInfoR\buserInfo\"*\n" +
+	"\tuser_info\x18\x06 \x01(\v2\x15.steambridge.UserInfoR\buserInfo\"3\n" +
+	"\x16MintAccessTokenRequest\x12\x19\n" +
+	"\bsteam_id\x18\x01 \x01(\x04R\asteamId\"\xa3\x01\n" +
+	"\x17MintAccessTokenResponse\x12\x18\n" +
+	"\asuccess\x18\x01 \x01(\bR\asuccess\x12#\n" +
+	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\x12!\n" +
+	"\faccess_token\x18\x03 \x01(\tR\vaccessToken\x12&\n" +
+	"\x0fexpires_at_unix\x18\x04 \x01(\x03R\rexpiresAtUnix\"*\n" +
 	"\x0eLogoutResponse\x12\x18\n" +
 	"\asuccess\x18\x01 \x01(\bR\asuccess\"T\n" +
 	"\x0fUserInfoRequest\x12\x19\n" +
@@ -3773,13 +3892,14 @@ const file_Proto_steam_bridge_proto_rawDesc = "" +
 	"\rTOKEN_EXPIRED\x10\x03\x12\x14\n" +
 	"\x10ACCOUNT_DISABLED\x10\x04\x12\n" +
 	"\n" +
-	"\x06KICKED\x10\x052\xff\x03\n" +
+	"\x06KICKED\x10\x052\xdd\x04\n" +
 	"\x10SteamAuthService\x12X\n" +
 	"\x14LoginWithCredentials\x12$.steambridge.CredentialsLoginRequest\x1a\x1a.steambridge.LoginResponse\x12S\n" +
 	"\x13ContinueAuthSession\x12 .steambridge.ContinueAuthRequest\x1a\x1a.steambridge.LoginResponse\x12H\n" +
 	"\vLoginWithQR\x12\x1b.steambridge.QRLoginRequest\x1a\x1c.steambridge.QRLoginResponse\x12P\n" +
 	"\rGetAuthStatus\x12\x1e.steambridge.AuthStatusRequest\x1a\x1f.steambridge.AuthStatusResponse\x12]\n" +
-	"\x18ReAuthenticateWithTokens\x12\x1f.steambridge.TokenReAuthRequest\x1a .steambridge.TokenReAuthResponse\x12A\n" +
+	"\x18ReAuthenticateWithTokens\x12\x1f.steambridge.TokenReAuthRequest\x1a .steambridge.TokenReAuthResponse\x12\\\n" +
+	"\x0fMintAccessToken\x12#.steambridge.MintAccessTokenRequest\x1a$.steambridge.MintAccessTokenResponse\x12A\n" +
 	"\x06Logout\x12\x1a.steambridge.LogoutRequest\x1a\x1b.steambridge.LogoutResponse2\xe6\x02\n" +
 	"\x10SteamUserService\x12J\n" +
 	"\vGetUserInfo\x12\x1c.steambridge.UserInfoRequest\x1a\x1d.steambridge.UserInfoResponse\x12S\n" +
@@ -3817,7 +3937,7 @@ func file_Proto_steam_bridge_proto_rawDescGZIP() []byte {
 }
 
 var file_Proto_steam_bridge_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_Proto_steam_bridge_proto_msgTypes = make([]protoimpl.MessageInfo, 49)
+var file_Proto_steam_bridge_proto_msgTypes = make([]protoimpl.MessageInfo, 51)
 var file_Proto_steam_bridge_proto_goTypes = []any{
 	(PersonaState)(0),                   // 0: steambridge.PersonaState
 	(FriendRelationship)(0),             // 1: steambridge.FriendRelationship
@@ -3834,114 +3954,118 @@ var file_Proto_steam_bridge_proto_goTypes = []any{
 	(*LogoutRequest)(nil),               // 12: steambridge.LogoutRequest
 	(*TokenReAuthRequest)(nil),          // 13: steambridge.TokenReAuthRequest
 	(*TokenReAuthResponse)(nil),         // 14: steambridge.TokenReAuthResponse
-	(*LogoutResponse)(nil),              // 15: steambridge.LogoutResponse
-	(*UserInfoRequest)(nil),             // 16: steambridge.UserInfoRequest
-	(*UserInfoResponse)(nil),            // 17: steambridge.UserInfoResponse
-	(*UserInfo)(nil),                    // 18: steambridge.UserInfo
-	(*FriendsListRequest)(nil),          // 19: steambridge.FriendsListRequest
-	(*FriendsListResponse)(nil),         // 20: steambridge.FriendsListResponse
-	(*Friend)(nil),                      // 21: steambridge.Friend
-	(*UserStatusRequest)(nil),           // 22: steambridge.UserStatusRequest
-	(*UserStatusResponse)(nil),          // 23: steambridge.UserStatusResponse
-	(*ResolveVanityURLRequest)(nil),     // 24: steambridge.ResolveVanityURLRequest
-	(*ResolveVanityURLResponse)(nil),    // 25: steambridge.ResolveVanityURLResponse
-	(*SendMessageRequest)(nil),          // 26: steambridge.SendMessageRequest
-	(*SendMessageResponse)(nil),         // 27: steambridge.SendMessageResponse
-	(*MessageSubscriptionRequest)(nil),  // 28: steambridge.MessageSubscriptionRequest
-	(*MessageEvent)(nil),                // 29: steambridge.MessageEvent
-	(*TypingNotificationRequest)(nil),   // 30: steambridge.TypingNotificationRequest
-	(*TypingNotificationResponse)(nil),  // 31: steambridge.TypingNotificationResponse
-	(*UploadImageRequest)(nil),          // 32: steambridge.UploadImageRequest
-	(*UploadImageResponse)(nil),         // 33: steambridge.UploadImageResponse
-	(*DownloadMediaRequest)(nil),        // 34: steambridge.DownloadMediaRequest
-	(*DownloadMediaResponse)(nil),       // 35: steambridge.DownloadMediaResponse
-	(*GetUserAvatarDataRequest)(nil),    // 36: steambridge.GetUserAvatarDataRequest
-	(*GetUserAvatarDataResponse)(nil),   // 37: steambridge.GetUserAvatarDataResponse
-	(*ChatMessageHistoryRequest)(nil),   // 38: steambridge.ChatMessageHistoryRequest
-	(*ChatMessageHistoryResponse)(nil),  // 39: steambridge.ChatMessageHistoryResponse
-	(*ChatHistoryMessage)(nil),          // 40: steambridge.ChatHistoryMessage
-	(*GetAppInfoRequest)(nil),           // 41: steambridge.GetAppInfoRequest
-	(*GetAppInfoResponse)(nil),          // 42: steambridge.GetAppInfoResponse
-	(*GetGroupsRequest)(nil),            // 43: steambridge.GetGroupsRequest
-	(*GetGroupsResponse)(nil),           // 44: steambridge.GetGroupsResponse
-	(*ChatGroup)(nil),                   // 45: steambridge.ChatGroup
-	(*ChatChannel)(nil),                 // 46: steambridge.ChatChannel
-	(*SessionSubscriptionRequest)(nil),  // 47: steambridge.SessionSubscriptionRequest
-	(*SessionEvent)(nil),                // 48: steambridge.SessionEvent
-	(*SetPersonaStateRequest)(nil),      // 49: steambridge.SetPersonaStateRequest
-	(*SetPersonaStateResponse)(nil),     // 50: steambridge.SetPersonaStateResponse
-	(*PresenceSubscriptionRequest)(nil), // 51: steambridge.PresenceSubscriptionRequest
-	(*PresenceEvent)(nil),               // 52: steambridge.PresenceEvent
-	nil,                                 // 53: steambridge.PresenceEvent.RichPresenceTokensEntry
+	(*MintAccessTokenRequest)(nil),      // 15: steambridge.MintAccessTokenRequest
+	(*MintAccessTokenResponse)(nil),     // 16: steambridge.MintAccessTokenResponse
+	(*LogoutResponse)(nil),              // 17: steambridge.LogoutResponse
+	(*UserInfoRequest)(nil),             // 18: steambridge.UserInfoRequest
+	(*UserInfoResponse)(nil),            // 19: steambridge.UserInfoResponse
+	(*UserInfo)(nil),                    // 20: steambridge.UserInfo
+	(*FriendsListRequest)(nil),          // 21: steambridge.FriendsListRequest
+	(*FriendsListResponse)(nil),         // 22: steambridge.FriendsListResponse
+	(*Friend)(nil),                      // 23: steambridge.Friend
+	(*UserStatusRequest)(nil),           // 24: steambridge.UserStatusRequest
+	(*UserStatusResponse)(nil),          // 25: steambridge.UserStatusResponse
+	(*ResolveVanityURLRequest)(nil),     // 26: steambridge.ResolveVanityURLRequest
+	(*ResolveVanityURLResponse)(nil),    // 27: steambridge.ResolveVanityURLResponse
+	(*SendMessageRequest)(nil),          // 28: steambridge.SendMessageRequest
+	(*SendMessageResponse)(nil),         // 29: steambridge.SendMessageResponse
+	(*MessageSubscriptionRequest)(nil),  // 30: steambridge.MessageSubscriptionRequest
+	(*MessageEvent)(nil),                // 31: steambridge.MessageEvent
+	(*TypingNotificationRequest)(nil),   // 32: steambridge.TypingNotificationRequest
+	(*TypingNotificationResponse)(nil),  // 33: steambridge.TypingNotificationResponse
+	(*UploadImageRequest)(nil),          // 34: steambridge.UploadImageRequest
+	(*UploadImageResponse)(nil),         // 35: steambridge.UploadImageResponse
+	(*DownloadMediaRequest)(nil),        // 36: steambridge.DownloadMediaRequest
+	(*DownloadMediaResponse)(nil),       // 37: steambridge.DownloadMediaResponse
+	(*GetUserAvatarDataRequest)(nil),    // 38: steambridge.GetUserAvatarDataRequest
+	(*GetUserAvatarDataResponse)(nil),   // 39: steambridge.GetUserAvatarDataResponse
+	(*ChatMessageHistoryRequest)(nil),   // 40: steambridge.ChatMessageHistoryRequest
+	(*ChatMessageHistoryResponse)(nil),  // 41: steambridge.ChatMessageHistoryResponse
+	(*ChatHistoryMessage)(nil),          // 42: steambridge.ChatHistoryMessage
+	(*GetAppInfoRequest)(nil),           // 43: steambridge.GetAppInfoRequest
+	(*GetAppInfoResponse)(nil),          // 44: steambridge.GetAppInfoResponse
+	(*GetGroupsRequest)(nil),            // 45: steambridge.GetGroupsRequest
+	(*GetGroupsResponse)(nil),           // 46: steambridge.GetGroupsResponse
+	(*ChatGroup)(nil),                   // 47: steambridge.ChatGroup
+	(*ChatChannel)(nil),                 // 48: steambridge.ChatChannel
+	(*SessionSubscriptionRequest)(nil),  // 49: steambridge.SessionSubscriptionRequest
+	(*SessionEvent)(nil),                // 50: steambridge.SessionEvent
+	(*SetPersonaStateRequest)(nil),      // 51: steambridge.SetPersonaStateRequest
+	(*SetPersonaStateResponse)(nil),     // 52: steambridge.SetPersonaStateResponse
+	(*PresenceSubscriptionRequest)(nil), // 53: steambridge.PresenceSubscriptionRequest
+	(*PresenceEvent)(nil),               // 54: steambridge.PresenceEvent
+	nil,                                 // 55: steambridge.PresenceEvent.RichPresenceTokensEntry
 }
 var file_Proto_steam_bridge_proto_depIdxs = []int32{
-	18, // 0: steambridge.LoginResponse.user_info:type_name -> steambridge.UserInfo
+	20, // 0: steambridge.LoginResponse.user_info:type_name -> steambridge.UserInfo
 	4,  // 1: steambridge.AuthStatusResponse.state:type_name -> steambridge.AuthStatusResponse.AuthState
-	18, // 2: steambridge.AuthStatusResponse.user_info:type_name -> steambridge.UserInfo
+	20, // 2: steambridge.AuthStatusResponse.user_info:type_name -> steambridge.UserInfo
 	4,  // 3: steambridge.TokenReAuthResponse.state:type_name -> steambridge.AuthStatusResponse.AuthState
-	18, // 4: steambridge.TokenReAuthResponse.user_info:type_name -> steambridge.UserInfo
-	18, // 5: steambridge.UserInfoResponse.user_info:type_name -> steambridge.UserInfo
+	20, // 4: steambridge.TokenReAuthResponse.user_info:type_name -> steambridge.UserInfo
+	20, // 5: steambridge.UserInfoResponse.user_info:type_name -> steambridge.UserInfo
 	0,  // 6: steambridge.UserInfo.status:type_name -> steambridge.PersonaState
-	21, // 7: steambridge.FriendsListResponse.friends:type_name -> steambridge.Friend
+	23, // 7: steambridge.FriendsListResponse.friends:type_name -> steambridge.Friend
 	0,  // 8: steambridge.Friend.status:type_name -> steambridge.PersonaState
 	1,  // 9: steambridge.Friend.relationship:type_name -> steambridge.FriendRelationship
 	0,  // 10: steambridge.UserStatusResponse.status:type_name -> steambridge.PersonaState
 	2,  // 11: steambridge.SendMessageRequest.message_type:type_name -> steambridge.MessageType
 	2,  // 12: steambridge.MessageEvent.message_type:type_name -> steambridge.MessageType
-	40, // 13: steambridge.ChatMessageHistoryResponse.messages:type_name -> steambridge.ChatHistoryMessage
+	42, // 13: steambridge.ChatMessageHistoryResponse.messages:type_name -> steambridge.ChatHistoryMessage
 	2,  // 14: steambridge.ChatHistoryMessage.message_type:type_name -> steambridge.MessageType
-	45, // 15: steambridge.GetGroupsResponse.groups:type_name -> steambridge.ChatGroup
-	46, // 16: steambridge.ChatGroup.channels:type_name -> steambridge.ChatChannel
+	47, // 15: steambridge.GetGroupsResponse.groups:type_name -> steambridge.ChatGroup
+	48, // 16: steambridge.ChatGroup.channels:type_name -> steambridge.ChatChannel
 	3,  // 17: steambridge.SessionEvent.event_type:type_name -> steambridge.SessionEventType
 	0,  // 18: steambridge.SetPersonaStateRequest.state:type_name -> steambridge.PersonaState
 	0,  // 19: steambridge.PresenceEvent.status:type_name -> steambridge.PersonaState
-	53, // 20: steambridge.PresenceEvent.rich_presence_tokens:type_name -> steambridge.PresenceEvent.RichPresenceTokensEntry
+	55, // 20: steambridge.PresenceEvent.rich_presence_tokens:type_name -> steambridge.PresenceEvent.RichPresenceTokensEntry
 	5,  // 21: steambridge.SteamAuthService.LoginWithCredentials:input_type -> steambridge.CredentialsLoginRequest
 	9,  // 22: steambridge.SteamAuthService.ContinueAuthSession:input_type -> steambridge.ContinueAuthRequest
 	6,  // 23: steambridge.SteamAuthService.LoginWithQR:input_type -> steambridge.QRLoginRequest
 	10, // 24: steambridge.SteamAuthService.GetAuthStatus:input_type -> steambridge.AuthStatusRequest
 	13, // 25: steambridge.SteamAuthService.ReAuthenticateWithTokens:input_type -> steambridge.TokenReAuthRequest
-	12, // 26: steambridge.SteamAuthService.Logout:input_type -> steambridge.LogoutRequest
-	16, // 27: steambridge.SteamUserService.GetUserInfo:input_type -> steambridge.UserInfoRequest
-	19, // 28: steambridge.SteamUserService.GetFriendsList:input_type -> steambridge.FriendsListRequest
-	22, // 29: steambridge.SteamUserService.GetUserStatus:input_type -> steambridge.UserStatusRequest
-	24, // 30: steambridge.SteamUserService.ResolveVanityURL:input_type -> steambridge.ResolveVanityURLRequest
-	26, // 31: steambridge.SteamMessagingService.SendMessage:input_type -> steambridge.SendMessageRequest
-	28, // 32: steambridge.SteamMessagingService.SubscribeToMessages:input_type -> steambridge.MessageSubscriptionRequest
-	30, // 33: steambridge.SteamMessagingService.SendTypingNotification:input_type -> steambridge.TypingNotificationRequest
-	32, // 34: steambridge.SteamMessagingService.UploadImageToSteam:input_type -> steambridge.UploadImageRequest
-	34, // 35: steambridge.SteamMessagingService.DownloadMediaFromSteam:input_type -> steambridge.DownloadMediaRequest
-	36, // 36: steambridge.SteamMessagingService.GetUserAvatarData:input_type -> steambridge.GetUserAvatarDataRequest
-	38, // 37: steambridge.SteamMessagingService.GetChatMessageHistory:input_type -> steambridge.ChatMessageHistoryRequest
-	41, // 38: steambridge.SteamMessagingService.GetAppInfo:input_type -> steambridge.GetAppInfoRequest
-	47, // 39: steambridge.SteamSessionService.SubscribeToSessionEvents:input_type -> steambridge.SessionSubscriptionRequest
-	49, // 40: steambridge.SteamPresenceService.SetPersonaState:input_type -> steambridge.SetPersonaStateRequest
-	51, // 41: steambridge.SteamPresenceService.SubscribeToPresence:input_type -> steambridge.PresenceSubscriptionRequest
-	43, // 42: steambridge.SteamGroupService.GetMyChatRoomGroups:input_type -> steambridge.GetGroupsRequest
-	8,  // 43: steambridge.SteamAuthService.LoginWithCredentials:output_type -> steambridge.LoginResponse
-	8,  // 44: steambridge.SteamAuthService.ContinueAuthSession:output_type -> steambridge.LoginResponse
-	7,  // 45: steambridge.SteamAuthService.LoginWithQR:output_type -> steambridge.QRLoginResponse
-	11, // 46: steambridge.SteamAuthService.GetAuthStatus:output_type -> steambridge.AuthStatusResponse
-	14, // 47: steambridge.SteamAuthService.ReAuthenticateWithTokens:output_type -> steambridge.TokenReAuthResponse
-	15, // 48: steambridge.SteamAuthService.Logout:output_type -> steambridge.LogoutResponse
-	17, // 49: steambridge.SteamUserService.GetUserInfo:output_type -> steambridge.UserInfoResponse
-	20, // 50: steambridge.SteamUserService.GetFriendsList:output_type -> steambridge.FriendsListResponse
-	23, // 51: steambridge.SteamUserService.GetUserStatus:output_type -> steambridge.UserStatusResponse
-	25, // 52: steambridge.SteamUserService.ResolveVanityURL:output_type -> steambridge.ResolveVanityURLResponse
-	27, // 53: steambridge.SteamMessagingService.SendMessage:output_type -> steambridge.SendMessageResponse
-	29, // 54: steambridge.SteamMessagingService.SubscribeToMessages:output_type -> steambridge.MessageEvent
-	31, // 55: steambridge.SteamMessagingService.SendTypingNotification:output_type -> steambridge.TypingNotificationResponse
-	33, // 56: steambridge.SteamMessagingService.UploadImageToSteam:output_type -> steambridge.UploadImageResponse
-	35, // 57: steambridge.SteamMessagingService.DownloadMediaFromSteam:output_type -> steambridge.DownloadMediaResponse
-	37, // 58: steambridge.SteamMessagingService.GetUserAvatarData:output_type -> steambridge.GetUserAvatarDataResponse
-	39, // 59: steambridge.SteamMessagingService.GetChatMessageHistory:output_type -> steambridge.ChatMessageHistoryResponse
-	42, // 60: steambridge.SteamMessagingService.GetAppInfo:output_type -> steambridge.GetAppInfoResponse
-	48, // 61: steambridge.SteamSessionService.SubscribeToSessionEvents:output_type -> steambridge.SessionEvent
-	50, // 62: steambridge.SteamPresenceService.SetPersonaState:output_type -> steambridge.SetPersonaStateResponse
-	52, // 63: steambridge.SteamPresenceService.SubscribeToPresence:output_type -> steambridge.PresenceEvent
-	44, // 64: steambridge.SteamGroupService.GetMyChatRoomGroups:output_type -> steambridge.GetGroupsResponse
-	43, // [43:65] is the sub-list for method output_type
-	21, // [21:43] is the sub-list for method input_type
+	15, // 26: steambridge.SteamAuthService.MintAccessToken:input_type -> steambridge.MintAccessTokenRequest
+	12, // 27: steambridge.SteamAuthService.Logout:input_type -> steambridge.LogoutRequest
+	18, // 28: steambridge.SteamUserService.GetUserInfo:input_type -> steambridge.UserInfoRequest
+	21, // 29: steambridge.SteamUserService.GetFriendsList:input_type -> steambridge.FriendsListRequest
+	24, // 30: steambridge.SteamUserService.GetUserStatus:input_type -> steambridge.UserStatusRequest
+	26, // 31: steambridge.SteamUserService.ResolveVanityURL:input_type -> steambridge.ResolveVanityURLRequest
+	28, // 32: steambridge.SteamMessagingService.SendMessage:input_type -> steambridge.SendMessageRequest
+	30, // 33: steambridge.SteamMessagingService.SubscribeToMessages:input_type -> steambridge.MessageSubscriptionRequest
+	32, // 34: steambridge.SteamMessagingService.SendTypingNotification:input_type -> steambridge.TypingNotificationRequest
+	34, // 35: steambridge.SteamMessagingService.UploadImageToSteam:input_type -> steambridge.UploadImageRequest
+	36, // 36: steambridge.SteamMessagingService.DownloadMediaFromSteam:input_type -> steambridge.DownloadMediaRequest
+	38, // 37: steambridge.SteamMessagingService.GetUserAvatarData:input_type -> steambridge.GetUserAvatarDataRequest
+	40, // 38: steambridge.SteamMessagingService.GetChatMessageHistory:input_type -> steambridge.ChatMessageHistoryRequest
+	43, // 39: steambridge.SteamMessagingService.GetAppInfo:input_type -> steambridge.GetAppInfoRequest
+	49, // 40: steambridge.SteamSessionService.SubscribeToSessionEvents:input_type -> steambridge.SessionSubscriptionRequest
+	51, // 41: steambridge.SteamPresenceService.SetPersonaState:input_type -> steambridge.SetPersonaStateRequest
+	53, // 42: steambridge.SteamPresenceService.SubscribeToPresence:input_type -> steambridge.PresenceSubscriptionRequest
+	45, // 43: steambridge.SteamGroupService.GetMyChatRoomGroups:input_type -> steambridge.GetGroupsRequest
+	8,  // 44: steambridge.SteamAuthService.LoginWithCredentials:output_type -> steambridge.LoginResponse
+	8,  // 45: steambridge.SteamAuthService.ContinueAuthSession:output_type -> steambridge.LoginResponse
+	7,  // 46: steambridge.SteamAuthService.LoginWithQR:output_type -> steambridge.QRLoginResponse
+	11, // 47: steambridge.SteamAuthService.GetAuthStatus:output_type -> steambridge.AuthStatusResponse
+	14, // 48: steambridge.SteamAuthService.ReAuthenticateWithTokens:output_type -> steambridge.TokenReAuthResponse
+	16, // 49: steambridge.SteamAuthService.MintAccessToken:output_type -> steambridge.MintAccessTokenResponse
+	17, // 50: steambridge.SteamAuthService.Logout:output_type -> steambridge.LogoutResponse
+	19, // 51: steambridge.SteamUserService.GetUserInfo:output_type -> steambridge.UserInfoResponse
+	22, // 52: steambridge.SteamUserService.GetFriendsList:output_type -> steambridge.FriendsListResponse
+	25, // 53: steambridge.SteamUserService.GetUserStatus:output_type -> steambridge.UserStatusResponse
+	27, // 54: steambridge.SteamUserService.ResolveVanityURL:output_type -> steambridge.ResolveVanityURLResponse
+	29, // 55: steambridge.SteamMessagingService.SendMessage:output_type -> steambridge.SendMessageResponse
+	31, // 56: steambridge.SteamMessagingService.SubscribeToMessages:output_type -> steambridge.MessageEvent
+	33, // 57: steambridge.SteamMessagingService.SendTypingNotification:output_type -> steambridge.TypingNotificationResponse
+	35, // 58: steambridge.SteamMessagingService.UploadImageToSteam:output_type -> steambridge.UploadImageResponse
+	37, // 59: steambridge.SteamMessagingService.DownloadMediaFromSteam:output_type -> steambridge.DownloadMediaResponse
+	39, // 60: steambridge.SteamMessagingService.GetUserAvatarData:output_type -> steambridge.GetUserAvatarDataResponse
+	41, // 61: steambridge.SteamMessagingService.GetChatMessageHistory:output_type -> steambridge.ChatMessageHistoryResponse
+	44, // 62: steambridge.SteamMessagingService.GetAppInfo:output_type -> steambridge.GetAppInfoResponse
+	50, // 63: steambridge.SteamSessionService.SubscribeToSessionEvents:output_type -> steambridge.SessionEvent
+	52, // 64: steambridge.SteamPresenceService.SetPersonaState:output_type -> steambridge.SetPersonaStateResponse
+	54, // 65: steambridge.SteamPresenceService.SubscribeToPresence:output_type -> steambridge.PresenceEvent
+	46, // 66: steambridge.SteamGroupService.GetMyChatRoomGroups:output_type -> steambridge.GetGroupsResponse
+	44, // [44:67] is the sub-list for method output_type
+	21, // [21:44] is the sub-list for method input_type
 	21, // [21:21] is the sub-list for extension type_name
 	21, // [21:21] is the sub-list for extension extendee
 	0,  // [0:21] is the sub-list for field type_name
@@ -3958,7 +4082,7 @@ func file_Proto_steam_bridge_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_Proto_steam_bridge_proto_rawDesc), len(file_Proto_steam_bridge_proto_rawDesc)),
 			NumEnums:      5,
-			NumMessages:   49,
+			NumMessages:   51,
 			NumExtensions: 0,
 			NumServices:   6,
 		},

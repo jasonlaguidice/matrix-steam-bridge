@@ -225,6 +225,13 @@ type SteamClient struct {
 	// Emote image cache: CDN URL → mxc:// URI (in-process, resets on restart)
 	emoteCache sync.Map
 
+	// Web image uploader for Matrix→Steam image sends (mediaupload.go), plus
+	// the expectation registry correlating its server-posted echoes with the
+	// originating Matrix events (uploadexpectations.go). Per-login, in-memory;
+	// wired by initUploadFlow at client construction.
+	uploader           *ImageUploader
+	uploadExpectations *uploadExpectations
+
 	// Game-invite expiry tracking (live incoming invites only - see inviteexpiry.go).
 	// pendingInvites is keyed by the invite message's networkid.MessageID for direct
 	// removal; friendPresence is the last-known live presence per friend SteamID, used
@@ -409,6 +416,8 @@ func (sc *SteamConnector) GetCapabilities() *bridgev2.NetworkGeneralCapabilities
 	return &bridgev2.NetworkGeneralCapabilities{
 		DisappearingMessages: false,
 		AggressiveUpdateInfo: true,
+
+		OutgoingMessageTimeouts: uploadOutgoingTimeouts(),
 	}
 }
 
@@ -523,6 +532,7 @@ func (sc *SteamConnector) LoadUserLogin(ctx context.Context, login *bridgev2.Use
 	// after login, so we need to do this ourselves, following the pattern used by
 	// other mautrix bridges like Signal and WhatsApp
 	if client, ok := login.Client.(*SteamClient); ok {
+		client.initUploadFlow()
 		// Check if already connecting/connected to prevent duplicate connections
 		client.stateMutex.RLock()
 		alreadyConnecting := client.isConnecting || client.isConnected
@@ -549,13 +559,24 @@ func (sc *SteamClient) GetCapabilities(ctx context.Context, portal *bridgev2.Por
 		File: event.FileFeatureMap{
 			event.MsgImage: &event.FileFeatures{
 				MimeTypes: map[string]event.CapabilitySupportLevel{
-					"image/jpeg": event.CapLevelFullySupported, // Steam uploads to steamusercontent.com
-					"image/png":  event.CapLevelFullySupported, // Steam uploads to steamusercontent.com
-					"image/gif":  event.CapLevelFullySupported, // Steam uploads to steamusercontent.com
-					"image/webp": event.CapLevelFullySupported, // Steam uploads to steamusercontent.com
+					"image/jpeg": event.CapLevelFullySupported, // Steam chat web upload (mediaupload.go)
+					"image/png":  event.CapLevelFullySupported,
+					"image/gif":  event.CapLevelFullySupported,
+					"image/webp": event.CapLevelFullySupported,
+					"image/avif": event.CapLevelFullySupported,
 				},
-				MaxSize: 50 * 1024 * 1024, // Steam's actual image upload limit
+				MaxSize: 30 * 1024 * 1024,             // Steam chat upload limit (GetMaxFileSizeMB() = 30)
 				Caption: event.CapLevelPartialSupport, // Captions not directly supported but can be split to discrete message
+			},
+			event.MsgVideo: &event.FileFeatures{
+				MimeTypes: map[string]event.CapabilitySupportLevel{
+					"video/mp4":  event.CapLevelFullySupported, // Steam chat web upload (mediaupload.go)
+					"video/webm": event.CapLevelFullySupported,
+					"video/mpeg": event.CapLevelFullySupported,
+					"video/ogg":  event.CapLevelFullySupported,
+				},
+				MaxSize: 30 * 1024 * 1024,
+				Caption: event.CapLevelPartialSupport,
 			},
 		},
 		TypingNotifications: true,

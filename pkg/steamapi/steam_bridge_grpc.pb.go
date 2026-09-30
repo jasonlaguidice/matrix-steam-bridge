@@ -24,6 +24,7 @@ const (
 	SteamAuthService_LoginWithQR_FullMethodName              = "/steambridge.SteamAuthService/LoginWithQR"
 	SteamAuthService_GetAuthStatus_FullMethodName            = "/steambridge.SteamAuthService/GetAuthStatus"
 	SteamAuthService_ReAuthenticateWithTokens_FullMethodName = "/steambridge.SteamAuthService/ReAuthenticateWithTokens"
+	SteamAuthService_MintAccessToken_FullMethodName          = "/steambridge.SteamAuthService/MintAccessToken"
 	SteamAuthService_Logout_FullMethodName                   = "/steambridge.SteamAuthService/Logout"
 )
 
@@ -38,6 +39,7 @@ type SteamAuthServiceClient interface {
 	LoginWithQR(ctx context.Context, in *QRLoginRequest, opts ...grpc.CallOption) (*QRLoginResponse, error)
 	GetAuthStatus(ctx context.Context, in *AuthStatusRequest, opts ...grpc.CallOption) (*AuthStatusResponse, error)
 	ReAuthenticateWithTokens(ctx context.Context, in *TokenReAuthRequest, opts ...grpc.CallOption) (*TokenReAuthResponse, error)
+	MintAccessToken(ctx context.Context, in *MintAccessTokenRequest, opts ...grpc.CallOption) (*MintAccessTokenResponse, error)
 	Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*LogoutResponse, error)
 }
 
@@ -99,6 +101,16 @@ func (c *steamAuthServiceClient) ReAuthenticateWithTokens(ctx context.Context, i
 	return out, nil
 }
 
+func (c *steamAuthServiceClient) MintAccessToken(ctx context.Context, in *MintAccessTokenRequest, opts ...grpc.CallOption) (*MintAccessTokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MintAccessTokenResponse)
+	err := c.cc.Invoke(ctx, SteamAuthService_MintAccessToken_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *steamAuthServiceClient) Logout(ctx context.Context, in *LogoutRequest, opts ...grpc.CallOption) (*LogoutResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(LogoutResponse)
@@ -120,6 +132,7 @@ type SteamAuthServiceServer interface {
 	LoginWithQR(context.Context, *QRLoginRequest) (*QRLoginResponse, error)
 	GetAuthStatus(context.Context, *AuthStatusRequest) (*AuthStatusResponse, error)
 	ReAuthenticateWithTokens(context.Context, *TokenReAuthRequest) (*TokenReAuthResponse, error)
+	MintAccessToken(context.Context, *MintAccessTokenRequest) (*MintAccessTokenResponse, error)
 	Logout(context.Context, *LogoutRequest) (*LogoutResponse, error)
 	mustEmbedUnimplementedSteamAuthServiceServer()
 }
@@ -145,6 +158,9 @@ func (UnimplementedSteamAuthServiceServer) GetAuthStatus(context.Context, *AuthS
 }
 func (UnimplementedSteamAuthServiceServer) ReAuthenticateWithTokens(context.Context, *TokenReAuthRequest) (*TokenReAuthResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ReAuthenticateWithTokens not implemented")
+}
+func (UnimplementedSteamAuthServiceServer) MintAccessToken(context.Context, *MintAccessTokenRequest) (*MintAccessTokenResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MintAccessToken not implemented")
 }
 func (UnimplementedSteamAuthServiceServer) Logout(context.Context, *LogoutRequest) (*LogoutResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Logout not implemented")
@@ -260,6 +276,24 @@ func _SteamAuthService_ReAuthenticateWithTokens_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SteamAuthService_MintAccessToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MintAccessTokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SteamAuthServiceServer).MintAccessToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SteamAuthService_MintAccessToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SteamAuthServiceServer).MintAccessToken(ctx, req.(*MintAccessTokenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _SteamAuthService_Logout_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(LogoutRequest)
 	if err := dec(in); err != nil {
@@ -304,6 +338,10 @@ var SteamAuthService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReAuthenticateWithTokens",
 			Handler:    _SteamAuthService_ReAuthenticateWithTokens_Handler,
+		},
+		{
+			MethodName: "MintAccessToken",
+			Handler:    _SteamAuthService_MintAccessToken_Handler,
 		},
 		{
 			MethodName: "Logout",

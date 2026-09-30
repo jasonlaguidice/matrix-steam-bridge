@@ -213,6 +213,35 @@ public class SteamAuthService : Proto.SteamAuthService.SteamAuthServiceBase
         }
     }
 
+    public override async Task<MintAccessTokenResponse> MintAccessToken(
+        MintAccessTokenRequest request,
+        ServerCallContext context)
+    {
+        _logger.LogInformation("Received access token mint request for steam_id: {SteamId}", request.SteamId);
+
+        try
+        {
+            var result = await _authService.MintAccessTokenAsync(request.SteamId);
+
+            return new MintAccessTokenResponse
+            {
+                Success = result.Success,
+                ErrorMessage = result.ErrorMessage ?? string.Empty,
+                AccessToken = result.AccessToken ?? string.Empty,
+                ExpiresAtUnix = result.ExpiresAtUnix
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing access token mint request");
+            return new MintAccessTokenResponse
+            {
+                Success = false,
+                ErrorMessage = $"Internal error: {ex.Message}"
+            };
+        }
+    }
+
     public override async Task<LogoutResponse> Logout(
         LogoutRequest request, 
         ServerCallContext context)

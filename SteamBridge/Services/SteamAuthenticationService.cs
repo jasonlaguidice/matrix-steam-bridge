@@ -2,6 +2,7 @@ using SteamKit2;
 using SteamKit2.Authentication;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
+using System.Text.Json;
 using System.Threading;
 
 namespace SteamBridge.Services;
@@ -743,6 +744,108 @@ public class SteamAuthenticationService
         }
     }
 
+    public async Task<MintAccessTokenResult> MintAccessTokenAsync(ulong steamId)
+    {
+        try
+        {
+            var manager = _registry.Get(steamId.ToString());
+            if (manager == null || !manager.IsLoggedOn)
+            {
+                _logger.LogWarning("Access token mint requested for steam_id: {SteamId} but no logged-on session exists", steamId);
+                return new MintAccessTokenResult
+                {
+                    Success = false,
+                    ErrorMessage = "User is not logged in"
+                };
+            }
+
+            // Minting always uses the refresh token this manager captured at LogOn - never
+            // caller-supplied tokens, and never the (possibly stale) access token.
+            var refreshToken = manager.CurrentRefreshToken;
+            if (string.IsNullOrEmpty(refreshToken))
+            {
+                _logger.LogWarning("No refresh token available for steam_id: {SteamId}", steamId);
+                return new MintAccessTokenResult
+                {
+                    Success = false,
+                    ErrorMessage = "No refresh token is available for this user"
+                };
+            }
+
+            // allowRenewal=false: renewal would rotate the refresh token and invalidate the one
+            // the bridge still holds for re-authentication. SteamKit's own internal renewal is
+            // non-rotating, so the stored refresh token stays valid regardless.
+            var minted = await manager.SteamClient.Authentication.GenerateAccessTokenForAppAsync(
+                new SteamID(steamId), refreshToken, false);
+
+            var expiresAtUnix = DecodeAccessTokenExpiryUnix(minted.AccessToken);
+            if (expiresAtUnix == null)
+            {
+                _logger.LogError("Minted access token for steam_id: {SteamId} has no decodable expiry", steamId);
+                return new MintAccessTokenResult
+                {
+                    Success = false,
+                    ErrorMessage = "Minted token expiry could not be decoded"
+                };
+            }
+
+            _logger.LogInformation("Minted fresh access token for steam_id: {SteamId} (expiry: {Expiry})", steamId, expiresAtUnix);
+
+            return new MintAccessTokenResult
+            {
+                Success = true,
+                AccessToken = minted.AccessToken,
+                ExpiresAtUnix = expiresAtUnix.Value
+            };
+        }
+        catch (AuthenticationException authEx)
+        {
+            _logger.LogError("Failed to mint access token for steam_id: {SteamId}: {Message}", steamId, authEx.Message);
+            return new MintAccessTokenResult
+            {
+                Success = false,
+                ErrorMessage = $"Steam rejected the token request: {authEx.Message}"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error minting access token for steam_id: {SteamId}", steamId);
+            return new MintAccessTokenResult
+            {
+                Success = false,
+                ErrorMessage = $"Access token mint failed: {ex.Message}"
+            };
+        }
+    }
+
+    /// <summary>
+    /// Decodes the `exp` claim (Unix seconds) from a Steam access token JWT payload.
+    /// Returns null when the token is not a decodable JWT.
+    /// </summary>
+    private static long? DecodeAccessTokenExpiryUnix(string accessToken)
+    {
+        var parts = accessToken.Split('.');
+        if (parts.Length < 2 || parts[1].Length == 0)
+            return null;
+
+        try
+        {
+            var payload = Convert.FromBase64String(FromBase64Url(parts[1]));
+            using var document = JsonDocument.Parse(payload);
+            return document.RootElement.GetProperty("exp").GetInt64();
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static string FromBase64Url(string value)
+    {
+        var padded = value.Replace('-', '+').Replace('_', '/');
+        return padded + new string('=', (4 - padded.Length % 4) % 4);
+    }
+
     public Task<bool> LogoutAsync(ulong steamId)
     {
         _logger.LogInformation("Logging out Steam session for steam_id: {SteamId}", steamId);
@@ -1127,6 +1230,14 @@ public class TokenReAuthResult
     public string? NewAccessToken { get; set; }
     public string? NewRefreshToken { get; set; }
     public UserInfo? UserInfo { get; set; }
+}
+
+public class MintAccessTokenResult
+{
+    public bool Success { get; set; }
+    public string? ErrorMessage { get; set; }
+    public string? AccessToken { get; set; }
+    public long ExpiresAtUnix { get; set; }
 }
 
 public class UserInfo

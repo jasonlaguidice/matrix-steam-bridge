@@ -292,6 +292,9 @@ func (slp *SteamLoginPassword) finishLogin(ctx context.Context, resp *steamapi.L
 				pendingInvites: make(map[networkid.MessageID]*pendingInvite),
 				friendPresence: make(map[uint64]*friendPresenceInfo),
 			}
+			if client, ok := login.Client.(*SteamClient); ok {
+				client.initUploadFlow()
+			}
 			return nil
 		},
 	})
@@ -524,6 +527,9 @@ func finishAuthStatusLogin(ctx context.Context, main *SteamConnector, user *brid
 				typingCancels:  make(map[networkid.PortalID]context.CancelFunc),
 				pendingInvites: make(map[networkid.MessageID]*pendingInvite),
 				friendPresence: make(map[uint64]*friendPresenceInfo),
+			}
+			if client, ok := login.Client.(*SteamClient); ok {
+				client.initUploadFlow()
 			}
 			return nil
 		},

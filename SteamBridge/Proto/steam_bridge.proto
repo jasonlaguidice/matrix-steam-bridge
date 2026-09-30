@@ -12,6 +12,7 @@ service SteamAuthService {
   rpc LoginWithQR(QRLoginRequest) returns (QRLoginResponse);
   rpc GetAuthStatus(AuthStatusRequest) returns (AuthStatusResponse);
   rpc ReAuthenticateWithTokens(TokenReAuthRequest) returns (TokenReAuthResponse);
+  rpc MintAccessToken(MintAccessTokenRequest) returns (MintAccessTokenResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
 }
 
@@ -126,6 +127,17 @@ message TokenReAuthResponse {
   string new_access_token = 4; // If token was refreshed
   string new_refresh_token = 5; // If token was refreshed
   UserInfo user_info = 6;
+}
+
+message MintAccessTokenRequest {
+  uint64 steam_id = 1; // Caller's Steam ID for routing to per-user SteamClientManager
+}
+
+message MintAccessTokenResponse {
+  bool success = 1;
+  string error_message = 2;
+  string access_token = 3; // Fresh access token (JWT) minted from the stored refresh token
+  int64 expires_at_unix = 4; // Token expiry as Unix seconds, decoded from the JWT `exp` claim
 }
 
 message LogoutResponse {
