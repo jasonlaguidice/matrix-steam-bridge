@@ -2,10 +2,12 @@ package connector
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -352,12 +354,12 @@ func (sc *SteamClient) handleDMMessage(ctx context.Context, msg *bridgev2.Matrix
 			Bool("content_is_nil", content == nil).
 			Msg("HandleMatrixMessage - Parsed message content")
 
-		if content != nil && content.MsgType == event.MsgImage {
+		if isMediaMessage(content) {
 			sc.br.Log.Debug().
 				Str("msgtype", string(content.MsgType)).
 				Str("url", string(content.URL)).
-				Msg("HandleMatrixMessage - Detected image message, routing to handleImageMessage")
-			return sc.handleImageMessage(ctx, msg, targetSteamID)
+				Msg("HandleMatrixMessage - Detected media message, routing to handleMediaMessage")
+			return sc.handleMediaMessage(ctx, msg, dmMediaTarget(targetSteamID))
 		}
 		return sc.handleTextMessage(ctx, msg, targetSteamID)
 	case event.EventSticker:
@@ -373,6 +375,10 @@ func (sc *SteamClient) handleGroupChannelMessage(ctx context.Context, msg *bridg
 	content := msg.Event.Content.AsMessage()
 	if content == nil {
 		return nil, fmt.Errorf("failed to parse message content")
+	}
+
+	if isMediaMessage(content) {
+		return sc.handleMediaMessage(ctx, msg, groupMediaTarget(chatGroupID, chatID))
 	}
 
 	messageText := content.Body
@@ -394,7 +400,7 @@ func (sc *SteamClient) handleGroupChannelMessage(ctx context.Context, msg *bridg
 		return nil, fmt.Errorf("group message send failed: %s", resp.ErrorMessage)
 	}
 
-	msgID := networkid.MessageID(fmt.Sprintf("%d:%d:%d", chatGroupID, chatID, resp.Timestamp))
+	msgID := steamMessageID(PortalIDTypeChannel, sc.steamID(), resp.Timestamp, resp.Ordinal, steamapi.MessageType_CHAT_MESSAGE)
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
 			ID:        msgID,
@@ -462,7 +468,7 @@ func (sc *SteamClient) handleTextMessage(ctx context.Context, msg *bridgev2.Matr
 
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
-			ID:        networkid.MessageID(fmt.Sprintf("%d:%d:out", targetSteamID, resp.Timestamp)),
+			ID:        steamMessageID(PortalIDTypeDM, sc.steamID(), resp.Timestamp, resp.Ordinal, steamapi.MessageType_CHAT_MESSAGE),
 			MXID:      msg.Event.ID,
 			Timestamp: time.Unix(resp.Timestamp, 0),
 			Metadata:  msgMeta,
@@ -501,7 +507,7 @@ func (sc *SteamClient) handleStickerMessage(ctx context.Context, msg *bridgev2.M
 
 	return &bridgev2.MatrixMessageResponse{
 		DB: &database.Message{
-			ID:        networkid.MessageID(fmt.Sprintf("%d:%d:out", targetSteamID, resp.Timestamp)),
+			ID:        steamMessageID(PortalIDTypeDM, sc.steamID(), resp.Timestamp, resp.Ordinal, steamapi.MessageType_CHAT_MESSAGE),
 			MXID:      msg.Event.ID,
 			Timestamp: time.Unix(resp.Timestamp, 0),
 			Metadata:  msgMeta,
@@ -509,178 +515,329 @@ func (sc *SteamClient) handleStickerMessage(ctx context.Context, msg *bridgev2.M
 	}, nil
 }
 
-// handleImageMessage processes image messages from Matrix and sends them to Steam
-func (sc *SteamClient) handleImageMessage(ctx context.Context, msg *bridgev2.MatrixMessage, targetSteamID uint64) (*bridgev2.MatrixMessageResponse, error) {
-	sc.br.Log.Debug().
-		Str("event_type", msg.Event.Type.String()).
-		Str("event_id", string(msg.Event.ID)).
-		Interface("raw_content", msg.Event.Content.Raw).
-		Msg("Raw Matrix event for image message")
+// isMediaMessage reports whether a Matrix message is an image or video, the two
+// kinds handleMediaMessage uploads.
+func isMediaMessage(content *event.MessageEventContent) bool {
+	return content != nil && (content.MsgType == event.MsgImage || content.MsgType == event.MsgVideo)
+}
 
+// handleMediaMessage processes image and video messages from Matrix, for 1:1
+// chats and group channels alike, and uploads them to
+// Steam through the chat web upload flow (mediaupload.go): the caption, when
+// present, is sent first as a normal chat message, then the file bytes are
+// uploaded. Steam posts the media chat message itself once the commit lands,
+// so no SendMessage is sent for the file; the resulting local echo is
+// correlated back to this Matrix event through the pending-message mechanism
+// (uploadexpectations.go), which re-keys the upload's database row to the
+// Steam message ID instead of duplicating the image.
+func (sc *SteamClient) handleMediaMessage(ctx context.Context, msg *bridgev2.MatrixMessage, target mediaSendTarget) (*bridgev2.MatrixMessageResponse, error) {
 	content := msg.Event.Content.AsMessage()
 	if content == nil {
-		return nil, fmt.Errorf("failed to parse image content")
+		return nil, fmt.Errorf("failed to parse media content")
 	}
 
 	// Extract the media URL - handle both regular and encrypted formats
 	var mediaURL id.ContentURIString
 	if content.URL != "" {
-		// Regular format: url field directly
 		mediaURL = content.URL
 	} else if content.File != nil && content.File.URL != "" {
-		// Encrypted format: file.url field
 		mediaURL = content.File.URL
 	}
+	if mediaURL == "" {
+		return nil, fmt.Errorf("no media URL found in media message (neither url nor file.url present)")
+	}
 
-	// Build log entry with nil-safe field access
-	logEntry := sc.br.Log.Info().
-		Str("image_url", string(content.URL)).
-		Str("resolved_media_url", string(mediaURL)).
+	sc.br.Log.Info().
+		Str("event_id", string(msg.Event.ID)).
+		Str("media_url", string(mediaURL)).
 		Str("mime_type", content.Info.MimeType).
 		Int("size", content.Info.Size).
-		Str("caption", content.Body).
+		Bool("is_encrypted", content.File != nil).
 		Str("msgtype", string(content.MsgType)).
-		Interface("info_object", content.Info).
-		Bool("is_encrypted", content.File != nil)
+		Msg("Processing media message from Matrix")
 
-	// Only add file_url if File is not nil
-	if content.File != nil {
-		logEntry = logEntry.Str("file_url", string(content.File.URL))
-	}
-
-	logEntry.Msg("Processing image message from Matrix")
-
-	// Check if we have a valid media URL
-	if mediaURL == "" {
-		return nil, fmt.Errorf("no media URL found in image message (neither url nor file.url present)")
-	}
-
-	// Parse MXC URL for logging
-	var serverName, mediaID string
-	mxcStr := string(mediaURL)
-	if strings.HasPrefix(mxcStr, "mxc://") {
-		parts := strings.SplitN(mxcStr[6:], "/", 2) // Remove "mxc://" and split
-		if len(parts) == 2 {
-			serverName = parts[0]
-			mediaID = parts[1]
-		}
-	}
-
-	// Log the exact MXC URL that will be passed to GetPublicMediaAddress
-	sc.br.Log.Info().
-		Str("input_mxc_url", string(mediaURL)).
-		Bool("is_encrypted_media", content.File != nil).
-		Str("server_name", serverName).
-		Str("media_id", mediaID).
-		Msg("MXC URL → GetPublicMediaAddress INPUT")
-
-	// Try to use public media if available (preferred approach)
+	// Public-media deployments keep the previous behaviour of handing Steam a
+	// publicly fetchable Matrix URL instead of uploading the image bytes;
+	// GetPublicMediaAddress returns an empty URL when public media is not
+	// enabled in the bridge config (or the URI cannot be made public), which
+	// selects the web upload flow below.
 	if matrixConn, ok := sc.br.Matrix.(bridgev2.MatrixConnectorWithPublicMedia); ok {
+		if publicURL := matrixConn.GetPublicMediaAddress(mediaURL); publicURL != "" {
+			return sc.sendMediaPublicURLMessage(ctx, msg, content, target, publicURL)
+		}
 		sc.br.Log.Debug().
 			Str("media_url", string(mediaURL)).
 			Bool("is_encrypted", content.File != nil).
-			Msg("Matrix connector supports public media interface, attempting to get public URL")
-
-		publicURL := matrixConn.GetPublicMediaAddress(mediaURL)
-
-		sc.br.Log.Info().
-			Str("input_mxc_url", string(mediaURL)).
-			Str("output_public_url", publicURL).
-			Bool("has_public_url", publicURL != "").
-			Bool("is_encrypted_media", content.File != nil).
-			Int("url_length", len(publicURL)).
-			Msg("MXC URL → GetPublicMediaAddress OUTPUT")
-
-		if publicURL != "" {
-			// Log the exact URL that will be sent to Steam
-			sc.br.Log.Info().
-				Str("public_url", publicURL).
-				Str("original_mxc", string(mediaURL)).
-				Msg("Final URL that will be sent to Steam")
-
-			// Send caption as separate message if present and not just the filename
-			var captionResp *steamapi.SendMessageResponse
-			var err error
-			if content.Body != "" && content.Body != content.FileName {
-				sc.br.Log.Debug().
-					Str("caption", content.Body).
-					Str("filename", content.FileName).
-					Msg("Sending image caption as separate message")
-
-				captionResp, err = sc.msgClient.SendMessage(ctx, &steamapi.SendMessageRequest{
-					TargetSteamId: targetSteamID,
-					Message:       content.Body,
-					MessageType:   steamapi.MessageType_CHAT_MESSAGE,
-					CallerSteamId: sc.steamID(),
-				})
-				if err != nil {
-					return nil, fmt.Errorf("failed to send image caption to Steam: %w", err)
-				}
-				if !captionResp.Success {
-					return nil, fmt.Errorf("steam caption message send failed: %s", captionResp.ErrorMessage)
-				}
-			}
-
-			// Send image URL as separate message
-			resp, err := sc.msgClient.SendMessage(ctx, &steamapi.SendMessageRequest{
-				TargetSteamId: targetSteamID,
-				Message:       publicURL,
-				MessageType:   steamapi.MessageType_CHAT_MESSAGE,
-				CallerSteamId: sc.steamID(),
-			})
-			if err != nil {
-				return nil, fmt.Errorf("failed to send image URL to Steam: %w", err)
-			}
-
-			if !resp.Success {
-				return nil, fmt.Errorf("steam image URL send failed: %s", resp.ErrorMessage)
-			}
-
-			msgMeta := &MessageMetadata{
-				SteamMessageType: "IMAGE_PUBLIC_URL",
-				IsEcho:           false,
-				ImageURL:         publicURL,
-			}
-
-			sc.br.Log.Info().
-				Str("sent_public_url", publicURL).
-				Str("source_mxc_url", string(mediaURL)).
-				Int64("timestamp", resp.Timestamp).
-				Bool("was_encrypted", content.File != nil).
-				Msg("Image message sent to Steam successfully")
-
-			return &bridgev2.MatrixMessageResponse{
-				DB: &database.Message{
-					ID:        networkid.MessageID(fmt.Sprintf("%d:%d:out", targetSteamID, resp.Timestamp)),
-					MXID:      msg.Event.ID,
-					Timestamp: time.Unix(resp.Timestamp, 0),
-					Metadata:  msgMeta,
-				},
-			}, nil
-		}
-
-		sc.br.Log.Error().
-			Str("input_mxc_url", string(mediaURL)).
-			Str("empty_public_url", publicURL).
-			Bool("is_encrypted", content.File != nil).
-			Str("server_name", serverName).
-			Str("media_id", mediaID).
-			Msg("GetPublicMediaAddress returned empty URL")
-	} else {
-		sc.br.Log.Error().
-			Str("matrix_connector_type", fmt.Sprintf("%T", sc.br.Matrix)).
-			Msg("Matrix connector does not implement MatrixConnectorWithPublicMedia interface")
+			Msg("Public media disabled or unavailable for this MXC URI; using the Steam web upload flow")
 	}
 
-	// No public media available - Matrix→Steam image sharing not supported
-	// Steam blocks UGC uploads from third-party clients, so we cannot upload images to Steam
-	sc.br.Log.Error().
-		Str("reason", "public_media_unavailable").
-		Str("failed_mxc_url", string(mediaURL)).
-		Bool("was_encrypted", content.File != nil).
-		Msg("Cannot send image to Steam: public media not configured or GetPublicMediaAddress failed")
+	if sc.uploader == nil || sc.uploadExpectations == nil {
+		return nil, fmt.Errorf("media upload flow not initialised")
+	}
 
-	return nil, fmt.Errorf("image sharing to Steam requires public media configuration. Please enable 'public_media.enabled: true' and set 'appservice.public_address' in bridge config")
+	// Download the file bytes; DownloadMedia decrypts E2EE media through
+	// content.File's key and passes plain media through untouched.
+	data, err := sc.br.Bot.DownloadMedia(ctx, mediaURL, content.File)
+	if err != nil {
+		return nil, fmt.Errorf("failed to download media from Matrix: %w", err)
+	}
+
+	// The caption goes first (PROBE.md §8.3): Steam shows messages in the
+	// order they arrive, so the caption must precede the media message the
+	// server posts on commit.
+	if caption := imageMessageCaption(content); caption != "" {
+		sc.br.Log.Debug().Str("caption", caption).Msg("Sending media caption to Steam before the upload")
+		if err := sc.sendMediaCaption(ctx, target, caption); err != nil {
+			return nil, err
+		}
+	}
+
+	// The expectation is registered before the upload starts: Steam posts the
+	// media chat message the moment the commit lands, so its echo can overtake
+	// the commit response. The hash must be of the exact bytes the uploader
+	// PUTs (JPEG APP1 EXIF stripped — prepareUploadPayload), because Steam
+	// echoes that hash into the CDN URL the chat message carries.
+	_, shaUpper := prepareUploadPayload(data)
+	txnID := networkid.TransactionID(string(msg.Event.ID))
+	dbMessage := &database.Message{
+		ID:       syntheticUploadMessageID(shaUpper, msg.Event.ID),
+		SenderID: makeUserID(sc.steamID()),
+		Metadata: &MessageMetadata{
+			SteamMessageType: uploadMessageType(content),
+			IsEcho:           false,
+		},
+	}
+	sc.uploadExpectations.register(msg.Portal.ID, shaUpper, txnID)
+	msg.AddPendingToSave(dbMessage, txnID, sc.handleImageUploadEcho)
+
+	width, height := 0, 0
+	if content.Info != nil && content.Info.Width > 0 && content.Info.Height > 0 {
+		width, height = content.Info.Width, content.Info.Height
+	}
+
+	result, err := sc.uploader.Upload(ctx, UploadRequest{
+		SteamID:  sc.steamID(),
+		Target:   target.upload,
+		Data:     data,
+		FileName: uploadFileNameFor(content),
+		Width:    width,
+		Height:   height,
+	})
+	if err != nil {
+		msg.RemovePending(txnID)
+		return nil, uploadErrorToUserError(err)
+	}
+	if content.MsgType == event.MsgImage {
+		dbMessage.Metadata.(*MessageMetadata).ImageURL = result.URL
+	}
+	// Persist the row now: if the echo never arrives there would otherwise be no
+	// record of this upload and a later backfill would import it again.
+	if err := newUploadRowStore(sc.br.DB.Message).persist(ctx, dbMessage); err != nil {
+		sc.br.Log.Warn().Err(err).Str("mxid", string(dbMessage.MXID)).Msg("Failed to persist the upload row; a lost echo could be re-imported by backfill")
+	}
+	sc.br.Log.Info().
+		Str("cdn_url", result.URL).
+		Str("sha1", result.FileSha).
+		Int64("file_size", result.FileSize).
+		Str("msgtype", string(content.MsgType)).
+		Msg("Steam chat media upload committed; the server posts the media chat message")
+
+	return &bridgev2.MatrixMessageResponse{
+		DB:      dbMessage,
+		Pending: true,
+	}, nil
+}
+
+// sendMediaCaption sends a media caption to the target as a normal chat message.
+func (sc *SteamClient) sendMediaCaption(ctx context.Context, target mediaSendTarget, caption string) error {
+	resp, err := sc.msgClient.SendMessage(ctx, target.textRequest(caption, sc.steamID()))
+	if err != nil {
+		return fmt.Errorf("failed to send media caption to Steam: %w", err)
+	}
+	if !resp.Success {
+		return fmt.Errorf("steam caption message send failed: %s", resp.ErrorMessage)
+	}
+	return nil
+}
+
+// sendMediaPublicURLMessage sends media as its publicly fetchable Matrix URL,
+// the behaviour bridge deployments with public_media enabled keep (the caption,
+// when present, goes first as its own chat message).
+func (sc *SteamClient) sendMediaPublicURLMessage(ctx context.Context, msg *bridgev2.MatrixMessage, content *event.MessageEventContent, target mediaSendTarget, publicURL string) (*bridgev2.MatrixMessageResponse, error) {
+	if caption := imageMessageCaption(content); caption != "" {
+		if err := sc.sendMediaCaption(ctx, target, caption); err != nil {
+			return nil, err
+		}
+	}
+
+	resp, err := sc.msgClient.SendMessage(ctx, target.textRequest(publicURL, sc.steamID()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to send media URL to Steam: %w", err)
+	}
+	if !resp.Success {
+		return nil, fmt.Errorf("steam media URL send failed: %s", resp.ErrorMessage)
+	}
+
+	sc.br.Log.Info().
+		Str("sent_public_url", publicURL).
+		Str("source_mxc_url", string(content.URL)).
+		Int64("timestamp", resp.Timestamp).
+		Bool("was_encrypted", content.File != nil).
+		Str("msgtype", string(content.MsgType)).
+		Msg("Media message sent to Steam as a public Matrix media URL")
+
+	meta := &MessageMetadata{
+		SteamMessageType: "IMAGE_PUBLIC_URL",
+		IsEcho:           false,
+	}
+	if content.MsgType == event.MsgImage {
+		meta.ImageURL = publicURL
+	}
+	return &bridgev2.MatrixMessageResponse{
+		DB: &database.Message{
+			ID:        steamMessageID(target.portalIDType(), sc.steamID(), resp.Timestamp, resp.Ordinal, steamapi.MessageType_CHAT_MESSAGE),
+			MXID:      msg.Event.ID,
+			Timestamp: time.Unix(resp.Timestamp, 0),
+			Metadata:  meta,
+		},
+	}, nil
+}
+
+// uploadMessageType is the SteamMessageType recorded for an uploaded media row.
+func uploadMessageType(content *event.MessageEventContent) string {
+	if content.MsgType == event.MsgVideo {
+		return "VIDEO_UPLOAD"
+	}
+	return "IMAGE_UPLOAD"
+}
+
+// imageMessageCaption returns the caption text for a Matrix image event: the
+// body when it differs from the filename (Matrix clients set the body to the
+// filename for caption-less images), else the formatted body when the plain
+// body is empty.
+func imageMessageCaption(content *event.MessageEventContent) string {
+	if content.Body != "" && content.Body != content.FileName {
+		return content.Body
+	}
+	if content.Body == "" && content.Format == event.FormatHTML && content.FormattedBody != "" {
+		return content.FormattedBody
+	}
+	return ""
+}
+
+// uploadFileNameFor derives the Steam upload filename from a Matrix image or
+// video event: the event's filename when its extension is in the upload
+// allowlist, else a name derived from the event's MIME type, else the original filename
+// (which the uploader's validation rejects with a clear message).
+func uploadFileNameFor(content *event.MessageEventContent) string {
+	name := content.FileName
+	if name != "" && uploadExtensionAllowed(name) {
+		return name
+	}
+	mimeType := ""
+	if content.Info != nil {
+		mimeType = content.Info.MimeType
+	}
+	base := "image"
+	if content.MsgType == event.MsgVideo {
+		base = "video"
+	}
+	if ext := getFileExtensionFromMimeType(mimeType); ext != "" && uploadExtensionAllowed(base+"."+ext) {
+		return base + "." + ext
+	}
+	return name
+}
+
+// uploadExtensionAllowed reports whether fileName's extension is in the upload
+// allowlist (mediaupload.go).
+func uploadExtensionAllowed(fileName string) bool {
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(fileName)), ".")
+	_, ok := uploadExtensionMimes[ext]
+	return ok
+}
+
+// uploadErrorToUserError maps an ImageUploader failure to the user-facing
+// error the bridge reports for the failed Matrix message (bridgev2 turns
+// HandleMatrixMessage errors into a failure notice).
+func uploadErrorToUserError(err error) error {
+	var uploadErr *UploadError
+	if !errors.As(err, &uploadErr) {
+		return err
+	}
+	switch {
+	case uploadErr.IsLimitedAccount():
+		return uploadFailureStatus("Steam limited accounts cannot upload images or videos", event.MessageStatusFail, event.MessageStatusNoPermission)
+	case uploadErr.IsNotLoggedOn():
+		return uploadFailureStatus("Steam rejected the upload because the stored session is no longer logged on — please re-login to the bridge", event.MessageStatusFail, event.MessageStatusNoPermission)
+	case uploadErr.IsTransient():
+		return uploadFailureStatus("Steam upload service timed out, try again", event.MessageStatusRetriable, event.MessageStatusNetworkError)
+	case uploadErr.Stage == StageValidate:
+		// Local pre-check failures already carry a clear message.
+		return uploadFailureStatus(uploadErr.Message, event.MessageStatusFail, event.MessageStatusUnsupported)
+	case uploadErr.Stage == StageAuth:
+		return uploadFailureStatus("failed to obtain a Steam web access token for the upload — please re-login to the bridge", event.MessageStatusFail, event.MessageStatusNoPermission)
+	default:
+		return uploadFailureStatus(fmt.Sprintf("Steam upload failed at %s: %s", uploadErr.Stage, uploadErr.Message), event.MessageStatusRetriable, event.MessageStatusGenericError)
+	}
+}
+
+// uploadFailureStatus builds the bridgev2 message status for a failed upload.
+// A bare error only produces a generic "not sent" mark; the status carries the
+// human-readable reason and asks bridgev2 to post it as a notice in the room.
+func uploadFailureStatus(message string, status event.MessageStatus, reason event.MessageStatusReason) error {
+	return bridgev2.WrapErrorInStatus(errors.New(message)).
+		WithStatus(status).
+		WithErrorReason(reason).
+		WithMessage(message).
+		WithIsCertain(true).
+		WithSendNotice(true)
+}
+
+// handleImageUploadEcho is the RemoteEchoHandler for pending media uploads:
+// the server-posted echo re-keys the upload's database row to the real Steam
+// message ID; saving is left to bridgev2 (returning true).
+func (sc *SteamClient) handleImageUploadEcho(evt bridgev2.RemoteMessage, dbMessage *database.Message) (bool, error) {
+	if err := newUploadRowStore(sc.br.DB.Message).release(sc.br.BackgroundCtx, dbMessage.MXID, evt.GetID()); err != nil {
+		sc.br.Log.Warn().Err(err).Str("mxid", string(dbMessage.MXID)).Msg("Failed to remove the synthetic upload row before re-keying it")
+	}
+	sc.br.Log.Info().
+		Str("remote_id", string(evt.GetID())).
+		Str("mxid", string(dbMessage.MXID)).
+		Msg("Steam echo for uploaded media consumed; database row re-keyed to the Steam message ID")
+	return true, nil
+}
+
+// ugcMediaHashFromMessage extracts the uppercase SHA-1 hash segment of the
+// steamusercontent.com/ugc/<id>/<hash>/ URL detected in a Steam message: an
+// image URL first (images.steamusercontent.com), then a video URL
+// (cdn.steamusercontent.com). detectImageURL/detectVideoURL find the URL; this
+// only splits its path. viaVideo reports that the hash came from the video
+// detector.
+func ugcMediaHashFromMessage(message string) (hash string, viaVideo bool) {
+	if imageURL := detectImageURL(message); imageURL != "" {
+		if hash := ugcImageHash(imageURL); hash != "" {
+			return hash, false
+		}
+	}
+	if videoURL := detectVideoURL(message); videoURL != "" {
+		return ugcImageHash(videoURL), true
+	}
+	return "", false
+}
+
+// ugcImageHash splits a steamusercontent UGC URL into its uppercase SHA-1
+// segment (the path component after /ugc/<id>/).
+func ugcImageHash(imageURL string) string {
+	const ugcSegment = "/ugc/"
+	idx := strings.Index(imageURL, ugcSegment)
+	if idx < 0 {
+		return ""
+	}
+	segments := strings.Split(imageURL[idx+len(ugcSegment):], "/")
+	if len(segments) < 2 {
+		return ""
+	}
+	return strings.ToUpper(segments[1])
 }
 
 // extractFilenameFromURL extracts a filename from a URL path
@@ -703,10 +860,16 @@ func getFileExtensionFromMimeType(mimeType string) string {
 		return "gif"
 	case "image/webp":
 		return "webp"
+	case "image/avif":
+		return "avif"
 	case "video/mp4":
 		return "mp4"
 	case "video/webm":
 		return "webm"
+	case "video/mpeg":
+		return "mpeg"
+	case "video/ogg":
+		return "ogv"
 	case "video/quicktime":
 		return "mov"
 	default:
@@ -750,19 +913,35 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 		portalID = makePortalID(msgEvent.TargetSteamId)
 	}
 
-	// Generate message ID
-	var msgID string
-	if msgEvent.ChatGroupId != 0 {
-		// Group messages: use timestamp_ordinal format to match backfill deduplication
-		msgID = fmt.Sprintf("%d_%d", msgEvent.Timestamp, msgEvent.Ordinal)
-	} else {
-		switch msgEvent.MessageType {
-		case steamapi.MessageType_INVITE_GAME:
-			msgID = fmt.Sprintf("%d:%d:invite", msgEvent.SenderSteamId, msgEvent.Timestamp)
-		default:
-			msgID = fmt.Sprintf("%d:%d", msgEvent.SenderSteamId, msgEvent.Timestamp)
+	// Image-upload echo correlation (uploadexpectations.go): a successful web
+	// upload makes Steam post the image as a chat message, which reaches this
+	// CM session as a local echo. When the echo's [img src=...] hash matches a
+	// pending upload, the queued remote message carries the Matrix transaction
+	// ID so bridgev2 re-keys the upload's database row to this Steam message
+	// ID instead of duplicating the image.
+	var uploadEchoTxnID networkid.TransactionID
+	if msgEvent.IsEcho && msgEvent.MessageType == steamapi.MessageType_CHAT_MESSAGE && sc.uploadExpectations != nil {
+		if sha1Upper, viaVideo := ugcMediaHashFromMessage(msgEvent.Message); sha1Upper != "" {
+			if txnID, ok := sc.uploadExpectations.consume(portalID, sha1Upper); ok {
+				uploadEchoTxnID = txnID
+				sc.br.Log.Info().
+					Str("sha1", sha1Upper).
+					Str("txn_id", string(txnID)).
+					Msg("Consumed expected media upload echo")
+				if viaVideo {
+					sc.br.Log.Info().
+						Str("raw_echo_text", msgEvent.Message).
+						Msg("Video upload echo matched via the video URL detector; raw text logged to confirm the wire format")
+				}
+			}
 		}
 	}
+
+	idType := PortalIDTypeDM
+	if msgEvent.ChatGroupId != 0 {
+		idType = PortalIDTypeChannel
+	}
+	msgID := steamMessageID(idType, msgEvent.SenderSteamId, msgEvent.Timestamp, msgEvent.Ordinal, msgEvent.MessageType)
 
 	// Create portal key
 	portalKey := networkid.PortalKey{
@@ -807,7 +986,8 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 				Timestamp:    time.Unix(msgEvent.Timestamp, 0),
 			},
 			Data:               msgEvent,
-			ID:                 networkid.MessageID(msgID),
+			ID:                 msgID,
+			TransactionID:      uploadEchoTxnID,
 			ConvertMessageFunc: sc.convertSteamMessage,
 		}
 		sc.br.QueueRemoteEvent(sc.UserLogin, remoteMsg)
@@ -826,7 +1006,7 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 				Timestamp:    time.Unix(msgEvent.Timestamp, 0),
 			},
 			Data:               msgEvent,
-			ID:                 networkid.MessageID(msgID),
+			ID:                 msgID,
 			ConvertMessageFunc: sc.convertSteamMessage,
 		}
 		sc.br.QueueRemoteEvent(sc.UserLogin, remoteMsg)
@@ -861,10 +1041,19 @@ func (sc *SteamClient) handleIncomingMessage(_ context.Context, msgEvent *steama
 				Timestamp:    time.Unix(msgEvent.Timestamp, 0),
 			},
 			Data:               msgEvent,
-			ID:                 networkid.MessageID(msgID),
+			ID:                 msgID,
 			ConvertMessageFunc: sc.convertSteamMessage,
 		}
 		sc.br.QueueRemoteEvent(sc.UserLogin, remoteMsg)
+
+		// Register this invite for expiry tracking (see inviteexpiry.go) - but only if
+		// it actually produced a clickable join link. A plain-text-only invite (legacy
+		// "[joingame]" with no lobby/connect data) has nothing to expire. This only
+		// applies to this live incoming-message path; convertSteamMessageToBackfill in
+		// backfill.go intentionally never registers backfilled invites here.
+		if msgEvent.InviteLobbyId != "" || msgEvent.InviteConnect != "" {
+			sc.registerPendingInvite(portalKey, msgID, eventSender, msgEvent.SenderSteamId, msgEvent.InviteAppId)
+		}
 
 	default:
 		sc.br.Log.Warn().Str("message_type", msgEvent.MessageType.String()).Msg("Unsupported message type")
@@ -970,6 +1159,103 @@ func detectOGLink(message string) (ogLink, bool) {
 	}, true
 }
 
+// buildGameInviteContent constructs a Matrix message for a Steam game invite. It best-effort
+// resolves the invited app's display name via GetAppInfo — a failed lookup or Found == false
+// is logged as a warning and falls back to whatever descriptive text the C# side already
+// parsed out of the invite markup (or "a game" if that's empty too), so the invite is never
+// dropped or turned into an error. When Steam supplied enough information to build a join
+// link (a lobby ID, or a raw connect string), the message is rendered as rich HTML text with
+// a clickable "Join Game" steam:// link, reproducing the exact join-URI construction Valve's
+// own Steam client uses for its "Join Game" button:
+//   - lobby invites:   steam://joinlobby/<appid>/<lobbyid>/<inviterSteamID64>
+//   - connect invites: steam://rungame/<appid>/<inviterSteamID64>/<url-encoded connect string>
+//
+// If neither is present (e.g. legacy "[joingame]" invites), this falls back to the original
+// plain-text notice with no link. Shared between the live-message path (messaging.go) and the
+// backfill path (backfill.go) so an invite renders identically whether it arrives live or is
+// backfilled later.
+// encodeURIComponentGo replicates JavaScript's encodeURIComponent exactly: every character
+// except A-Z a-z 0-9 and - _ . ! ~ * ' ( ) is percent-encoded (including space as "%20", not
+// url.QueryEscape's "+"). This matches what Steam's own client runs on a game invite's connect
+// string when building a steam://rungame/ URL, which Go's stdlib escapers don't reproduce.
+func encodeURIComponentGo(s string) string {
+	var b strings.Builder
+	for _, c := range []byte(s) {
+		switch {
+		case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+			b.WriteByte(c)
+		case strings.ContainsRune("-_.!~*'()", rune(c)):
+			b.WriteByte(c)
+		default:
+			fmt.Fprintf(&b, "%%%02X", c)
+		}
+	}
+	return b.String()
+}
+
+func (sc *SteamClient) buildGameInviteContent(ctx context.Context, senderSteamID, appID uint64, lobbyID, connectStr, fallbackText string) *event.MessageEventContent {
+	var resolvedName string
+	if appID != 0 {
+		resp, err := sc.msgClient.GetAppInfo(ctx, &steamapi.GetAppInfoRequest{
+			AppId:         appID,
+			CallerSteamId: sc.steamID(),
+		})
+		if err != nil {
+			sc.br.Log.Warn().Err(err).Uint64("app_id", appID).Msg("Failed to resolve game invite app name via GetAppInfo, using fallback text")
+		} else if !resp.Found {
+			sc.br.Log.Warn().Uint64("app_id", appID).Msg("GetAppInfo could not find app for game invite, using fallback text")
+		} else {
+			resolvedName = resp.Name
+		}
+	}
+
+	var joinURL string
+	switch {
+	case lobbyID != "":
+		joinURL = fmt.Sprintf("steam://joinlobby/%d/%s/%d", appID, lobbyID, senderSteamID)
+	case connectStr != "":
+		// Steam's own client builds this exact URL client-side via JavaScript's
+		// encodeURIComponent(connectString) (confirmed by reading the client's own bundle).
+		// Go's url.PathEscape/url.QueryEscape do NOT reproduce that: PathEscape leaves ":"
+		// unescaped entirely (it's a valid pchar per RFC 3986), and QueryEscape uses "+" for
+		// spaces instead of "%20" — so encodeURIComponentGo below replicates encodeURIComponent's
+		// exact unreserved-character set to match Steam's own client byte-for-byte.
+		joinURL = fmt.Sprintf("steam://rungame/%d/%d/%s", appID, senderSteamID, encodeURIComponentGo(connectStr))
+	}
+
+	if joinURL == "" {
+		// No link possible (e.g. legacy "[joingame]" invites) — preserve the original
+		// plain-text-only notice, using the resolved game name when available.
+		inviteBody := resolvedName
+		if inviteBody == "" {
+			inviteBody = fallbackText
+		}
+		if inviteBody == "" {
+			inviteBody = "Invited you to play a game"
+		}
+		return &event.MessageEventContent{
+			MsgType: event.MsgNotice,
+			Body:    fmt.Sprintf("🎮 Game Invite: %s", inviteBody),
+		}
+	}
+
+	gameName := resolvedName
+	if gameName == "" {
+		gameName = fallbackText
+	}
+	if gameName == "" {
+		gameName = "a game"
+	}
+
+	return &event.MessageEventContent{
+		MsgType: event.MsgText,
+		Body:    fmt.Sprintf("🎮 Invited you to play %s — %s", gameName, joinURL),
+		Format:  event.FormatHTML,
+		FormattedBody: fmt.Sprintf(`🎮 Invited you to play <b>%s</b> — <a href="%s">Join Game</a>`,
+			html.EscapeString(gameName), html.EscapeString(joinURL)),
+	}
+}
+
 // convertSteamMessage converts a Steam message event to a Matrix message
 func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2.Portal, intent bridgev2.MatrixAPI, data *steamapi.MessageEvent) (*bridgev2.ConvertedMessage, error) {
 	var content *event.MessageEventContent
@@ -1031,9 +1317,15 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 			return sc.convertInlineEmotesMessage(ctx, intent, data.Message)
 		}
 
+		strippedBody := stripBBCode(data.Message)
+		if strippedBody == "" && data.Message != "" {
+			sc.br.Log.Trace().
+				Str("raw_message", data.Message).
+				Msg("Steam chat message stripped to empty body by stripBBCode")
+		}
 		content = &event.MessageEventContent{
 			MsgType: event.MsgText,
-			Body:    stripBBCode(data.Message),
+			Body:    strippedBody,
 		}
 	case steamapi.MessageType_EMOTE:
 		content = &event.MessageEventContent{
@@ -1041,14 +1333,7 @@ func (sc *SteamClient) convertSteamMessage(ctx context.Context, portal *bridgev2
 			Body:    data.Message,
 		}
 	case steamapi.MessageType_INVITE_GAME:
-		inviteBody := data.Message
-		if inviteBody == "" {
-			inviteBody = "Invited you to play a game"
-		}
-		content = &event.MessageEventContent{
-			MsgType: event.MsgNotice,
-			Body:    fmt.Sprintf("🎮 Game Invite: %s", inviteBody),
-		}
+		content = sc.buildGameInviteContent(ctx, data.SenderSteamId, data.InviteAppId, data.InviteLobbyId, data.InviteConnect, data.Message)
 	default:
 		return nil, fmt.Errorf("unsupported message type: %s", data.MessageType.String())
 	}

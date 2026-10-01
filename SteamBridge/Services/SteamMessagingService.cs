@@ -14,17 +14,20 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
     private readonly SteamClientRegistry _registry;
     private readonly SteamImageService _imageService;
     private readonly SteamUserInformationService _userInfoService;
+    private readonly SteamAppInfoService _appInfoService;
 
     public SteamMessagingService(
         ILogger<SteamMessagingService> logger,
         SteamClientRegistry registry,
         SteamImageService imageService,
-        SteamUserInformationService userInfoService)
+        SteamUserInformationService userInfoService,
+        SteamAppInfoService appInfoService)
     {
         _logger = logger;
         _registry = registry;
         _imageService = imageService;
         _userInfoService = userInfoService;
+        _appInfoService = appInfoService;
     }
 
     public override async Task<SendMessageResponse> SendMessage(
@@ -48,6 +51,7 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                     Success = groupResult.Success,
                     ErrorMessage = groupResult.ErrorMessage ?? string.Empty,
                     Timestamp = groupResult.Timestamp,
+                    Ordinal = groupResult.Ordinal,
                 };
             }
 
@@ -67,7 +71,8 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
             {
                 Success = result.Success,
                 ErrorMessage = result.ErrorMessage ?? string.Empty,
-                Timestamp = result.Timestamp
+                Timestamp = result.Timestamp,
+                Ordinal = result.Ordinal
             };
         }
         catch (RpcException)
@@ -210,38 +215,51 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                         IsEcho = notification.local_echo,
                         ChatGroupId = 0,
                         ChatId = 0,
+                        Ordinal = notification.ordinal,
                     };
                 }
                 else if (notification.chat_entry_type == 3)
                 {
+                    var msgRaw = notification.message?.TrimEnd('\0');
+                    var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
+                    var parsed = ProcessMessageContent(msgRaw ?? string.Empty, msgNoBbCode ?? string.Empty);
+
                     messageEvent = new MessageEvent
                     {
                         SenderSteamId = senderSteamId,
                         TargetSteamId = targetSteamId,
-                        Message = string.Empty,
+                        Message = parsed.Text,
                         MessageType = MessageType.InviteGame,
                         Timestamp = (long)notification.rtime32_server_timestamp,
                         IsEcho = notification.local_echo,
                         ChatGroupId = 0,
                         ChatId = 0,
+                        Ordinal = notification.ordinal,
+                        InviteAppId = parsed.InviteAppId,
+                        InviteLobbyId = parsed.InviteLobbyId,
+                        InviteConnect = parsed.InviteConnect,
                     };
                 }
                 else
                 {
                     var msgRaw = notification.message?.TrimEnd('\0');
                     var msgNoBbCode = notification.message_no_bbcode?.TrimEnd('\0');
-                    var (text, msgType) = ProcessMessageContent(msgRaw ?? string.Empty, msgNoBbCode ?? string.Empty);
+                    var parsed = ProcessMessageContent(msgRaw ?? string.Empty, msgNoBbCode ?? string.Empty);
 
                     messageEvent = new MessageEvent
                     {
                         SenderSteamId = senderSteamId,
                         TargetSteamId = targetSteamId,
-                        Message = text,
-                        MessageType = msgType,
+                        Message = parsed.Text,
+                        MessageType = parsed.Type,
                         Timestamp = (long)notification.rtime32_server_timestamp,
                         IsEcho = notification.local_echo,
                         ChatGroupId = 0,
                         ChatId = 0,
+                        Ordinal = notification.ordinal,
+                        InviteAppId = parsed.InviteAppId,
+                        InviteLobbyId = parsed.InviteLobbyId,
+                        InviteConnect = parsed.InviteConnect,
                     };
                 }
 
@@ -275,6 +293,9 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
                     ChatGroupId = message.ChatGroupId,
                     ChatId = message.ChatId,
                     Ordinal = message.Ordinal,
+                    InviteAppId = message.InviteAppId,
+                    InviteLobbyId = message.InviteLobbyId,
+                    InviteConnect = message.InviteConnect,
                 };
 
                 if (!string.IsNullOrEmpty(imageUrl))
@@ -509,6 +530,29 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
         }
     }
 
+    public override async Task<GetAppInfoResponse> GetAppInfo(
+        GetAppInfoRequest request,
+        ServerCallContext context)
+    {
+        _logger.LogDebug("Getting app info for AppId {AppId}, caller {CallerSteamId}",
+            request.AppId, request.CallerSteamId);
+
+        var manager = _registry.Get(request.CallerSteamId.ToString())
+            ?? throw new RpcException(new Status(StatusCode.NotFound,
+                $"No Steam session for caller steam_id {request.CallerSteamId}"));
+
+        var name = await _appInfoService.GetAppNameAsync(manager.SteamApps, (uint)request.AppId);
+
+        _logger.LogDebug("App info lookup for AppId {AppId}: found={Found}, name={Name}",
+            request.AppId, name != null, name);
+
+        return new GetAppInfoResponse
+        {
+            Found = name != null,
+            Name = name ?? string.Empty
+        };
+    }
+
     private async Task<SendMessageResult> SendMessageAsync(SteamClientManager manager, ulong targetSteamId, string message, MessageType messageType = MessageType.ChatMessage)
     {
         if (!manager.IsLoggedOn)
@@ -516,14 +560,23 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
 
         try
         {
-            var targetId = new SteamID(targetSteamId);
-            var steamFriends = manager.SteamFriends;
             var chatEntryType = MapToChatEntryType(messageType);
 
             _logger.LogInformation("Sending message to {SteamID}: {Message}", targetSteamId, message);
-            steamFriends.SendChatMessage(targetId, chatEntryType, message);
 
-            return new SendMessageResult { Success = true, Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
+            var request = new CFriendMessages_SendMessage_Request
+            {
+                steamid = targetSteamId,
+                chat_entry_type = (int)chatEntryType,
+                message = message,
+            };
+            var job = manager.FriendMessagesService.SendMessage(request);
+            var result = await job.ToTask();
+
+            if (result == null || result.Result != EResult.OK)
+                return new SendMessageResult { Success = false, ErrorMessage = $"Steam API: {result?.Result}" };
+
+            return new SendMessageResult { Success = true, Timestamp = result.Body.server_timestamp, Ordinal = result.Body.ordinal };
         }
         catch (Exception ex)
         {
@@ -551,7 +604,7 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
             if (result == null || result.Result != EResult.OK)
                 return new SendMessageResult { Success = false, ErrorMessage = $"Steam API: {result?.Result}" };
 
-            return new SendMessageResult { Success = true, Timestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds() };
+            return new SendMessageResult { Success = true, Timestamp = result.Body.server_timestamp, Ordinal = result.Body.ordinal };
         }
         catch (Exception ex)
         {
@@ -631,18 +684,21 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
             foreach (var msg in response.messages)
             {
                 var senderSteamId = new SteamID(msg.accountid, myUniverse, EAccountType.Individual);
-                var (msgContent, msgType) = ProcessHistoryMessageContent(msg.message ?? string.Empty);
+                var parsed = ProcessHistoryMessageContent(msg.message ?? string.Empty);
 
                 var historyMessage = new ChatHistoryMessage
                 {
                     SenderSteamId = senderSteamId.ConvertToUInt64(),
                     Timestamp = msg.timestamp,
                     Ordinal = msg.ordinal,
-                    MessageContent = msgContent,
-                    MessageType = msgType
+                    MessageContent = parsed.Content,
+                    MessageType = parsed.Type,
+                    InviteAppId = parsed.InviteAppId,
+                    InviteLobbyId = parsed.InviteLobbyId,
+                    InviteConnect = parsed.InviteConnect
                 };
 
-                if (msgType == Proto.MessageType.ChatMessage)
+                if (parsed.Type == Proto.MessageType.ChatMessage)
                 {
                     var (imageUrl, caption) = ParseImageMessage(historyMessage.MessageContent);
                     if (!string.IsNullOrEmpty(imageUrl))
@@ -781,40 +837,75 @@ public class SteamMessagingService : Proto.SteamMessagingService.SteamMessagingS
         return (imageUrl, caption);
     }
 
-    private static (string text, MessageType type) ProcessMessageContent(string raw, string noBbCode)
+    // Plain-text fallback description plus the parsed invite metadata for the live message
+    // path (ProcessMessageContent). Go builds the richer invite rendering from
+    // InviteAppId/InviteLobbyId/InviteConnect; Text/Type remain a sane fallback on their own.
+    private readonly record struct ParsedMessageContent(string Text, MessageType Type, ulong InviteAppId, string InviteLobbyId, string InviteConnect);
+
+    // Same shape as ParsedMessageContent but for the backfill/history path
+    // (ProcessHistoryMessageContent), which returns Proto.MessageType directly.
+    private readonly record struct ParsedHistoryContent(string Content, Proto.MessageType Type, ulong InviteAppId, string InviteLobbyId, string InviteConnect);
+
+    // Extracts appid/lobbyid/connect attributes from an invite bbcode tag, e.g.
+    // [gameinvite appid="1422450" connect="party_id:102060294209035138"][/gameinvite] or
+    // [lobbyinvite appid=X lobbyid=Y]. Any attribute not present in the tag defaults to
+    // 0 (appid) or empty (lobbyid/connect).
+    private static (ulong appId, string lobbyId, string connect) ExtractInviteFields(string raw)
+    {
+        ulong appId = 0;
+        var appIdMatch = Regex.Match(raw, @"appid=""?(\d+)""?", RegexOptions.IgnoreCase);
+        if (appIdMatch.Success)
+            ulong.TryParse(appIdMatch.Groups[1].Value, out appId);
+
+        var lobbyIdMatch = Regex.Match(raw, @"lobbyid=""?(\d+)""?", RegexOptions.IgnoreCase);
+        var lobbyId = lobbyIdMatch.Success ? lobbyIdMatch.Groups[1].Value : string.Empty;
+
+        // connect's value is not purely numeric (e.g. "party_id:102060294209035138"), so
+        // capture everything up to the closing quote/whitespace/bracket rather than \d+.
+        var connectMatch = Regex.Match(raw, @"connect=""?([^""\s\]]+)""?", RegexOptions.IgnoreCase);
+        var connect = connectMatch.Success ? connectMatch.Groups[1].Value : string.Empty;
+
+        return (appId, lobbyId, connect);
+    }
+
+    private static ParsedMessageContent ProcessMessageContent(string raw, string noBbCode)
     {
         bool isInvite = raw.StartsWith("[lobbyinvite", StringComparison.OrdinalIgnoreCase)
-                     || raw.StartsWith("[joingame", StringComparison.OrdinalIgnoreCase);
+                     || raw.StartsWith("[joingame", StringComparison.OrdinalIgnoreCase)
+                     || raw.StartsWith("[gameinvite", StringComparison.OrdinalIgnoreCase);
 
         if (isInvite)
         {
+            var (inviteAppId, inviteLobbyId, inviteConnect) = ExtractInviteFields(raw);
+
             if (!string.IsNullOrWhiteSpace(noBbCode))
-                return (noBbCode, MessageType.InviteGame);
+                return new ParsedMessageContent(noBbCode, MessageType.InviteGame, inviteAppId, inviteLobbyId, inviteConnect);
 
-            var appIdMatch = Regex.Match(raw, @"appid=""?(\d+)""?", RegexOptions.IgnoreCase);
-            if (appIdMatch.Success)
-                return ($"Invited you to play a game (App ID: {appIdMatch.Groups[1].Value})", MessageType.InviteGame);
-
-            return ("Invited you to play a game", MessageType.InviteGame);
+            var text = inviteAppId != 0
+                ? $"Invited you to play a game (App ID: {inviteAppId})"
+                : "Invited you to play a game";
+            return new ParsedMessageContent(text, MessageType.InviteGame, inviteAppId, inviteLobbyId, inviteConnect);
         }
 
-        return (raw, MessageType.ChatMessage);
+        return new ParsedMessageContent(raw, MessageType.ChatMessage, 0, string.Empty, string.Empty);
     }
 
-    private static (string content, Proto.MessageType type) ProcessHistoryMessageContent(string raw)
+    private static ParsedHistoryContent ProcessHistoryMessageContent(string raw)
     {
-        if (raw.StartsWith("[lobbyinvite", StringComparison.OrdinalIgnoreCase))
+        if (raw.StartsWith("[lobbyinvite", StringComparison.OrdinalIgnoreCase)
+            || raw.StartsWith("[gameinvite", StringComparison.OrdinalIgnoreCase))
         {
-            var appIdMatch = Regex.Match(raw, @"appid=""?(\d+)""?", RegexOptions.IgnoreCase);
-            if (appIdMatch.Success)
-                return ($"Invited you to play a game (App ID: {appIdMatch.Groups[1].Value})", Proto.MessageType.InviteGame);
-            return ("Invited you to play a game", Proto.MessageType.InviteGame);
+            var (inviteAppId, inviteLobbyId, inviteConnect) = ExtractInviteFields(raw);
+            var text = inviteAppId != 0
+                ? $"Invited you to play a game (App ID: {inviteAppId})"
+                : "Invited you to play a game";
+            return new ParsedHistoryContent(text, Proto.MessageType.InviteGame, inviteAppId, inviteLobbyId, inviteConnect);
         }
 
         if (raw.StartsWith("[joingame", StringComparison.OrdinalIgnoreCase))
-            return ("Invited you to join a game", Proto.MessageType.InviteGame);
+            return new ParsedHistoryContent("Invited you to join a game", Proto.MessageType.InviteGame, 0, string.Empty, string.Empty);
 
-        return (raw, Proto.MessageType.ChatMessage);
+        return new ParsedHistoryContent(raw, Proto.MessageType.ChatMessage, 0, string.Empty, string.Empty);
     }
 
     private static Services.MessageType MapFromProtoMessageType(Proto.MessageType messageType)
@@ -870,6 +961,7 @@ public class SendMessageResult
     public bool Success { get; set; }
     public string? ErrorMessage { get; set; }
     public long Timestamp { get; set; }
+    public uint Ordinal { get; set; }
 }
 
 public class MessageEvent
@@ -884,6 +976,9 @@ public class MessageEvent
     public ulong ChatGroupId { get; set; }
     public ulong ChatId { get; set; }
     public uint Ordinal { get; set; }
+    public ulong InviteAppId { get; set; }
+    public string InviteLobbyId { get; set; } = string.Empty;
+    public string InviteConnect { get; set; } = string.Empty;
 }
 
 public enum MessageType

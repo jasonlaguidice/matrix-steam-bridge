@@ -60,6 +60,10 @@ public class SteamClientManager : IDisposable
     public SteamUnifiedMessages SteamUnifiedMessages => _steamUnifiedMessages;
     public SteamKit2.Internal.FriendMessages FriendMessagesService => _friendMessagesService;
     public SteamKit2.Internal.ChatRoom ChatRoomService => _chatRoomService;
+    // Refresh token captured at LogOn() for the logged-on user. Minting fresh access
+    // tokens (Authentication.GenerateAccessTokenForApp) must come from here - the access
+    // token itself can be months stale while the CM connection stays alive.
+    public string? CurrentRefreshToken => _currentRefreshToken;
 
     // Persona state flags requested for friends by default. This mirrors SteamKit2's own
     // built-in defaults (see SteamConfigurationBuilder.CreateDefaultState) plus RichPresence,

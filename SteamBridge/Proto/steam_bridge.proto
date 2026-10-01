@@ -12,6 +12,7 @@ service SteamAuthService {
   rpc LoginWithQR(QRLoginRequest) returns (QRLoginResponse);
   rpc GetAuthStatus(AuthStatusRequest) returns (AuthStatusResponse);
   rpc ReAuthenticateWithTokens(TokenReAuthRequest) returns (TokenReAuthResponse);
+  rpc MintAccessToken(MintAccessTokenRequest) returns (MintAccessTokenResponse);
   rpc Logout(LogoutRequest) returns (LogoutResponse);
 }
 
@@ -32,6 +33,7 @@ service SteamMessagingService {
   rpc DownloadMediaFromSteam(DownloadMediaRequest) returns (DownloadMediaResponse);
   rpc GetUserAvatarData(GetUserAvatarDataRequest) returns (GetUserAvatarDataResponse);
   rpc GetChatMessageHistory(ChatMessageHistoryRequest) returns (ChatMessageHistoryResponse);
+  rpc GetAppInfo(GetAppInfoRequest) returns (GetAppInfoResponse);
 }
 
 // Session Management Service
@@ -127,6 +129,17 @@ message TokenReAuthResponse {
   UserInfo user_info = 6;
 }
 
+message MintAccessTokenRequest {
+  uint64 steam_id = 1; // Caller's Steam ID for routing to per-user SteamClientManager
+}
+
+message MintAccessTokenResponse {
+  bool success = 1;
+  string error_message = 2;
+  string access_token = 3; // Fresh access token (JWT) minted from the stored refresh token
+  int64 expires_at_unix = 4; // Token expiry as Unix seconds, decoded from the JWT `exp` claim
+}
+
 message LogoutResponse {
   bool success = 1;
 }
@@ -207,6 +220,7 @@ message SendMessageResponse {
   bool success = 1;
   string error_message = 2;
   int64 timestamp = 3;
+  uint32 ordinal = 4; // Per-message sequence number within the same second; populated by the FriendMessagesService/ChatRoomService unified RPCs (0 for paths that don't yet provide it)
 }
 
 message MessageSubscriptionRequest {
@@ -224,6 +238,9 @@ message MessageEvent {
   uint64 chat_group_id = 8;  // Non-zero for group messages; 0 for DMs
   uint64 chat_id = 9;        // Non-zero for group messages; 0 for DMs
   uint32 ordinal = 10;       // Message ordinal for deduplication with backfill
+  uint64 invite_app_id = 11;   // Steam App ID being invited to play (0 if not an invite or unparseable)
+  string invite_lobby_id = 12; // Lobby ID from [lobbyinvite] tag's lobbyid attribute (empty if not present)
+  string invite_connect = 13;  // Raw connect string from [gameinvite] tag's connect attribute (empty if not present)
 }
 
 message TypingNotificationRequest {
@@ -303,6 +320,20 @@ message ChatHistoryMessage {
   string message_content = 4;
   MessageType message_type = 5;
   string image_url = 6; // Steam CDN/UFS URL for image messages
+  uint64 invite_app_id = 7;   // Steam App ID being invited to play (0 if not an invite or unparseable)
+  string invite_lobby_id = 8; // Lobby ID from [lobbyinvite] tag's lobbyid attribute (empty if not present)
+  string invite_connect = 9;  // Raw connect string from [gameinvite] tag's connect attribute (empty if not present)
+}
+
+// App Info Messages
+message GetAppInfoRequest {
+  uint64 app_id = 1;
+  uint64 caller_steam_id = 2; // For routing to per-user SteamClientManager, same convention as SendMessageRequest.caller_steam_id
+}
+
+message GetAppInfoResponse {
+  bool found = 1;
+  string name = 2; // Empty if found=false
 }
 
 // Group Messages

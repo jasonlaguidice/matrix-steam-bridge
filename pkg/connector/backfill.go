@@ -78,6 +78,12 @@ func (sc *SteamClient) FetchMessages(ctx context.Context, params bridgev2.FetchM
 	// Convert Steam messages to BackfillMessages
 	messages := make([]*bridgev2.BackfillMessage, 0, len(historyResp.Messages))
 	for _, steamMsg := range historyResp.Messages {
+		if sc.isLegacyAnchorMessage(params.AnchorMessage, params.Portal.PortalKey, steamMsg) {
+			continue
+		}
+		if sc.isAlreadyBridgedUpload(ctx, params.Portal.PortalKey, steamMsg) {
+			continue
+		}
 		backfillMsg, err := sc.convertSteamMessageToBackfill(ctx, steamMsg, params.Portal)
 		if err != nil {
 			sc.br.Log.Warn().Err(err).
@@ -109,6 +115,41 @@ func (sc *SteamClient) FetchMessages(ctx context.Context, params bridgev2.FetchM
 		Msg("Message history fetched successfully")
 
 	return response, nil
+}
+
+// isLegacyAnchorMessage reports whether steamMsg is the message already stored
+// as the pagination anchor under an ID format that steamMessageID no longer
+// produces. bridgev2 only cuts the anchor off the fetched page when the IDs
+// match, so without this check a row written by an older bridge version would
+// be imported a second time when Steam returns the anchor message itself.
+func (sc *SteamClient) isLegacyAnchorMessage(anchor *database.Message, portalKey networkid.PortalKey, steamMsg *steamapi.ChatHistoryMessage) bool {
+	if anchor == nil {
+		return false
+	}
+	idType, _, _, err := parsePortalID(portalKey.ID)
+	if err != nil {
+		return false
+	}
+	legacyIDs := legacySteamMessageIDs(portalKey, idType, steamMsg.SenderSteamId, sc.getUserID(), int64(steamMsg.Timestamp), steamMsg.Ordinal, steamMsg.MessageType)
+	return slices.Contains(legacyIDs, anchor.ID)
+}
+
+// isAlreadyBridgedUpload reports whether steamMsg is the media message Steam
+// posted for a Matrix upload whose echo was lost: the upload's synthetic row
+// already represents it in the room, so importing it would duplicate the image.
+func (sc *SteamClient) isAlreadyBridgedUpload(ctx context.Context, portalKey networkid.PortalKey, steamMsg *steamapi.ChatHistoryMessage) bool {
+	if steamMsg.SenderSteamId != sc.getUserID() {
+		return false
+	}
+	bridged, err := newUploadRowStore(sc.br.DB.Message).isBridgedUpload(ctx, portalKey, steamMsg.MessageContent, time.Unix(int64(steamMsg.Timestamp), 0))
+	if err != nil {
+		sc.br.Log.Warn().Err(err).Msg("Failed to check backfilled message against upload rows")
+		return false
+	}
+	if bridged {
+		sc.br.Log.Info().Uint32("timestamp", steamMsg.Timestamp).Msg("Skipping backfill of a Steam media message already bridged from a Matrix upload")
+	}
+	return bridged
 }
 
 // extractChatIDs extracts Steam chat group ID and chat ID from portal key
@@ -202,20 +243,15 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 
 	switch {
 	case steamMsg.MessageType == steamapi.MessageType_INVITE_GAME:
-		// Game invite: render as a notice with the plain-text body from C#
-		body := content
-		if body == "" {
-			body = "Invited you to play a game"
-		}
+		// Game invite: resolve the app name and build a rich join link when possible
+		// (shared with the live-message path in messaging.go so a backfilled invite
+		// renders identically to one received live).
 		convertedMsg = &bridgev2.ConvertedMessage{
 			Parts: []*bridgev2.ConvertedMessagePart{
 				{
-					Type: event.EventMessage,
-					Content: &event.MessageEventContent{
-						MsgType: event.MsgNotice,
-						Body:    "🎮 Game Invite: " + body,
-					},
-					ID: networkid.PartID("text"),
+					Type:    event.EventMessage,
+					Content: sc.buildGameInviteContent(ctx, steamMsg.SenderSteamId, steamMsg.InviteAppId, steamMsg.InviteLobbyId, steamMsg.InviteConnect, content),
+					ID:      networkid.PartID("text"),
 				},
 			},
 		}
@@ -250,20 +286,13 @@ func (sc *SteamClient) convertSteamMessageToBackfill(ctx context.Context, steamM
 		Timestamp: timestamp,
 	}
 
-	// Compute message ID — for DM game invites, use the same format as the real-time path
-	// so the bridge can deduplicate backfill vs real-time events.
-	var msgID string
 	idType, _, _, _ := parsePortalID(portal.PortalKey.ID)
-	if steamMsg.MessageType == steamapi.MessageType_INVITE_GAME && idType == PortalIDTypeDM {
-		msgID = fmt.Sprintf("%d:%d:invite", steamMsg.SenderSteamId, steamMsg.Timestamp)
-	} else {
-		msgID = fmt.Sprintf("%d_%d", steamMsg.Timestamp, steamMsg.Ordinal)
-	}
+	msgID := steamMessageID(idType, steamMsg.SenderSteamId, int64(steamMsg.Timestamp), steamMsg.Ordinal, steamMsg.MessageType)
 
 	backfillMsg := &bridgev2.BackfillMessage{
 		ConvertedMessage: convertedMsg,
 		Sender:           sender,
-		ID:               networkid.MessageID(msgID),
+		ID:               msgID,
 		Timestamp:        timestamp,
 		StreamOrder:      int64(steamMsg.Ordinal),        // Use ordinal for ordering
 		Reactions:        []*bridgev2.BackfillReaction{}, // TODO: Add reaction support
