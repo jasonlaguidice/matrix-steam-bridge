@@ -128,6 +128,9 @@ To enable this feature set `presence_topic.enabled` in your config.yaml to `true
 
 However, most clients _also_ will bump the conversation to the top of the conversation list on every update. Games, such as Deadlock, which will update the status with the match timer every minute will continually bump the affected conversation to the top of the chat list
 
+### Image sharing (Matrix -> Steam, 1:1 chats)
+Images sent in a DM room are shared to Steam. When `public_media` is enabled in the bridge config the image is sent as its publicly fetchable Matrix URL (as before); otherwise the bridge uploads the image bytes through Steam's chat upload endpoints (JPEG/PNG/GIF/WebP/AVIF, 30 MB limit), and Steam shows the image in the chat itself. A caption, when present, is sent as a separate message before the image.
+
 ## Development
 
 ### Project Structure

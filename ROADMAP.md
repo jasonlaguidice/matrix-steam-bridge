@@ -4,36 +4,31 @@
   * [ ] Message content
     * [x] Text
     * [x] Formatting (strip)
-    * [ ] Media
-      * [ ] Images
-      * [ ] Files
-      * [ ] Gifs
-      * [ ] Stickers
+    * [x] Media
+      * [x] Images
+      * [x] Files
+      * [x] Gifs
+      * [x] Stickers
   * [ ] Message reactions
   * [x] Network presence/status
-  * [ ] Group info changes
-    * [ ] Name
-    * [ ] Avatar
-    * [ ] Topic
   * [ ] Group Membership actions
     * [ ] Join (accepting invites)
     * [ ] Invite
     * [ ] Leave
     * [ ] Kick/Ban/Unban
-  * [ ] Group permissions
-  * [ ] Typing notifications
+  * [x] Typing notifications
 * Steam → Matrix
-  * [ ] Message content
+  * [x] Message content
     * [x] Text
     * [x] Media
       * [x] Images
       * [x] Gifs
       * [x] Stickers
       * [x] Steam Emoji
-    * [ ] Game Invites
+    * [x] Game Invites
       * [x] Invite message
-      * [ ] Rich invite details
-      * [ ] Invite acceptance
+      * [x] Rich invite details
+      * [x] Invite acceptance
   * [ ] Network presence/status
     * [ ] Online/Offline/Away
     * [x] Rich in-game presence
@@ -47,10 +42,10 @@
     * [x] Real time
         * [x] Display name
         * [x] Avatar
-  * [ ] Group info
-    * [ ] Name
-    * [ ] Avatar
-    * [ ] Topic
+  * [x] Group info
+    * [x] Name
+    * [x] Avatar
+    * [x] Topic
   * [ ] Membership actions
     * [ ] Join
     * [ ] Invite
@@ -67,7 +62,7 @@
     * [x] SteamGuard 2FA code
     * [x] QR
     * [x] SteamGuard Prompt / E-mail
-  * [ ] Session Management
+  * [x] Session Management
     * [x] Logout command
     * [x] Relogin command
     * [x] Automatic session expiry
