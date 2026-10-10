@@ -697,7 +697,23 @@ public class SteamAuthenticationService
 
                 // Additional verification - check if Steam is actually connected
                 bool steamConnected = manager.IsConnected && manager.IsLoggedOn;
-                
+
+                // Not connected and Steam answered with a transient EResult (or never answered
+                // at all): nothing proves the stored credentials were rejected, so report a
+                // network error and let the caller retry instead of asking the user to log in.
+                if (!steamConnected && IsTransientLogOnResult(manager.LastLogOnResult))
+                {
+                    _logger.LogWarning("Token re-authentication failed for user: {Username} with a transient EResult: {Result} - not a credential rejection",
+                        username, manager.LastLogOnResult);
+
+                    return new TokenReAuthResult
+                    {
+                        Success = false,
+                        State = AuthState.NetworkError,
+                        ErrorMessage = DescribeLogOnFailure(manager)
+                    };
+                }
+
                 return new TokenReAuthResult
                 {
                     Success = false,
@@ -885,6 +901,21 @@ public class SteamAuthenticationService
         return manager.LastLogOnResult == EResult.Invalid
             ? "Steam connection lost during authentication"
             : $"Steam rejected the login: {manager.LastLogOnResult}";
+    }
+    
+    private static bool IsTransientLogOnResult(EResult result)
+    {
+        return result switch
+        {
+            EResult.Invalid => true, // No logon result at all: connection dropped before Steam answered
+            EResult.TryAnotherCM => true,
+            EResult.ServiceUnavailable => true,
+            EResult.Timeout => true,
+            EResult.Busy => true,
+            EResult.NoConnection => true,
+            EResult.Fail => true,
+            _ => false
+        };
     }
 
     private async Task<UserInfo?> GetCurrentUserInfoAsync(SteamClientManager manager)

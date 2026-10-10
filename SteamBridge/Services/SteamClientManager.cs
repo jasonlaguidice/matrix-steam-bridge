@@ -204,6 +204,8 @@ public class SteamClientManager : IDisposable
         _logger.LogInformation("Logging on to Steam with access token");
         _currentAccessToken = accessToken;
         _currentRefreshToken = refreshToken;
+        // Clear the previous attempt's result so a dropped connection is not misreported with a stale value
+        LastLogOnResult = EResult.Invalid;
         
         // DEBUG: Log the LogOnDetails before calling SteamKit2
         var logOnDetails = new SteamUser.LogOnDetails
