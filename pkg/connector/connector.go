@@ -360,7 +360,7 @@ func (sc *SteamConnector) Start(ctx context.Context) error {
 	sc.log.Info().Str("address", address).Msg("Establishing gRPC connection to SteamBridge service")
 
 	// Establish gRPC connection to SteamBridge service
-	conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(address, steamGRPCDialOptions()...)
 	if err != nil {
 		return fmt.Errorf("failed to connect to SteamBridge service at %s: %w", address, err)
 	}
@@ -723,7 +723,7 @@ func (sc *SteamConnector) healthCheckSteamBridge(ctx context.Context) error {
 
 		sc.log.Debug().Str("address", address).Msg("Establishing gRPC connection for health check")
 
-		conn, err := grpc.NewClient(address, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(address, steamGRPCDialOptions()...)
 		if err != nil {
 			return fmt.Errorf("failed to connect for health check: %w", err)
 		}
@@ -934,4 +934,13 @@ func parseSteamIDFromPortalID(portalID networkid.PortalID) (uint64, error) {
 		return 0, fmt.Errorf("portal %q is not a DM portal", portalID)
 	}
 	return steamID, nil
+}
+
+const maxGRPCMessageSize = 256 * 1024 * 1024
+
+func steamGRPCDialOptions() []grpc.DialOption {
+	return []grpc.DialOption{
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxGRPCMessageSize)),
+	}
 }
