@@ -13,13 +13,8 @@ import (
 )
 
 // initializePresenceStream establishes the presence stream used to keep Steam friends'
-// DM room topics (m.room.topic) in sync with their current game (Phase 1: game name
-// only, no rich presence text yet).
-//
-// Unlike the message stream, loss of the presence stream is not fatal to the bridge
-// connection: on error we log and return without tearing down the main Steam
-// connection or triggering reconnection via handleTransientDisconnect. Presence-driven
-// topic updates simply stop until the bridge (and this stream) reconnect.
+// DM room topics (m.room.topic) in sync with their current game
+
 func (sc *SteamClient) initializePresenceStream(ctx context.Context) error {
 	if sc.connector == nil || !sc.connector.Config.PresenceTopic.Enabled {
 		sc.br.Log.Debug().Msg("Presence topic feature disabled, not starting presence stream")
@@ -46,8 +41,7 @@ func (sc *SteamClient) initializePresenceStream(ctx context.Context) error {
 }
 
 // processPresenceStream reads presence events from the stream and updates the
-// corresponding friend's DM room topic. On a stream error, it logs and returns -
-// presence topic loss does not affect the main Steam connection.
+// corresponding friend's DM room topic. On a stream error, it logs and returns
 func (sc *SteamClient) processPresenceStream(ctx context.Context, stream steamapi.SteamPresenceService_SubscribeToPresenceClient) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -104,18 +98,12 @@ func (sc *SteamClient) handlePresenceTopicEvent(ctx context.Context, ev *steamap
 	}
 }
 
-// updateFriendDMTopic looks up the existing DM portal for the given friend (without
-// creating one) and, if it exists, updates its topic to reflect the friend's current
+// updateFriendDMTopic looks up the existing DM portal for the given friend
+// and, if it exists, updates its topic to reflect the friend's current
 // presence/game (and, when available, resolved or raw rich-presence flavor text). This
 // is shared by the live presence stream handler (handlePresenceTopicEvent) and the
 // startup friend sync (syncFriendsOnStartup) so both paths build and apply the topic
 // identically.
-//
-// richPresenceStatusText and rawTokens come from the live presence stream's
-// PresenceEvent; syncFriendsOnStartup's seed path only has basic friend-list data
-// (GetFriendsList's Friend message was not extended with rich-presence fields), so it
-// passes an empty string / nil map - live rich-presence data will arrive shortly after
-// via the stream once Steam sends it, same as it does today for basic presence changes.
 func (sc *SteamClient) updateFriendDMTopic(ctx context.Context, steamID uint64, presenceStatus steamapi.PersonaState, currentGame string, richPresenceStatusText string, rawTokens map[string]string) error {
 	if sc.connector == nil || !sc.connector.Config.PresenceTopic.Enabled {
 		return nil
@@ -148,11 +136,6 @@ func (sc *SteamClient) updateFriendDMTopic(ctx context.Context, steamID uint64, 
 		Str("new_topic", topic).
 		Msg("Updating DM room topic from Steam presence")
 
-	// A zero time.Time (not time.Now()) matches mautrix-signal's convention for live info
-	// updates (e.g. groupinfo.go, handlesignal.go) - it omits the Matrix "ts" timestamp
-	// override entirely (only set when > 0), letting the homeserver stamp the event with
-	// its own receipt time. Explicit ts overrides are for backfill/historical events with a
-	// known true origin time, which doesn't apply to a live presence-driven update.
 	portal.UpdateInfo(ctx, &bridgev2.ChatInfo{Topic: ptr.Ptr(topic)}, sc.UserLogin, nil, time.Time{})
 
 	return nil
@@ -161,18 +144,11 @@ func (sc *SteamClient) updateFriendDMTopic(ctx context.Context, steamID uint64, 
 // buildPresenceTopic builds the DM room topic string from a friend's presence status,
 // current game, and (optionally) rich-presence flavor text:
 //   - Empty when the friend is offline/invisible.
-//   - "{game} — {rich presence text}" when both a game name and resolved rich-presence
+//   - "{game} | {rich presence text}" when both a game name and resolved rich-presence
 //     status text are available.
 //   - "{rich presence text}" alone when resolved text is available but no game name is
-//     (Steam doesn't always include the human-readable game name on packets that do
-//     carry rich presence data - observed empirically - so requiring both would blank
-//     the topic even when we have real, useful text to show).
-//   - "{game} — {raw token value}" / "{raw token value}" alone as a best-effort fallback
-//     when resolved text isn't available but showRawTokens is enabled and a raw "status"
-//     token is present. This is an opt-in stopgap: raw tokens are unlocalized loc-file
-//     keys (e.g. "#DeadlockRP_HideoutSnack") and may look cryptic, hence gated off by
-//     default.
-//   - "{game}" alone if only the game name is available (Phase 1 behavior, unchanged).
+//   - "{game} | {raw token value}" / "{raw token value}" when only the token is available
+//   - "{game}" alone if only the game name is available
 //   - Empty if nothing at all is available.
 func buildPresenceTopic(presenceStatus steamapi.PersonaState, currentGame string, richPresenceStatusText string, showRawTokens bool, rawTokens map[string]string) string {
 	if presenceStatus == steamapi.PersonaState_OFFLINE || presenceStatus == steamapi.PersonaState_INVISIBLE {
@@ -188,7 +164,7 @@ func buildPresenceTopic(presenceStatus steamapi.PersonaState, currentGame string
 
 	switch {
 	case currentGame != "" && flavorText != "":
-		return fmt.Sprintf("%s — %s", currentGame, flavorText)
+		return fmt.Sprintf("%s | %s", currentGame, flavorText)
 	case currentGame != "":
 		return currentGame
 	case flavorText != "":
