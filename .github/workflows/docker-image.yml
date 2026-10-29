@@ -1,0 +1,249 @@
+# Reusable workflow: packages PREBUILT binaries (artifact uploaded by
+# build-binaries.yml) into a Docker image, one matrix job per architecture,
+# then merges the per-arch images into multi-arch manifest lists.
+# Nothing is compiled in Docker here any more: the Dockerfile only packages
+# ./docker-bin/steam and ./docker-bin/steamkit-service (BINARY_SOURCE=prebuilt).
+
+name: Build Docker Image
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref (branch, tag or SHA) to check out. Empty means the default ref.'
+        type: string
+        required: false
+        default: ''
+      arches:
+        description: 'JSON array of architectures to build images for.'
+        type: string
+        required: false
+        default: '["amd64","arm64"]'
+      push:
+        description: 'Push to the registry. When false the image is only built and loaded locally.'
+        type: boolean
+        required: false
+        default: false
+      tags:
+        description: 'Newline-separated image tags WITHOUT arch suffix (e.g. "main\nlatest"). Empty means a throwaway test build.'
+        type: string
+        required: false
+        default: ''
+      version:
+        description: 'Release tag such as v1.4.1; empty when this is not a release build.'
+        type: string
+        required: false
+        default: ''
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+# packages:write is needed to push to ghcr.io, security-events:write to upload
+# the Trivy SARIF report; both are inherited by the jobs below.
+permissions:
+  contents: read
+  packages: write
+  security-events: write
+
+jobs:
+  image:
+    name: image (linux/${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # The arm image is packaged natively on an arm64 runner, so no
+        # QEMU/binfmt emulation is involved and no setup-qemu step is needed.
+        arch: ${{ fromJSON(inputs.arches) }}
+    # One runner per architecture: build natively so each node of the manifest
+    # list is produced by hardware of that architecture.
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+
+    steps:
+    # Shallow clone (no fetch-depth: 0) is enough: nothing is compiled in the
+    # image and the prebuilt path does not copy .git into the build context.
+    - name: Checkout repository
+      uses: actions/checkout@v6
+      with:
+        ref: ${{ inputs.ref }}
+
+    - name: Download prebuilt binaries for linux/${{ matrix.arch }}
+      uses: actions/download-artifact@v6
+      with:
+        name: matrix-steam-bridge-linux-${{ matrix.arch }}
+        path: ./artifact
+
+    - name: Stage binaries into ./docker-bin
+      run: |
+        set -euo pipefail
+        mkdir -p docker-bin
+        # The artifact carries one tarball whose top-level directory is
+        # matrix-steam-bridge-linux-<arch>/; --strip-components=1 drops it.
+        tar -xzf ./artifact/*.tar.gz --strip-components=1 -C docker-bin --wildcards '*/steam' '*/steamkit-service'
+        ls -l docker-bin
+        for binary in steam steamkit-service; do
+          if [ ! -f "docker-bin/$binary" ]; then
+            echo "::error::docker-bin/$binary is missing from the artifact"
+            exit 1
+          fi
+        done
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      if: inputs.push
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # Build the per-arch tag list in shell (instead of letting metadata-action
+    # generate tags) so the manifest job can compare against the very same list.
+    - name: Build per-arch tag list
+      id: tags
+      env:
+        ARCH: ${{ matrix.arch }}
+        INPUT_TAGS: ${{ inputs.tags }}
+        IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      run: |
+        set -euo pipefail
+        # Docker requires lowercase repository names (github.repository is not).
+        IMAGE="${IMAGE,,}"
+        # Whitespace-only input counts as "no tags" (:- guards a missing env
+        # var so set -u cannot abort here).
+        TAGS_TRIMMED="$(printf '%s' "${INPUT_TAGS:-}" | tr -d '[:space:]')"
+        {
+          echo 'list<<EOF'
+          if [ -z "$TAGS_TRIMMED" ]; then
+            # No tags requested: this is a PR/test build. The image is only
+            # loaded into the local Docker daemon, never pushed.
+            echo "${IMAGE}:test-${ARCH}"
+          else
+            while IFS= read -r tag; do
+              if [ -n "$tag" ]; then
+                echo "${IMAGE}:${tag}-${ARCH}"
+              fi
+            done <<< "${INPUT_TAGS:-}"
+          fi
+          echo 'EOF'
+        } >> "$GITHUB_OUTPUT"
+
+    # Labels only: tags come from the step above. The version label is
+    # deliberately omitted (it would need a metadata-action `flavor` entry fed
+    # with inputs.version); the release tag itself still carries the version.
+    - name: Extract image labels
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        labels: |
+          org.opencontainers.image.title=Matrix Steam Bridge
+          org.opencontainers.image.description=A Matrix bridge for Steam Chat using mautrix-go bridgev2
+          org.opencontainers.image.vendor=Jason La Guidice
+          org.opencontainers.image.url=https://github.com/${{ github.repository }}
+          org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+    - name: Build image for linux/${{ matrix.arch }}
+      id: build
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        platforms: linux/${{ matrix.arch }}
+        push: ${{ inputs.push }}
+        # Non-push (PR/test) builds are loaded into the local daemon so the
+        # Dockerfile still gets validated even though nothing is published.
+        load: ${{ !inputs.push }}
+        labels: ${{ steps.meta.outputs.labels }}
+        tags: ${{ steps.tags.outputs.list }}
+        build-args: |
+          BINARY_SOURCE=prebuilt
+        cache-from: type=gha,scope=image-${{ matrix.arch }}
+        # Only pushes write cache: GitHub caps a repository at ~10GB of cache
+        # and evicts the oldest entries once it overflows, so letting every
+        # PR branch write cache layers would evict main's cache.
+        cache-to: ${{ inputs.push && format('type=gha,mode=min,scope=image-{0}', matrix.arch) || '' }}
+
+  manifest:
+    name: Merge per-arch images into manifest lists
+    needs: image
+    if: inputs.push
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Create and inspect manifest lists
+      env:
+        ARCHES: ${{ inputs.arches }}
+        TAGS: ${{ inputs.tags }}
+        IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      run: |
+        set -euo pipefail
+        # Docker requires lowercase repository names (github.repository is not).
+        IMAGE="${IMAGE,,}"
+        # Nothing caller-controlled is interpolated into this script: the arch
+        # array is parsed out of the JSON input with jq and every value is read
+        # from the environment instead.
+        mapfile -t ARCH_LIST < <(jq -r '.[]' <<< "${ARCHES:-}")
+        while IFS= read -r BASE; do
+          if [ -n "$BASE" ]; then
+            SOURCES=()
+            for ARCH in "${ARCH_LIST[@]}"; do
+              SOURCES+=("${IMAGE}:${BASE}-${ARCH}")
+            done
+            echo "Creating manifest list for ${IMAGE}:${BASE} from ${SOURCES[*]}"
+            docker buildx imagetools create -t "${IMAGE}:${BASE}" "${SOURCES[@]}"
+            echo "Inspecting manifest list for ${IMAGE}:${BASE}"
+            docker buildx imagetools inspect "${IMAGE}:${BASE}"
+          fi
+        done <<< "${TAGS:-}"
+
+  security-scan:
+    name: Trivy vulnerability scan
+    needs: manifest
+    if: inputs.push
+    runs-on: ubuntu-latest
+
+    steps:
+    # No checkout needed: Trivy pulls the already published image from ghcr.
+    - name: Work out the image to scan
+      id: target
+      env:
+        TAGS: ${{ inputs.tags }}
+        IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+      run: |
+        set -euo pipefail
+        # Docker requires lowercase repository names (github.repository is not).
+        IMAGE="${IMAGE,,}"
+        FIRST_TAG="$(head -n1 <<< "${TAGS:-}" | tr -d '[:space:]')"
+        if [ -z "$FIRST_TAG" ]; then
+          echo "No tags requested, nothing to scan"
+          echo "ref=" >> "$GITHUB_OUTPUT"
+        else
+          echo "ref=${IMAGE}:${FIRST_TAG}" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run Trivy vulnerability scanner
+      if: steps.target.outputs.ref != ''
+      uses: aquasecurity/trivy-action@v0.33.1
+      with:
+        image-ref: ${{ steps.target.outputs.ref }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      if: steps.target.outputs.ref != '' && hashFiles('trivy-results.sarif') != ''
+      uses: github/codeql-action/upload-sarif@v4
+      with:
+        sarif_file: 'trivy-results.sarif'
+

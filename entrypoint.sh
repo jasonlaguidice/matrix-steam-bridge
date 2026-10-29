@@ -4,7 +4,7 @@ set -e
 # Check if running as root and switch to bridge user
 if [ "$(id -u)" = "0" ]; then
     echo "Running as root, switching to bridge user"
-    exec su-exec bridge "$0" "$@"
+    exec gosu bridge "$0" "$@"
 fi
 
 # Ensure data directory is mounted

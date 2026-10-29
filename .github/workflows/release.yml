@@ -69,176 +69,31 @@ jobs:
         git push origin "refs/tags/$TAG"
         echo "ref=$TAG" >> "$GITHUB_OUTPUT"
 
+  # Reusable workflow builds linux-amd64, linux-arm64 and windows-amd64 and
+  # uploads the matrix-steam-bridge-* artifacts used by the jobs below.
   build-binaries:
-    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    name: Build binaries
     needs: prepare
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      matrix:
-        include:
-          - goos: linux
-            goarch: amd64
-            runner: ubuntu-latest
-          - goos: linux
-            goarch: arm64
-            runner: ubuntu-24.04-arm
-          - goos: windows
-            goarch: amd64
-            runner: windows-latest
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v6
-      with:
-        ref: ${{ needs.prepare.outputs.ref }}
-
-    - name: Set up Go
-      uses: actions/setup-go@v6
-      with:
-        go-version: '1.24.6'
-
-    - name: Set up .NET
-      uses: actions/setup-dotnet@v5
-      with:
-        dotnet-version: '10.0'
-
-    - name: Install system dependencies (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y protobuf-compiler libc6-dev libsqlite3-dev libolm-dev
-
-    - name: Install dependencies (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        choco install protoc
-        # Build olm library from source for Matrix encryption
-        git clone https://gitlab.matrix.org/matrix-org/olm.git C:\olm
-        cd C:\olm
-        # Use an argument array + splatting so PowerShell passes each -D flag through
-        # to cmake.exe untouched (inline args were getting mangled, splitting
-        # "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" into "...=3" and a stray ".5")
-        $cmakeConfigureArgs = @(
-          "-S", ".",
-          "-B", "build",
-          "-DCMAKE_INSTALL_PREFIX=C:\olm-install",
-          "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
-        )
-        cmake @cmakeConfigureArgs
-        cmake --build build --config Release
-        cmake --install build
-
-    - name: Build .NET SteamBridge (Linux)
-      if: runner.os == 'Linux'
-      working-directory: SteamBridge
-      run: |
-        # Force use of system protoc on ARM64 to avoid segfault
-        if [ "${{ matrix.goarch }}" = "arm64" ]; then
-          export Protobuf_ProtocFullPath=$(which protoc)
-          RUNTIME="linux-arm64"
-        else
-          RUNTIME="linux-x64"
-        fi
-        
-        # Build SteamBridge with self-contained publish (matching build.sh approach)
-        dotnet publish --configuration Release --self-contained true --runtime "$RUNTIME"
-
-        # Copy built executable and rename to steamkit-service
-        mkdir -p ../steambridge-dist
-        cp "bin/Release/net10.0/$RUNTIME/publish/SteamBridge" "../steambridge-dist/steamkit-service"
-
-    - name: Build .NET SteamBridge (Windows)
-      if: runner.os == 'Windows'
-      working-directory: SteamBridge
-      run: |
-        # Build SteamBridge with self-contained publish (matching build.sh approach)
-        $RUNTIME = "win-x64"
-        dotnet publish --configuration Release --self-contained true --runtime $RUNTIME
-
-        # Copy built executable and rename to steamkit-service.exe
-        mkdir -p ../steambridge-dist
-        Copy-Item "bin/Release/net10.0/$RUNTIME/publish/SteamBridge.exe" "../steambridge-dist/steamkit-service.exe"
-
-    - name: Build Go binary (Linux)
-      if: runner.os == 'Linux'
-      env:
-        CGO_ENABLED: 1
-      run: |
-        # Build ldflags matching build.sh
-        MAUTRIX_VERSION=$(cat go.mod | grep 'maunium.net/go/mautrix ' | awk '{ print $2 }' | head -n1)
-        GO_LDFLAGS="-s -w -X main.Tag=$(git describe --exact-match --tags 2>/dev/null) -X main.Commit=$(git rev-parse HEAD) -X 'main.BuildTime=$(date -Iseconds)' -X 'maunium.net/go/mautrix.GoModVersion=$MAUTRIX_VERSION'"
-        
-        # Build the Go binary natively (no cross-compilation)
-        go build -ldflags="$GO_LDFLAGS" -o "steam" ./cmd/steam
-        
-        # Move to distribution directory
-        mv "steam" steambridge-dist/
-
-    - name: Build Go binary (Windows)
-      if: runner.os == 'Windows'
-      env:
-        CGO_ENABLED: 1
-        CGO_CFLAGS: "-IC:/olm-install/include"
-        CGO_LDFLAGS: "-LC:/olm-install/lib"
-      run: |
-        # Build ldflags matching build.sh (PowerShell syntax)
-        $MAUTRIX_VERSION = (Select-String -Path go.mod -Pattern 'maunium.net/go/mautrix ' | Select-Object -First 1).Line.Split()[1]
-        $TAG = git describe --exact-match --tags 2>$null
-        $COMMIT = git rev-parse HEAD
-        $BUILD_TIME = Get-Date -Format "yyyy-MM-ddTHH:mm:sszzz"
-        $GO_LDFLAGS = "-s -w -X main.Tag=$TAG -X main.Commit=$COMMIT -X `"main.BuildTime=$BUILD_TIME`" -X `"maunium.net/go/mautrix.GoModVersion=$MAUTRIX_VERSION`""
-        
-        # Build the Go binary natively (no cross-compilation)
-        go build -ldflags="$GO_LDFLAGS" -o "steam.exe" ./cmd/steam
-        
-        # Move to distribution directory
-        mv "steam.exe" steambridge-dist/
-
-    - name: Create release package (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        PACKAGE_NAME="matrix-steam-bridge-${{ matrix.goos }}-${{ matrix.goarch }}"
-        
-        # Create release directory structure
-        mkdir -p "${PACKAGE_NAME}"
-        cp -r steambridge-dist/* "${PACKAGE_NAME}/"
-        
-        # Add README and example config if they exist
-        if [ -f README.md ]; then cp README.md "${PACKAGE_NAME}/"; fi
-        if [ -f config.example.yaml ]; then cp config.example.yaml "${PACKAGE_NAME}/"; fi
-        
-        # Create archive
-        tar -czf "${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}/"
-        echo "ASSET_NAME=${PACKAGE_NAME}.tar.gz" >> $GITHUB_ENV
-
-    - name: Create release package (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        $PACKAGE_NAME = "matrix-steam-bridge-${{ matrix.goos }}-${{ matrix.goarch }}"
-        
-        # Create release directory structure
-        mkdir "$PACKAGE_NAME"
-        Copy-Item -Recurse steambridge-dist/* "$PACKAGE_NAME/"
-        
-        # Add README and example config if they exist
-        if (Test-Path README.md) { Copy-Item README.md "$PACKAGE_NAME/" }
-        if (Test-Path config.example.yaml) { Copy-Item config.example.yaml "$PACKAGE_NAME/" }
-        
-        # Create archive
-        Compress-Archive -Path "$PACKAGE_NAME" -DestinationPath "$PACKAGE_NAME.zip"
-        echo "ASSET_NAME=$PACKAGE_NAME.zip" >> $env:GITHUB_ENV
-
-    - name: Upload binary artifact
-      uses: actions/upload-artifact@v5
-      with:
-        name: matrix-steam-bridge-${{ matrix.goos }}-${{ matrix.goarch }}
-        path: ${{ env.ASSET_NAME }}
-
-  create-release:
-    needs: build-binaries
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/build-binaries.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      arches: '["amd64","arm64"]'
+      windows: true
     permissions:
-      contents: write
+      contents: read
+
+  resolve-tag:
+    name: Resolve tag to release
+    runs-on: ubuntu-latest
+    # A workflow_dispatch run needs the tag created by `prepare` first
+    needs: prepare
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.get_tag.outputs.tag }}
+      prerelease: ${{ steps.get_tag.outputs.prerelease }}
+      version: ${{ steps.get_tag.outputs.version }}
+      docker_tags: ${{ steps.get_tag.outputs.docker_tags }}
 
     steps:
     - name: Checkout code
@@ -276,13 +131,37 @@ jobs:
         echo "tag=$TAG" >> $GITHUB_OUTPUT
 
         # Detect pre-release tags (e.g. v1.2.0-beta.1, v1.2.0-rc.1, v1.2.0-alpha.1)
+        PRERELEASE=false
         if echo "$TAG" | grep -qE '\-(alpha|beta|rc)([0-9]+)?(\.[0-9]+)?$'; then
+          PRERELEASE=true
           echo "prerelease=true" >> $GITHUB_OUTPUT
           echo "Detected pre-release tag"
         else
           echo "prerelease=false" >> $GITHUB_OUTPUT
         fi
 
+        # Docker tags: the plain version always, plus `latest` for non-prereleases
+        VERSION="${TAG#v}"
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        {
+          echo "docker_tags<<DOCKER_TAGS"
+          echo "$VERSION"
+          if [ "$PRERELEASE" = "false" ]; then
+            echo "latest"
+          fi
+          echo "DOCKER_TAGS"
+        } >> "$GITHUB_OUTPUT"
+
+  create-release:
+    name: Create release
+    # No checkout needed: the tag already exists on the remote and the
+    # binaries come from build-binaries as workflow artifacts.
+    needs: [resolve-tag, build-binaries]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
     - name: Download all artifacts
       uses: actions/download-artifact@v6
       with:
@@ -291,10 +170,27 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ steps.get_tag.outputs.tag }}
+        tag_name: ${{ needs.resolve-tag.outputs.tag }}
         draft: false
-        prerelease: ${{ steps.get_tag.outputs.prerelease }}
+        prerelease: ${{ needs.resolve-tag.outputs.prerelease }}
         generate_release_notes: true
         files: ./artifacts/*/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The image is packaged from the exact release binaries (no recompilation).
+  # Prereleases do not move the `latest` tag.
+  docker-image:
+    name: Build and push Docker image
+    needs: [prepare, resolve-tag, build-binaries]
+    uses: ./.github/workflows/docker-image.yml
+    with:
+      ref: ${{ needs.prepare.outputs.ref }}
+      arches: '["amd64","arm64"]'
+      push: true
+      tags: ${{ needs.resolve-tag.outputs.docker_tags }}
+      version: ${{ needs.resolve-tag.outputs.version }}
+    permissions:
+      contents: read
+      packages: write
+      security-events: write

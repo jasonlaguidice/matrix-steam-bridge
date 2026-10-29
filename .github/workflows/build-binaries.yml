@@ -1,0 +1,249 @@
+name: Build binaries
+
+# Reusable workflow: compiles the Go bridge + the C# SteamBridge gRPC service
+# once and uploads the packaged binaries as artifacts. Replaces the
+# `build-binaries` job that used to live in release.yml.
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Git ref (branch/tag/SHA) to check out. Empty = caller default'
+        required: false
+        type: string
+        default: ''
+      arches:
+        description: 'JSON array of Linux arches to build'
+        required: false
+        type: string
+        default: '["amd64","arm64"]'
+      windows:
+        description: 'Also build windows-amd64'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Build linux-${{ matrix.arch }}
+    # Pinned to Ubuntu 24.04 on purpose: the binaries are dynamically linked
+    # against glibc/libolm.so.3 and run later in an Ubuntu 24.04 container, so the
+    # glibc version must not float.
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: ${{ fromJSON(inputs.arches) }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        # fetch-depth: 0 is required: ldflags use `git describe`
+        ref: ${{ inputs.ref }}
+        fetch-depth: 0
+
+    - name: Set up Go
+      # setup-go already caches the Go module + build cache
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+        cache-dependency-path: go.sum
+
+    - name: Set up .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: '10.0'
+
+    - name: Cache NuGet packages
+      # Includes the self-contained runtime packs
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('SteamBridge/SteamBridge.csproj') }}
+        restore-keys: 'nuget-${{ runner.os }}-${{ runner.arch }}-'
+
+    - name: Install system dependencies
+      # gcc is preinstalled on the runners
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends protobuf-compiler libc6-dev libsqlite3-dev libolm-dev
+
+    - name: Build .NET SteamBridge
+      working-directory: SteamBridge
+      run: |
+        # Force use of system protoc on ARM64 to avoid segfault
+        if [ "${{ matrix.arch }}" = "arm64" ]; then
+          export Protobuf_ProtocFullPath=$(which protoc)
+          RUNTIME="linux-arm64"
+        else
+          RUNTIME="linux-x64"
+        fi
+
+        # Build SteamBridge with self-contained publish (matching build.sh approach)
+        dotnet publish --configuration Release --self-contained true --runtime "$RUNTIME"
+
+        # Copy built executable and rename to steamkit-service
+        mkdir -p ../steambridge-dist
+        cp "bin/Release/net10.0/$RUNTIME/publish/SteamBridge" "../steambridge-dist/steamkit-service"
+
+    - name: Build Go binary
+      env:
+        CGO_ENABLED: 1
+      run: |
+        # Build ldflags matching build.sh
+        MAUTRIX_VERSION=$(cat go.mod | grep 'maunium.net/go/mautrix ' | awk '{ print $2 }' | head -n1)
+        GO_LDFLAGS="-s -w -X main.Tag=$(git describe --exact-match --tags 2>/dev/null) -X main.Commit=$(git rev-parse HEAD) -X 'main.BuildTime=$(date -Iseconds)' -X 'maunium.net/go/mautrix.GoModVersion=$MAUTRIX_VERSION'"
+
+        # Build the Go binary natively (no cross-compilation)
+        go build -ldflags="$GO_LDFLAGS" -o "steam" ./cmd/steam
+
+        # Move to distribution directory
+        mv "steam" steambridge-dist/
+
+    - name: Create release package
+      # Tarball layout: ${PACKAGE_NAME}/ containing `steam` and `steamkit-service`
+      # (other workflows depend on this layout)
+      run: |
+        PACKAGE_NAME="matrix-steam-bridge-linux-${{ matrix.arch }}"
+
+        # Create release directory structure
+        mkdir -p "${PACKAGE_NAME}"
+        cp -r steambridge-dist/* "${PACKAGE_NAME}/"
+
+        # Add README and example config if they exist
+        if [ -f README.md ]; then cp README.md "${PACKAGE_NAME}/"; fi
+        if [ -f config.example.yaml ]; then cp config.example.yaml "${PACKAGE_NAME}/"; fi
+
+        # Create archive
+        tar -czf "${PACKAGE_NAME}.tar.gz" "${PACKAGE_NAME}/"
+        echo "ASSET_NAME=${PACKAGE_NAME}.tar.gz" >> $GITHUB_ENV
+
+    - name: Upload binary artifact
+      uses: actions/upload-artifact@v5
+      with:
+        name: matrix-steam-bridge-linux-${{ matrix.arch }}
+        path: ${{ env.ASSET_NAME }}
+
+  windows:
+    name: Build windows-amd64
+    if: inputs.windows
+    runs-on: windows-latest
+    env:
+      OLM_REF: '3.2.16'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v6
+      with:
+        # fetch-depth: 0 is required: ldflags use `git describe`
+        ref: ${{ inputs.ref }}
+        fetch-depth: 0
+
+    - name: Set up Go
+      # setup-go already caches the Go module + build cache
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+        cache-dependency-path: go.sum
+
+    - name: Set up .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: '10.0'
+
+    - name: Cache NuGet packages
+      # Includes the self-contained runtime packs
+      uses: actions/cache@v4
+      with:
+        path: '~\.nuget\packages'
+        key: nuget-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('SteamBridge/SteamBridge.csproj') }}
+        restore-keys: 'nuget-${{ runner.os }}-${{ runner.arch }}-'
+
+    - name: Install protoc
+      run: choco install protoc
+
+    - name: Restore olm cache
+      id: olm-cache
+      uses: actions/cache@v4
+      with:
+        path: C:\olm-install
+        key: olm-windows-${{ env.OLM_REF }}-v1
+
+    - name: Install olm (Windows)
+      # Only when the olm cache was missed: clone + build from source
+      if: steps.olm-cache.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        # Build olm library from source for Matrix encryption
+        git clone --depth 1 --branch $env:OLM_REF https://gitlab.matrix.org/matrix-org/olm.git C:\olm
+        cd C:\olm
+        # Use an argument array + splatting so PowerShell passes each -D flag through
+        # to cmake.exe untouched (inline args were getting mangled, splitting
+        # "-DCMAKE_POLICY_VERSION_MINIMUM=3.5" into "...=3" and a stray ".5")
+        $cmakeConfigureArgs = @(
+          "-S", ".",
+          "-B", "build",
+          "-DCMAKE_INSTALL_PREFIX=C:\olm-install",
+          "-DCMAKE_POLICY_VERSION_MINIMUM=3.5"
+        )
+        cmake @cmakeConfigureArgs
+        cmake --build build --config Release
+        cmake --install build
+
+    - name: Build .NET SteamBridge
+      working-directory: SteamBridge
+      run: |
+        # Build SteamBridge with self-contained publish (matching build.sh approach)
+        $RUNTIME = "win-x64"
+        dotnet publish --configuration Release --self-contained true --runtime $RUNTIME
+
+        # Copy built executable and rename to steamkit-service.exe
+        mkdir -p ../steambridge-dist
+        Copy-Item "bin/Release/net10.0/$RUNTIME/publish/SteamBridge.exe" "../steambridge-dist/steamkit-service.exe"
+
+    - name: Build Go binary
+      env:
+        CGO_ENABLED: 1
+        CGO_CFLAGS: "-IC:/olm-install/include"
+        CGO_LDFLAGS: "-LC:/olm-install/lib"
+      run: |
+        # Build ldflags matching build.sh (PowerShell syntax)
+        $MAUTRIX_VERSION = (Select-String -Path go.mod -Pattern 'maunium.net/go/mautrix ' | Select-Object -First 1).Line.Split()[1]
+        $TAG = git describe --exact-match --tags 2>$null
+        $COMMIT = git rev-parse HEAD
+        $BUILD_TIME = Get-Date -Format "yyyy-MM-ddTHH:mm:sszzz"
+        $GO_LDFLAGS = "-s -w -X main.Tag=$TAG -X main.Commit=$COMMIT -X `"main.BuildTime=$BUILD_TIME`" -X `"maunium.net/go/mautrix.GoModVersion=$MAUTRIX_VERSION`""
+
+        # Build the Go binary natively (no cross-compilation)
+        go build -ldflags="$GO_LDFLAGS" -o "steam.exe" ./cmd/steam
+
+        # Move to distribution directory
+        mv "steam.exe" steambridge-dist/
+
+    - name: Create release package
+      # Zip layout: top dir ${PACKAGE_NAME}/ containing `steam.exe` and
+      # `steamkit-service.exe` (other workflows depend on this layout)
+      run: |
+        $PACKAGE_NAME = "matrix-steam-bridge-windows-amd64"
+
+        # Create release directory structure
+        mkdir "$PACKAGE_NAME"
+        Copy-Item -Recurse steambridge-dist/* "$PACKAGE_NAME/"
+
+        # Add README and example config if they exist
+        if (Test-Path README.md) { Copy-Item README.md "$PACKAGE_NAME/" }
+        if (Test-Path config.example.yaml) { Copy-Item config.example.yaml "$PACKAGE_NAME/" }
+
+        # Create archive
+        Compress-Archive -Path "$PACKAGE_NAME" -DestinationPath "$PACKAGE_NAME.zip"
+        echo "ASSET_NAME=$PACKAGE_NAME.zip" >> $env:GITHUB_ENV
+
+    - name: Upload binary artifact
+      uses: actions/upload-artifact@v5
+      with:
+        name: matrix-steam-bridge-windows-amd64
+        path: ${{ env.ASSET_NAME }}

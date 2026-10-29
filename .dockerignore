@@ -1,0 +1,24 @@
+# Docker build context exclusions.
+#
+# NOTE: intentionally NOT ignored (the Dockerfile COPYs them or CI needs them):
+#   .git                 -> "COPY .git .git" (git describe/rev-parse ldflags)
+#   docker-bin/          -> prebuilt binaries (BINARY_SOURCE=prebuilt)
+#   cmd/, pkg/           -> Go bridge sources
+#   SteamBridge/         -> C# service sources (only bin/ and obj/ below are out)
+#   go.mod, go.sum       -> "COPY go.mod go.sum ./" + go mod download layer
+#   entrypoint.sh        -> copied into the runtime image
+
+# .NET build output (would otherwise defeat the "COPY SteamBridge/" cache layer
+# and, worse, ship stale host-built binaries)
+SteamBridge/bin/
+SteamBridge/obj/
+
+# Local runtime junk / reference tree / CI metadata
+logs/
+ref/
+.github/
+.mcp.json
+
+# Archives sometimes dropped next to the Dockerfile by CI packaging steps
+*.tar.gz
+*.zip
