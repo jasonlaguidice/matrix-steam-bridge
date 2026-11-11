@@ -16,7 +16,7 @@ func main() {
 		Name:        "steam",
 		Description: "A Matrix-Steam bridge",
 		URL:         "https://github.com/jasonlaguidice/matrix-steam-bridge",
-		Version:     "1.4.0",
+		Version:     "1.5.0",
 		Connector:   &connector.SteamConnector{},
 	}
 	m.InitVersion(Tag, Commit, BuildTime)
